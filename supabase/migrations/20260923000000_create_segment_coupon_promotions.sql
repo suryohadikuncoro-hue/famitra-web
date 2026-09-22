@@ -1,0 +1,18 @@
+-- Segment-based coupon and promotion foundation for SI-FaMitra.
+-- Applied to project xixhazawndmgqzstfjnq on 2026-09-23.
+CREATE TABLE IF NOT EXISTS public.promo_campaigns (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), cabang_id text NOT NULL REFERENCES public.master_cabang(kode_cabang), name text NOT NULL, description text NOT NULL DEFAULT '', starts_at timestamptz NOT NULL, ends_at timestamptz NOT NULL, status text NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT','ACTIVE','PAUSED','ARCHIVED')), created_by text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), CHECK (ends_at >= starts_at));
+CREATE TABLE IF NOT EXISTS public.promo_segment_targets (campaign_id uuid NOT NULL REFERENCES public.promo_campaigns(id) ON DELETE CASCADE, segment text NOT NULL CHECK (segment IN ('Baru','Active Routine','VIP','At-Risk','Dormant')), customer_type text NULL CHECK (customer_type IS NULL OR customer_type IN ('Umum','Tenaga Kesehatan','Apotek Lain')));
+CREATE UNIQUE INDEX IF NOT EXISTS promo_segment_targets_unique_idx ON public.promo_segment_targets(campaign_id, segment, coalesce(customer_type,''));
+CREATE TABLE IF NOT EXISTS public.promo_coupons (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), campaign_id uuid NOT NULL REFERENCES public.promo_campaigns(id) ON DELETE CASCADE, cabang_id text NOT NULL REFERENCES public.master_cabang(kode_cabang), code text NOT NULL, discount_type text NOT NULL CHECK (discount_type IN ('FIXED','PERCENT')), discount_value numeric NOT NULL CHECK (discount_value > 0), max_discount numeric NULL CHECK (max_discount IS NULL OR max_discount >= 0), min_purchase numeric NOT NULL DEFAULT 0 CHECK (min_purchase >= 0), usage_limit_total integer NULL CHECK (usage_limit_total IS NULL OR usage_limit_total > 0), usage_limit_per_customer integer NOT NULL DEFAULT 1 CHECK (usage_limit_per_customer > 0), is_active boolean NOT NULL DEFAULT true, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (cabang_id, code));
+CREATE TABLE IF NOT EXISTS public.promo_redemptions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), coupon_id uuid NOT NULL REFERENCES public.promo_coupons(id), campaign_id uuid NOT NULL REFERENCES public.promo_campaigns(id), customer_id uuid NOT NULL REFERENCES public.master_customer(id), cabang_id text NOT NULL REFERENCES public.master_cabang(kode_cabang), invoice_no text NOT NULL REFERENCES public.trx_penjualan(no_nota), discount_amount numeric NOT NULL CHECK (discount_amount >= 0), redeemed_at timestamptz NOT NULL DEFAULT now(), status text NOT NULL DEFAULT 'APPLIED' CHECK (status IN ('APPLIED','REVERSED')), UNIQUE (coupon_id, invoice_no));
+ALTER TABLE public.trx_penjualan ADD COLUMN IF NOT EXISTS coupon_id uuid REFERENCES public.promo_coupons(id);
+ALTER TABLE public.trx_penjualan ADD COLUMN IF NOT EXISTS coupon_code text;
+ALTER TABLE public.trx_penjualan ADD COLUMN IF NOT EXISTS campaign_id uuid REFERENCES public.promo_campaigns(id);
+ALTER TABLE public.trx_penjualan ADD COLUMN IF NOT EXISTS coupon_discount numeric NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS promo_campaigns_branch_status_idx ON public.promo_campaigns(cabang_id,status,starts_at,ends_at);
+CREATE INDEX IF NOT EXISTS promo_coupons_code_idx ON public.promo_coupons(cabang_id,code);
+CREATE INDEX IF NOT EXISTS promo_redemptions_customer_idx ON public.promo_redemptions(customer_id,coupon_id,status);
+CREATE INDEX IF NOT EXISTS promo_redemptions_campaign_idx ON public.promo_redemptions(campaign_id,redeemed_at);
+-- The authoritative checkout function was applied through Supabase migration
+-- create_segment_coupon_promotions. Its source is retained in the deployment
+-- record and should be copied here before a future schema-only restore.
