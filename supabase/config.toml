@@ -1,0 +1,12 @@
+# Function configuration for Edge Functions.
+# Ref: https://supabase.com/docs/guides/functions/function-configuration
+# Mencatat state verify_jwt yang sedang ter-deploy (false) agar
+# `supabase functions deploy` di masa depan tetap mempertahankannya.
+[functions.api]
+verify_jwt = false
+
+[functions.hutang]
+verify_jwt = false
+
+[functions.promo]
+verify_jwt = false
