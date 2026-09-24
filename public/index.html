@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>SI-FaMitra — Apotek Fa-Mitra</title>
+  <link rel="icon" href="https://ssl.gstatic.com/docs/script/images/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    /* ============================================================ AI_CFG ====
+     * Flag & endpoint asisten AI (khusus Owner). Dipertahankan dari versi asli
+     * (Opsi A di blueprint migrasi — tetap pakai webhook n8n). Bila nanti
+     * dipindah ke Edge Function Supabase (Opsi B), cukup ganti dua URL ini.
+     *
+     * PENTING: autentikasi harus ditangani oleh workflow n8n atau lapisan server;
+     * jangan menaruh token rahasia di source browser yang bersifat publik.
+     */
+    window.AI_CFG = {
+      summaryUrl: 'https://n8n.fa-mitra.my.id/webhook/ai-summary',
+      chatUrl:    'https://n8n.fa-mitra.my.id/webhook/ai-chat'
+    };
+  </script>
+</head>
+<body>
+
+<!-- ====================================================== Layar login ====== -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="logo"></div>
+      <div>
+        <h1>SI-FaMitra</h1>
+        <p>Sistem Informasi Apotek Fa-Mitra</p>
+      </div>
+    </div>
+
+    <div class="role-tabs" id="roleTabs">
+      <button type="button" class="role-tab is-active" data-role="Kasir">Admin</button>
+      <button type="button" class="role-tab" data-role="Apoteker">Apoteker</button>
+      <button type="button" class="role-tab" data-role="Owner">Owner</button>
+    </div>
+
+    <label class="field">
+      <span>Username</span>
+      <input id="loginUser" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="kasir">
+    </label>
+
+    <label class="field">
+      <span>Password</span>
+      <input id="loginPass" type="password" autocomplete="current-password" placeholder="••••••••">
+    </label>
+
+    <div id="loginError" class="login-error" hidden></div>
+    <button id="loginBtn" class="btn btn-primary btn-block">Masuk</button>
+    <p class="login-note">Belum punya akun? Minta Owner membuatkannya di Manajemen User.</p>
+  </div>
+</div>
+
+<!-- ======================================================= Layar aplikasi === -->
+<div id="appScreen" class="app" hidden>
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="logo"></div>
+      <div class="sidebar-brand-text">
+        <strong>SI-FaMitra</strong>
+        <span id="sbApotek">Apotek Fa-Mitra</span>
+      </div>
+    </div>
+    <nav id="navMenu" class="nav"></nav>
+    <div class="sidebar-foot">
+      <div class="whoami">
+        <strong id="sbNama">—</strong>
+        <span id="sbRole">—</span>
+      </div>
+      <button id="logoutBtn" class="btn btn-sm">Keluar</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button id="menuToggle" class="icon-btn" aria-label="Buka menu">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <h2 id="pageTitle">Kasir</h2>
+      <div class="topbar-meta">
+        <span id="shiftChip" class="chip">Shift —</span>
+        <span id="clockChip" class="chip">--:--</span>
+      </div>
+    </header>
+    <div id="view" class="view"></div>
+  </main>
+
+  <nav id="tabbar" class="tabbar"></nav>
+</div>
+
+<!-- =========================================== Widget AI (khusus Owner) ==== -->
+<div id="aidock" class="aidock mini" hidden>
+  <button id="aidockFab" class="aidock-fab" aria-label="Buka Asisten Fa-Mitra" style="position:relative">
+    <span class="aidock-fab-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M7.5 17.5 4 20l1.1-4.4A7.8 7.8 0 0 1 3 10.5C3 6.36 7.03 3 12 3s9 3.36 9 7.5-4.03 7.5-9 7.5c-1.64 0-3.18-.36-4.5-1Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M8 10.5h.01M12 10.5h.01M16 10.5h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span class="aidock-online" aria-label="AI aktif"></span>
+    <span id="aidockBadge" class="badge" hidden>0</span>
+  </button>
+
+  <div id="aidockBox" class="aidock-box" hidden>
+    <header class="aidock-head">
+      <strong>Asisten Fa-Mitra</strong>
+      <button id="aidockSize" class="icon-btn" aria-label="Perbesar">
+        <svg viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+      </button>
+      <button id="aidockMin" class="icon-btn" aria-label="Kecilkan">
+        <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+      </button>
+    </header>
+    <div id="aidockBody" class="aidock-body"></div>
+    <footer class="aidock-foot">
+      <div id="aidockSaran" class="saran"></div>
+      <div class="aidock-input">
+        <input id="aidockInput" class="inp" placeholder="Tanya apa saja soal data apotek">
+        <button id="aidockKirim" class="btn btn-brand">Kirim</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================================================ Komponen === -->
+<div id="toast" class="toast" hidden></div>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-backdrop" data-close="1"></div>
+  <div class="modal-box" role="dialog" aria-modal="true">
+    <header class="modal-head">
+      <h3 id="modalTitle">Judul</h3>
+      <button class="icon-btn" data-close="1" aria-label="Tutup">
+        <svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </header>
+    <div id="modalBody" class="modal-body"></div>
+    <footer id="modalFoot" class="modal-foot"></footer>
+  </div>
+</div>
+
+<!-- Area cetak; hanya tampil saat dokumen dicetak. -->
+<div id="struk" class="struk"></div>
+
+<!-- Urutan load WAJIB sama seperti include() di Index.html asli:
+     Js_Core lebih dulu (deklarasi call()/api()/VIEWS), baru modul-modul view. -->
+<script src="js_core.js"></script>
+<script src="js_ai.js"></script>
+<script src="js_pos.js"></script>
+<script src="js_dashboard.js"></script>
+<script src="js_master.js"></script>
+<script src="js_trx.js"></script>
+</body>
+</html>
