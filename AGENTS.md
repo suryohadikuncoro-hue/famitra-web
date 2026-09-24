@@ -11,13 +11,12 @@ Baca seluruh file ini sebelum mengubah kode apa pun.
 - Package manager: tidak ada (tidak ada package.json). Jangan menambahkan framework, bundler, atau npm dependency tanpa izin.
 - Backend: Supabase Edge Functions (`api`, `promo`, `hutang`) + Postgres
 - Asisten AI: webhook n8n (`window.AI_CFG` di `index.html`)
-- Hosting: Cloudflare Workers dengan Static Assets (Workers Builds terhubung ke GitHub), nama Worker: `famitra-web`
+- Hosting: Cloudflare Pages, project `famitra-web`, alamat production: https://famitra-web.pages.dev (tanpa custom domain)
 - Repository: GitHub, branch utama `main`
 
 ## Struktur File
 
-- `wrangler.jsonc` - konfigurasi Cloudflare Worker (assets diambil dari `./public`)
-- `public/` - SELURUH file website (hanya folder ini yang dipublikasikan):
+- `public/` - SELURUH file website (hanya folder ini yang dipublikasikan oleh Cloudflare Pages):
   - `index.html` - halaman utama, layar login, dan konfigurasi `window.AI_CFG`
   - `style.css` - seluruh styling
   - `js_core.js` - inti: URL Edge Function, pemanggil API, sesi login, modal, utilitas
@@ -26,7 +25,7 @@ Baca seluruh file ini sebelum mengubah kode apa pun.
   - `js_master.js` - master data (obat, pelanggan, dll.)
   - `js_dashboard.js` - dashboard dan ringkasan AI
   - `js_ai.js` - chat asisten AI (khusus Owner)
-- File di luar `public/` (AGENTS.md, supabase/, catatan .md) TIDAK boleh ikut dipublikasikan. Jangan pernah mengubah assets directory ke root repo (`.`).
+- File di luar `public/` (AGENTS.md, supabase/, catatan .md) TIDAK boleh ikut dipublikasikan. Jangan pernah mengubah build output directory ke root repo.
 - `supabase/` - Edge Functions dan migrasi database
   - Catatan: saat ini hanya function `promo` yang ada di repo. Function `api` dan `hutang` sudah ter-deploy di Supabase tapi kodenya belum ada di repo.
   - `supabase/.temp/` adalah cache CLI, jangan di-commit (masukkan ke .gitignore).
@@ -72,10 +71,14 @@ python -m http.server 8080 --directory public
 
 ## Aturan Deploy (Cloudflare Pages)
 
-- Situs statis: build command kosong, output directory = root repo.
-- Deploy production otomatis saat PR di-merge ke `main`.
-- Cek preview deployment setiap PR sebelum menyatakan pekerjaan selesai.
-- Jangan deploy manual ke production tanpa izin.
+- Pengaturan build ada di dashboard Cloudflare Pages (bukan di repo): build command KOSONG, build output directory `public`.
+- Jangan menambahkan `wrangler.jsonc`/`wrangler.toml`, `package.json`, atau file build lain tanpa izin, karena bisa mengubah cara Pages melakukan build.
+- Setiap push ke branch selain `main` membuat preview di `<nama-branch>.famitra-web.pages.dev`. Tidak memengaruhi production.
+- Merge ke `main` = deploy ke PRODUCTION (https://famitra-web.pages.dev) yang dipakai apotek. Jangan merge sendiri.
+- Check "Cloudflare Pages" di setiap PR harus sukses sebelum menyatakan pekerjaan selesai.
+- Preview memakai database Supabase yang SAMA dengan production. Saat mengetes preview, jangan membuat/mengubah/menghapus data sungguhan.
+- Jangan jalankan `npx wrangler pages deploy` secara manual tanpa izin eksplisit.
+- Jangan membaca file kredensial/token (misalnya config wrangler) atau menampilkan environment variables. Jika butuh info dari dashboard Cloudflare, minta pemilik project.
 
 ## Keamanan
 
