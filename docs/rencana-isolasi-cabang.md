@@ -961,7 +961,7 @@ Index non-unique yang juga perlu perhatian karena dipakai jalur panas:
 |---|---|---|---|
 | `stok_batch` | `idx_batch_fefo` | `(kode_obat, expired_date) WHERE stok_real > 0` | **Tidak memuat `cabang_id`**, padahal `pos_checkout` selalu memfilter `cabang_id`. Setelah isolasi, ubah jadi `(cabang_id, kode_obat, expired_date)` |
 | `master_barang` | `idx_barang_aktif`, `idx_barang_barcode`, `idx_barang_nama` | lihat 3.3 | Perlu `cabang_id` |
-| `master_supplier` | — | **tidak punya index selain PK & unique nama** | Setelah per cabang, tambahkan `(cabang_id, nama_supplier)` untuk `api:264` |
+| `master_supplier` | `master_supplier_nama_supplier_key` | `(nama_supplier)` — **tetap GLOBAL** (keputusan 3) | Tidak perlu diubah. Cari per cabang via tabel relasi `supplier_cabang` (PK `(cabang_id, kode_supplier)`) yang sudah ada sejak migrasi 2 |
 
 Catatan: `stok_batch` **sudah** punya `idx_stok_batch_cabang_obat (cabang_id, kode_obat)`
 — jadi separuh jalan sudah benar. Yang perlu diperbaiki hanya index FEFO-nya.

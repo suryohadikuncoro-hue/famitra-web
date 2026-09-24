@@ -467,11 +467,6 @@ function formUser(u) {
       ['Owner', 'Apoteker', 'Kasir'].map(function (r) {
         return '<option value="' + r + '"' + (u.Role === r ? ' selected' : '') + '>' + labelRole_(r) + '</option>';
       }).join('') + '</select></label>' +
-    '<label class="field"><span>Cabang</span><select id="fuCabang" class="inp">' +
-      [{ k: 'KARLA', n: 'Apotek Fa-Mitra Karla' }, { k: 'PUCUK', n: 'Apotek Fa-Mitra Pucuk' },
-        { k: 'KENDAL', n: 'Apotek Fa-Mitra Kendal' }, { k: 'PULE', n: 'Apotek Fa-Mitra Pule' }].map(function (c) {
-          return '<option value="' + c.k + '"' + ((u.Cabang_ID || 'KARLA') === c.k ? ' selected' : '') + '>' + c.n + '</option>';
-        }).join('') + '</select></label>' +
     '<label class="field"><span>Password' + (edit ? ' baru (kosongkan bila tidak diubah)' : '') +
       '</span><input id="fuPass" class="inp" type="password" placeholder="Minimal 6 karakter"></label>' +
     '<label class="field"><span>Status</span><select id="fuAktif" class="inp">' +
@@ -482,7 +477,7 @@ function formUser(u) {
       { label: 'Simpan akun', kelas: 'btn-primary', aksi: function () {
           api('user.simpan', {
             Username: val('fuUser'), Nama: val('fuNama'), Role: val('fuRole'),
-            Password: val('fuPass'), Aktif: val('fuAktif'), Cabang_ID: val('fuCabang')
+            Password: val('fuPass'), Aktif: val('fuAktif')
           }).then(function () {
             modalTutup(); toast('Akun tersimpan.'); muatUser();
           }).catch(function (e) { toast(e.message, true); });
