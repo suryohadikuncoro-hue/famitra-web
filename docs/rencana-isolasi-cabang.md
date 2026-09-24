@@ -11,9 +11,17 @@ batas 100 baris dan dilengkapi `index.csv` (unique index). Yang berubah:
 sudah diverifikasi ulang terhadap data lengkap itu. Enam koreksi dan satu temuan
 baru (temuan 15) dirinci di bagian 0.
 
+**Revisi 3 (25 Sep 2026)** — pemilik project sudah mengambil **8 keputusan**.
+Dokumen ini diperbarui mengikuti keputusan tersebut: bagian 0.1 memuat daftar
+keputusan beserta konsekuensinya, bagian 3.2 ditulis ulang total (supplier
+**tetap global** + tabel relasi `supplier_cabang`, bukan supplier per cabang),
+bagian 10 diganti menjadi daftar keputusan yang sudah final + sub-pertanyaan yang
+masih perlu jawaban. **Temuan 15 dikeluarkan dari lingkup PR ini** (keputusan 8).
+
 Dokumen ini menjelaskan cara membuat setiap cabang (KARLA, KENDAL, PUCUK, PULE)
-sepenuhnya mandiri: master barang dan supplier sendiri, stok dan transaksi
-sendiri, user sendiri, dan Owner yang hanya mengelola cabangnya sendiri.
+sepenuhnya mandiri: master barang sendiri (termasuk harga jual dan modal),
+daftar supplier sendiri (master supplier tetap global — keputusan 3), stok dan
+transaksi sendiri, user sendiri, dan Owner yang hanya mengelola cabangnya sendiri.
 
 > Catatan alur kerja: prefix branch `plan/` tidak ada di daftar AGENTS.md
 > (`feat/`, `fix/`, `refactor/`, `chore/`). Dipakai karena diminta eksplisit.
@@ -30,18 +38,91 @@ sebagian lagi bocor karena bug.**
 |---|---|
 | Tabel transaksi & stok (`trx_*`, `stok_batch`, `master_customer`, `biaya_operasional`, `promo_*`) | Sudah punya `cabang_id` (25 tabel, semua `NOT NULL`) |
 | `master_barang` (barang + harga jual) | **Global** — 1 baris dipakai semua cabang |
-| `master_supplier` | **Global** — tidak punya `cabang_id` sama sekali |
+| `master_supplier` | **Global** — tidak punya `cabang_id` sama sekali. **Tetap global** (keputusan 3); yang ditambah adalah tabel relasi `supplier_cabang` |
+| Harga jual & modal | **Global** — tidak bisa berbeda antar cabang. **Akan boleh berbeda** (keputusan 2) |
 | Nomor nota penjualan | Sudah berprefix cabang (`INV-<CABANG>-...`), tapi fungsi lama masih bisa membuat nomor global |
-| Nomor faktur pembelian | **Belum** per cabang (PK `trx_pembelian.no_faktur` global) |
+| Nomor faktur pembelian | **Belum** per cabang (PK `trx_pembelian.no_faktur` global) dan **diketik manual** oleh pengguna. Akan diberi prefix cabang (keputusan 4) |
 | Kode batch stok | **Belum** per cabang (`UNIQUE (kode_obat, kode_batch)` global) |
 | Default `cabang_id` | **14 kolom** punya `DEFAULT 'KARLA'` → insert yang lupa mengisi `cabang_id` **tidak gagal**, tapi mendarat di KARLA (lihat 4.3) |
-| Otorisasi cabang | 100% di kode Edge Function — RLS tidak efektif (lihat 4.5) |
-| Manajemen user | Owner lintas cabang, dan `cabang_id` user baru diambil dari **form**, bukan sesi |
-| Fitur refill & notifikasi | **Rusak total** karena salah besar/kecil huruf (temuan 15) — tidak terkait isolasi cabang, tapi ditemukan saat verifikasi ini |
+| Otorisasi cabang | 100% di kode Edge Function — RLS tidak efektif (lihat 4.5). **Tetap Model A** (keputusan 7) |
+| Manajemen user | Owner lintas cabang, dan `cabang_id` user baru diambil dari **form**, bukan sesi. PK `app_users` **tidak diubah** (keputusan 5) |
+| Fitur refill & notifikasi | **Rusak total** karena salah besar/kecil huruf (temuan 15) — **dikerjakan di PR terpisah** (keputusan 8) |
 
 Kesimpulan singkat: isolasi cabang sekarang bergantung pada **kode Edge Function
 saja**, bukan pada database. Itu sebabnya satu bug salah tulis string filter
 (temuan 8) bisa merusak data cabang lain.
+
+### 0.1 Keputusan pemilik project (25 Sep 2026)
+
+Delapan keputusan yang mengikat rencana ini. Konsekuensi teknisnya sudah
+diterapkan di bagian-bagian terkait.
+
+**1. `master_barang` — 137 barang tersedia di semua cabang.**
+PK `(cabang_id, kode_obat)`, `kode_obat` sama di semua cabang. → Bagian 3.1 dan 3.3
+sudah sesuai. Asumsi "137 baris sekarang milik KARLA" tetap dipakai untuk
+penyalinan, tapi hasilnya: **semua cabang punya 137 barang yang sama.**
+Cabang baru di kemudian hari = salin 137 baris yang sama (menjawab pertanyaan lama
+nomor 8).
+
+**2. Harga jual/modal boleh berbeda antar cabang. Yang boleh mengubah: Owner dan
+Apoteker (cabangnya sendiri). Kasir tidak.**
+→ Harga ikut tersalin saat penyalinan, lalu boleh menyimpang per cabang.
+Jalur perubahan harga ada **dua**, dan keduanya sudah dibatasi Owner + Apoteker di
+`PERM` (`api:50` `barang.simpan`, `api:66` `beli.simpan`):
+- `barang.simpan` (`api:229-234`) — mengubah `harga_modal`, `harga_jual_umum`,
+  `harga_khusus`, `harga_jual_mutasi`, `ppn`.
+- `purchase_save` — mengubah `harga_modal` dan `harga_jual_umum` dari faktur
+  pembelian (`harga_jual_umum_baru` di form). `harga_khusus` dan
+  `harga_jual_mutasi` sengaja **tidak** ditimpa faktur (lihat catatan di
+  `js_master.js:105-106`); perilaku itu dipertahankan.
+Kasir memang tidak punya menu maupun izin untuk keduanya, jadi keputusan ini
+**sudah terpenuhi oleh kode sekarang** — pekerjaannya adalah (a) menambahkan
+`cabang_id` pada kedua jalur itu supaya perubahan harga hanya menyentuh cabang
+sendiri, dan (b) memastikan tidak ada jalur ketiga.
+
+**3. `master_supplier` tetap GLOBAL** (tanpa `cabang_id`, PK tetap
+`kode_supplier`). Tambah tabel relasi per cabang `supplier_cabang
+(cabang_id, kode_supplier)` dengan FK ke `master_cabang` dan `master_supplier`.
+Tiap cabang hanya melihat/memakai supplier yang ada di daftarnya.
+→ Bagian 3.2 **ditulis ulang total** (sebelumnya berisi rencana supplier per
+cabang, sekarang batal). Ini juga menjawab temuan 14 tanpa mengubah
+`master_supplier` sama sekali.
+
+**4. Nomor faktur pembelian diberi prefix cabang, formatnya mengikuti nota
+penjualan. PK `trx_pembelian(no_faktur)` tetap global.**
+→ Bagian 5.2. Perlu diperhatikan: sekarang nomor faktur **diketik manual** oleh
+pengguna (`js_trx.js:41`, placeholder `FK-2026-0012`) dan langsung dipakai sebagai
+`no_faktur`. Mengikuti format nota penjualan berarti nomor dibuat **oleh fungsi**.
+Ada satu sub-pertanyaan yang belum terjawab — lihat bagian 10 poin A.
+
+**5. Username tetap unik global. PK `app_users` tidak diubah.**
+→ Menjawab pertanyaan lama nomor 5. Konsekuensinya 3 FK ke `app_users(username)`
+(`app_sessions.username`, `trx_retur_beli.created_by`, `trx_retur_beli.approved_by`)
+**tidak perlu diubah**, dan alur login `api:95` tidak disentuh. Bagian 6 tetap
+berlaku untuk pembatasan cabang (Owner hanya mengelola cabangnya sendiri).
+
+**6. Tabel lama berbahasa Inggris dan `create_sale_with_fefo` dipensiunkan HANYA
+jika terbukti tidak dipakai. Jangan hapus apa pun tanpa izin eksplisit terpisah.**
+→ Bagian 4.8 (baru) memuat prosedur pembuktiannya. **Tidak ada `DROP` apa pun di
+PR ini maupun di migrasi isolasi cabang.**
+
+**7. RLS tetap Model A (`service_role`). Otorisasi tetap di Edge Function, ditambah
+constraint database sebagai lapis kedua.**
+→ Bagian 4.5: Model B (migrasi ke Supabase Auth + claim `cabang_id`) **dibatalkan**
+dari rencana. Lapis kedua yang dipakai adalah **constraint** (PK/FK komposit,
+`NOT NULL`, `CHECK`, trigger validasi) — bukan policy RLS berbasis peran, karena
+sesi database aplikasi adalah `service_role` (lihat penjelasan jujurnya di 4.5).
+
+**8. Temuan 15 (refill/notifikasi, salah huruf besar/kecil) dikerjakan di PR
+TERPISAH. Ikuti constraint DB (huruf kecil), perbaiki kodenya.**
+→ Temuan 15 **dikeluarkan dari lingkup PR ini**. Rinciannya tetap disimpan di
+bagian 5.3 dan 7.2 sebagai catatan, dengan penanda jelas bahwa perbaikannya
+milik PR lain. Rekomendasi "ikuti constraint DB" yang sudah ditulis di Revisi 2
+**dikonfirmasi** oleh keputusan ini.
+
+**Aturan tetap yang berlaku untuk semuanya:** tidak ada `db push`, tidak ada
+deploy Edge Function, tidak ada `wrangler pages deploy`, dan tidak ada merge ke
+`main` tanpa izin eksplisit. Semua pengujian di lingkungan non-production.
 
 ### Koreksi dari Revisi 1
 
@@ -130,7 +211,10 @@ Dipakai lintas cabang oleh: `api:137` (cari barang), `api:213/264` (`barang.list
 
 **`master_supplier`** — 4 kolom: `kode_supplier` (PK), `nama_supplier`
 (`UNIQUE`), `telepon`, `alamat`. Tanpa `cabang_id`, tanpa FK cabang (`api:264`
-baca, `api:270` tulis).
+baca, `api:270` tulis). **Ini tetap begitu setelah isolasi cabang** — keputusan 3
+memilih master supplier tetap global, dan pemisahan per cabang dilakukan lewat
+tabel relasi baru `supplier_cabang` (lihat 3.2). Yang berubah hanya cara
+`beli.supplier` membacanya, bukan skemanya.
 
 Kedua tabel ini adalah **satu-satunya tabel hidup** yang tidak punya `cabang_id`.
 Tabel lain yang juga tidak punya `cabang_id` semuanya bukan bagian alur aplikasi:
@@ -231,16 +315,25 @@ lingkup PR ini.
 
 ## 2. Target akhir
 
-1. Setiap cabang punya **barang, harga, supplier, stok, transaksi, pelanggan, dan
-   user sendiri**.
+1. Setiap cabang punya **barang dan harga sendiri, daftar supplier sendiri, stok,
+   transaksi, pelanggan, dan user sendiri**. Master supplier tetap satu tabel
+   global (keputusan 3), yang berbeda per cabang adalah **daftar** yang boleh
+   dipakai.
 2. **Tidak ada satu pun query** di Edge Function yang membaca/menulis tabel
    bercabang tanpa filter `cabang_id` dari sesi.
 3. **Tidak ada fallback `|| 'KARLA'`** di jalur tulis. Kalau cabang tidak bisa
    ditentukan, transaksi harus **gagal**, bukan diam-diam masuk KARLA.
 4. Owner cabang X hanya melihat dan mengubah data cabang X, termasuk user.
+   Harga jual dan modal hanya boleh diubah Owner dan Apoteker cabang tersebut;
+   Kasir tidak (keputusan 2).
 5. Isolasi dijaga **dua lapis**: kode Edge Function **dan** constraint database
-   (PK/FK/unique komposit). Bug di kode tidak boleh cukup untuk merusak cabang lain.
+   (PK/FK/unique komposit, `NOT NULL`, `CHECK`, trigger validasi). Bug di kode
+   tidak boleh cukup untuk merusak cabang lain. Lapis database **tidak** memakai
+   policy RLS berbasis peran — lihat alasan jujurnya di 4.5 (keputusan 7).
 6. Tidak ada fungsi lama (overload) yang masih bisa dipanggil untuk menembus isolasi.
+7. **Tidak ada `DROP TABLE` / `DROP FUNCTION`** untuk tabel lama dan
+   `create_sale_with_fefo`. Pensiun hanya boleh dilakukan setelah terbukti tidak
+   dipakai **dan** dengan izin eksplisit terpisah (keputusan 6).
 
 ---
 
@@ -250,9 +343,11 @@ lingkup PR ini.
 
 Perubahan struktur:
 
-1. Tambah `cabang_id text`, backfill `'KARLA'` untuk 137 baris yang ada
-   (asumsi: data sekarang milik KARLA — **perlu konfirmasi pemilik project**),
-   lalu `SET NOT NULL` dan tambah FK ke `master_cabang(kode_cabang)`.
+1. Tambah `cabang_id text`, backfill `'KARLA'` untuk 137 baris yang ada.
+   **Keputusan 1 mengonfirmasi** bahwa 137 barang itu memang tersedia di semua
+   cabang dengan `kode_obat` yang sama, jadi backfill `'KARLA'` untuk baris lama
+   sudah benar (KARLA adalah cabang asal data) dan langsung disusul penyalinan di
+   poin 3. Setelah itu `SET NOT NULL` dan tambah FK ke `master_cabang(kode_cabang)`.
 2. Ganti PK `kode_obat` → **`PRIMARY KEY (cabang_id, kode_obat)`**.
 3. Salin 137 baris KARLA ke KENDAL, PUCUK, PULE (bagian 3.3).
 4. Tambah index `(cabang_id, aktif, nama_obat)` untuk pencarian `api:137`, dan
@@ -262,52 +357,146 @@ Yang **tidak** berubah: `kode_obat` tetap sama di semua cabang. Ini penting supa
 laporan, resep, dan riwayat transaksi tetap bisa dibandingkan antar cabang, dan
 supaya migrasi salinan tidak perlu memetakan ulang kode.
 
-Yang perlu keputusan pemilik project: apakah harga jual boleh **berbeda** antar
-cabang? Kalau ya, skema ini mendukungnya (harga ikut tersalin per cabang lalu
-diubah lokal). Kalau tidak, tambahkan trigger/validasi agar harga tidak
-menyimpang tanpa sengaja.
+**Harga boleh berbeda antar cabang (keputusan 2).** Konsekuensinya:
 
-### 3.2 `master_supplier`
+- Harga ikut **tersalin** saat penyalinan 137 barang (sebagai titik awal yang sama),
+  lalu boleh menyimpang per cabang.
+- Yang boleh mengubah: **Owner dan Apoteker, hanya untuk cabangnya sendiri.**
+  **Kasir tidak boleh.** Ini sudah dipenuhi `PERM` sekarang (`api:50`
+  `barang.simpan` = Owner+Apoteker, `api:66` `beli.simpan` = Owner+Apoteker), jadi
+  yang perlu dikerjakan adalah menambahkan `cabang_id` pada kedua jalur tulis itu:
+  - `barang.simpan` (`api:229-234`): POST harus mengirim `cabang_id` dari sesi, dan
+    PATCH harus `?kode_obat=eq.X&cabang_id=eq.Y` (sekarang hanya `kode_obat`).
+  - `purchase_save`: `UPDATE master_barang ... WHERE kode_obat = ...` harus ditambah
+    `AND cabang_id = v_cabang_id` (lihat 5.2).
+- `harga_khusus` dan `harga_jual_mutasi` **tetap** hanya bisa diubah dari halaman
+  Master Barang; faktur pembelian tidak menimpanya (perilaku sekarang, lihat catatan
+  di `js_master.js:105-106`). Dipertahankan, sekarang per cabang.
+- **Lapis database tidak bisa memeriksa peran.** Karena sesi aplikasi adalah
+  `service_role`, tidak ada cara di level database untuk membedakan Owner/Apoteker
+  vs Kasir (lihat 4.5). Yang bisa ditambahkan di level database hanyalah keutuhan
+  nilai, bukan izin: `CHECK (harga_modal >= 0)`, `CHECK (harga_jual_umum >= 0)`,
+  `CHECK (harga_khusus >= 0)`, `CHECK (harga_jual_mutasi >= 0)`, dan
+  `CHECK (cabang_id IS NOT NULL)`. `master_barang` sekarang **tidak punya** satu pun
+  CHECK untuk harga (hanya `master_barang_aktif_check`), jadi ini penambahan nyata.
+  Otorisasi peran tetap **hanya** di Edge Function — dan itu konsisten dengan
+  keputusan 7.
 
-Perubahan struktur:
+### 3.2 Supplier — `master_supplier` tetap global + tabel relasi `supplier_cabang`
 
-1. Tambah `cabang_id text NOT NULL` + FK ke `master_cabang(kode_cabang)`.
-2. PK `kode_supplier` → **`PRIMARY KEY (cabang_id, kode_supplier)`**.
-3. `UNIQUE (nama_supplier)` → **`UNIQUE (cabang_id, nama_supplier)`**. Tanpa ini,
-   cabang lain tidak bisa mendaftarkan supplier dengan nama yang sama.
-4. Salin daftar supplier KARLA ke tiga cabang lain (jumlah baris perlu dihitung
-   dari database; struktur sudah lengkap tapi jumlah baris belum).
-5. **Tidak ada FK yang perlu diubah**, karena memang belum ada. Hari ini
-   `trx_pembelian.supplier` dan `trx_retur_beli.supplier` hanyalah kolom `text`
-   **tanpa referential integrity sama sekali** — bukan FK ke `master_supplier`.
-   (Koreksi dari versi sebelumnya: dokumen ini sempat menyebut
-   `trx_pembelian.supplier` sebagai FK. Hasil verifikasi lengkap: tidak ada satu
-   pun FK ke `master_supplier` di seluruh database. Yang ada hanya
-   `purchases.supplier_code → suppliers(code)` dan
-   `purchase_returns.supplier_code → suppliers(code)`, keduanya di tabel lama
-   berbahasa Inggris.)
-   Konsekuensinya ini justru **peluang perbaikan**: setelah `master_supplier` per
-   cabang, tambahkan FK komposit `trx_pembelian (cabang_id, supplier) →
-   master_supplier (cabang_id, kode_supplier)` dan hal yang sama untuk
-   `trx_retur_beli`. Itu menutup celah yang sekarang tidak dijaga siapa pun.
+**Keputusan 3 mengubah rencana bagian ini secara total.** Rencana lama (tambah
+`cabang_id` ke `master_supplier`, PK jadi komposit) **dibatalkan**. Yang dipakai
+sekarang: master supplier tetap satu tabel global, dan keanggotaan per cabang
+diatur tabel relasi.
 
-Yang perlu keputusan: apakah supplier memang harus dipisah per cabang? Hari ini
-`api:264` membaca seluruh `master_supplier` tanpa filter, dan `api:270` menulis
-tanpa `cabang_id`. Kalau supplier bersama (satu perusahaan melayani 4 cabang),
-alternatifnya adalah membiarkannya global sebagai master bersama dan hanya
-menambahkan **daftar supplier per cabang** sebagai tabel penghubung. Rencana ini
-mengikuti permintaan: **supplier per cabang**.
+**Yang TIDAK berubah pada `master_supplier`:**
 
-Catatan tambahan: `master_supplier.nama_supplier` sekarang unik **global**, jadi
-kalau supplier per cabang dijalankan, constraint itu wajib diganti lebih dulu —
-kalau tidak, migrasi penyalinan data akan langsung gagal saat cabang kedua
-mendaftarkan supplier dengan nama yang sama.
+- Kolomnya tetap 4: `kode_supplier` (PK), `nama_supplier`, `telepon`, `alamat`.
+- Tidak ada `cabang_id`, tidak ada FK cabang.
+- `master_supplier_pkey PRIMARY KEY (kode_supplier)` — tetap.
+- `master_supplier_nama_supplier_key UNIQUE (nama_supplier)` — tetap **global**.
+  Konsekuensi yang perlu disadari: dua cabang **tidak bisa** punya dua baris
+  supplier dengan nama sama. Dengan desain relasi ini itu justru benar — satu
+  supplier global (satu `kode_supplier`, satu nama) bisa dipakai beberapa cabang
+  lewat beberapa baris `supplier_cabang`. Yang tidak boleh adalah dua baris
+  `master_supplier` bernama sama.
+- Tidak ada index yang perlu diubah (sekarang hanya PK + unique nama).
+
+**Tabel baru `supplier_cabang`:**
+
+```sql
+create table if not exists public.supplier_cabang (
+  cabang_id     text not null,
+  kode_supplier text not null,
+  created_at    timestamptz not null default now(),
+  constraint supplier_cabang_pkey primary key (cabang_id, kode_supplier),
+  constraint supplier_cabang_cabang_fk
+    foreign key (cabang_id) references public.master_cabang(kode_cabang),
+  constraint supplier_cabang_supplier_fk
+    foreign key (kode_supplier) references public.master_supplier(kode_supplier)
+);
+
+-- wajib menurut AGENTS.md untuk setiap tabel baru di schema public
+grant select, insert, update, delete on public.supplier_cabang to service_role;
+alter table public.supplier_cabang enable row level security;
+
+-- Aplikasi hanya lewat service_role, jadi policy ini tidak dipakai aplikasi.
+-- Tetap dibuat supaya tidak ada akses terbuka kalau suatu saat ada key anon.
+create policy supplier_cabang_no_anon on public.supplier_cabang
+  for all to anon using (false) with check (false);
+
+create index if not exists supplier_cabang_supplier_idx
+  on public.supplier_cabang (kode_supplier);
+```
+
+Catatan: `supplier_cabang` **tidak** butuh kolom `aktif` — cukup ada barisnya atau
+tidak. Kalau nanti perlu menonaktifkan supplier untuk satu cabang tanpa
+menghapus relasinya, kolom itu bisa ditambahkan belakangan (additive, murah).
+
+**FK `supplier_cabang.kode_supplier → master_supplier.kode_supplier` juga berguna
+teknis:** dengan FK itu, PostgREST bisa memakai *embedded resource* sehingga satu
+query cukup untuk mengambil daftar supplier satu cabang:
+
+```
+supplier_cabang?cabang_id=eq.KENDAL&select=kode_supplier,master_supplier(nama_supplier,telepon,alamat)&limit=200
+```
+
+**Perubahan Edge Function `api` yang diperlukan:**
+
+1. `beli.supplier` (`api:264`) — sekarang membaca **seluruh** `master_supplier`
+   tanpa filter. Harus jadi query ke `supplier_cabang` difilter `cabang_id` sesi
+   (dengan embedding di atas), lalu dipetakan ke bentuk yang sama
+   (`Kode_Supplier`, `Nama_Supplier`, `Telepon`, `Alamat`) supaya frontend
+   `js_trx.js:142-148` tidak perlu berubah selain menambahkan `value` pada
+   `<option>` (lihat poin di bawah).
+2. `beli.simpanSupplier` (`api:270`) — sekarang hanya `POST` ke `master_supplier`
+   dengan kode `SUP-<base36>`. Harus jadi dua langkah:
+   - cari dulu `master_supplier` berdasarkan `nama_supplier`;
+   - kalau **sudah ada**, jangan `POST` (akan ditolak `UNIQUE (nama_supplier)`) —
+     cukup tambahkan baris `supplier_cabang` untuk cabang sesi;
+   - kalau **belum ada**, `POST` ke `master_supplier` lalu tambahkan baris
+     `supplier_cabang`.
+   Tanpa langkah "cari dulu", cabang kedua yang menambahkan supplier dengan nama
+   sama akan mendapat error dari database. Ini kasus nyata: satu PBF melayani
+   beberapa cabang.
+3. `purchase_save` — validasi bahwa supplier yang dipakai memang ada di daftar
+   cabang itu (lihat 5.2).
+
+**Satu temuan penting yang memengaruhi desain validasi.** Hari ini
+`trx_pembelian.supplier` menyimpan **nama** supplier, bukan kodenya. Buktinya:
+`js_trx.js:146` membuat `<option>` **tanpa atribut `value`**, sehingga
+`val('blSupplier')` mengembalikan teks nama, lalu `js_trx.js:175` mengirimnya
+sebagai `Supplier`, dan `purchase_save` menyimpannya apa adanya ke kolom
+`supplier`. Hal yang sama berlaku untuk `trx_retur_beli.supplier`. Konsekuensinya,
+"validasi supplier ada di daftar cabang" harus dilakukan lewat **nama**, atau kita
+harus memutuskan menyimpan **kode**. Lihat bagian 10 poin B.
+
+**Penanaman data awal (`supplier_cabang` perlu diisi).** Setelah tabel dibuat,
+`supplier_cabang` masih kosong, sehingga kalau `beli.supplier` langsung difilter,
+**semua cabang akan kehilangan daftar supplier-nya** dan form pembelian jadi kosong.
+Perlu keputusan penanaman — lihat bagian 10 poin C.
+
+**Temuan 14 jadi selesai tanpa mengubah `master_supplier`.** Temuan 14 dulu
+berbunyi "`master_supplier` tanpa `cabang_id`, daftar supplier semua cabang
+terbaca". Dengan `beli.supplier` yang difilter lewat `supplier_cabang`, kebocoran
+itu tertutup tanpa menyentuh skema `master_supplier` sama sekali.
+
+**Tidak ada FK ke `master_supplier` di seluruh database** (terverifikasi: 0
+kecocokan di `constraint.csv` lengkap). `trx_pembelian.supplier` dan
+`trx_retur_beli.supplier` hanyalah kolom `text` tanpa referential integrity. Yang
+ada hanya `purchases.supplier_code → suppliers(code)` dan
+`purchase_returns.supplier_code → suppliers(code)`, keduanya di tabel lama
+berbahasa Inggris yang tidak dipakai aplikasi. Jadi tidak ada FK lama yang perlu
+diubah; kalau nanti integritasnya mau ditutup, itu **FK baru** dan bukan bagian
+dari keputusan ini.
 
 ### 3.3 Penyalinan 137 barang ke KARLA, KENDAL, PUCUK, PULE
 
-Angka 137 berasal dari pemilik project dan **belum diverifikasi** — struktur
-database sudah lengkap di snapshot, tapi jumlah baris belum. Verifikasi jumlah dulu
-sebelum menjalankan migrasi:
+Angka 137 sudah **dikonfirmasi pemilik project** (keputusan 1: 137 barang tersedia
+di semua cabang). Yang **belum diverifikasi** hanyalah jumlah baris di database itu
+sendiri — snapshot ini tidak memuat jumlah baris. Jadi tetap verifikasi dulu sebelum
+menjalankan migrasi, supaya kalau angkanya berbeda (mis. ada barang nonaktif yang
+tidak dihitung) ketahuan sebelum data disalin:
 
 ```sql
 select cabang_id, count(*) from public.master_barang group by 1 order by 1;
@@ -386,11 +575,12 @@ sebagian keunikan berbentuk unique index, bukan constraint).
 | Tabel | Sekarang (terverifikasi) | Harus jadi | Alasan |
 |---|---|---|---|
 | `master_barang` | PK `(kode_obat)` | PK `(cabang_id, kode_obat)` | 1 kode obat per cabang |
-| `master_supplier` | PK `(kode_supplier)`, UNIQUE `(nama_supplier)` | PK `(cabang_id, kode_supplier)`, UNIQUE `(cabang_id, nama_supplier)` | supplier per cabang |
+| `master_supplier` | PK `(kode_supplier)`, UNIQUE `(nama_supplier)` | **Tidak berubah** (keputusan 3) | master supplier tetap global |
+| `supplier_cabang` (baru) | belum ada | PK `(cabang_id, kode_supplier)` + FK ke `master_cabang` dan `master_supplier` | daftar supplier per cabang (keputusan 3) |
 | `stok_batch` | UNIQUE `(kode_obat, kode_batch)` | UNIQUE `(cabang_id, kode_obat, kode_batch)` | **penghalang utama** — batch sama harus boleh ada di 2 cabang |
-| `trx_penjualan` | PK `(no_nota)`, **tidak ada** unique `(cabang_id, no_nota)` | PK `(no_nota)` **atau** `(cabang_id, no_nota)` | perlu keputusan (4.2) |
-| `trx_pembelian` | PK `(no_faktur)`, **tidak ada** unique `(cabang_id, no_faktur)` | PK `(no_faktur)` **atau** `(cabang_id, no_faktur)` | perlu keputusan (4.2) |
-| `app_users` | PK `(username)` | PK `(username)` **atau** `(cabang_id, username)` | perlu keputusan (bagian 6) |
+| `trx_penjualan` | PK `(no_nota)`, **tidak ada** unique `(cabang_id, no_nota)` | PK `(no_nota)` tetap global; tambah unique `(cabang_id, tanggal, no_nota)` sebagai pengaman | nomor nota tetap unik global, tapi keunikan per cabang belum dijaga database |
+| `trx_pembelian` | PK `(no_faktur)`, **tidak ada** unique `(cabang_id, no_faktur)` | PK `(no_faktur)` **tetap global** (keputusan 4) | nomor faktur diberi prefix cabang, PK tidak diubah |
+| `app_users` | PK `(username)` | **Tidak berubah** (keputusan 5) | username tetap unik global |
 | `master_customer` | PK `(id)`, unique index `uq_master_customer_cabang_wa (cabang_id, nomor_wa)` **sudah ada** | **tidak berubah** | dipakai `ON CONFLICT` di `loyalty_after_sale` |
 | `master_cabang` | PK `(kode_cabang)`, UNIQUE `(nama_cabang)` | **tidak berubah** | 13 FK mengacu ke sini |
 
@@ -457,22 +647,34 @@ integritas hutang ke faktur dijaga kode `hutang/index.ts` (yang memang selalu
 memfilter `cabang_id` dari sesi). Dokumen versi sebelumnya menyebut kolom ini
 sebagai FK — itu salah.
 
-**Tidak ada FK ke `master_supplier` sama sekali** (lihat 3.2) — jadi kalau supplier
-dipisah per cabang, FK-nya perlu **dibuat baru**, bukan diubah.
+**Tidak ada FK ke `master_supplier` sama sekali** (lihat 3.2). Jadi rencana lama
+"ubah FK supplier jadi komposit" **batal** (keputusan 3: supplier tetap global).
+Yang **dibuat baru** adalah dua FK di tabel `supplier_cabang`:
 
-**Rekomendasi nomor dokumen**: **pertahankan PK global** untuk `no_nota` dan
-`no_faktur` (nomor unik sepanjang masa, semua cabang), karena:
+- `supplier_cabang.cabang_id → master_cabang(kode_cabang)`
+- `supplier_cabang.kode_supplier → master_supplier(kode_supplier)`
 
-- `pos_checkout` versi baru sudah memberi prefix cabang → unik secara konstruksi;
-- nomor nota yang unik global lebih mudah dicari saat pelanggan komplain;
-- mengubah PK berarti mengubah 5+ FK dan menambah risiko migrasi tanpa manfaat
-  isolasi yang nyata.
+Keduanya FK baru pada tabel baru, jadi tidak ada risiko mengubah relasi yang sudah
+ada. Tidak ada FK lama yang perlu disentuh untuk urusan supplier.
 
-Yang tetap perlu diperbaiki: `purchase_save` memeriksa duplikat per cabang
-(`no_faktur AND cabang_id`) padahal PK-nya global. Perbaikannya: pemeriksaan
-duplikat tetap per cabang (ramah pengguna), tapi pesan error harus jelas bahwa
-nomor faktur bentrok dengan cabang lain. Atau: beri prefix cabang pada nomor
-faktur seperti nota penjualan.
+**Nomor dokumen — sudah diputuskan: PK tetap global, nomor diberi prefix cabang.**
+
+- `trx_penjualan`: PK `(no_nota)` tetap global. Nomor sudah berprefix cabang dari
+  `pos_checkout` versi baru (`INV-<CABANG>-<YYYYMMDD>-####`).
+- `trx_pembelian`: PK `(no_faktur)` **tetap global** (keputusan 4), dan nomornya
+  **diberi prefix cabang** mengikuti format nota penjualan. Rincian di 5.2.
+
+Alasannya: nomor unik global lebih mudah dicari saat pelanggan/supplier komplain,
+dan mengubah PK berarti mengubah 5 FK sekaligus (`trx_penjualan_detail.no_nota`,
+`trx_retur_jual.no_nota_asal`, `promo_redemptions.invoice_no`,
+`trx_pembelian_detail.no_faktur`, `trx_retur_beli.no_faktur_asal`) tanpa manfaat
+isolasi yang nyata.
+
+Yang **tetap perlu ditambahkan** sebagai pengaman lapis database: unique index
+`(cabang_id, tanggal, no_nota)` pada `trx_penjualan`. Sekarang keunikan nomor per
+cabang bergantung **sepenuhnya** pada format string di `pos_checkout`; tidak ada
+satu pun index yang mencegah dua baris KENDAL bernomor sama. Unique index itu
+murah dan menutup celah tersebut.
 
 ### 4.3 Default `cabang_id` yang berbahaya
 
@@ -582,19 +784,34 @@ Ini temuan struktural yang paling penting, dan bukan soal bug:
 
 Artinya: **seluruh lapisan RLS saat ini tidak berfungsi untuk aplikasi.** Isolasi
 cabang hari ini 100% bergantung pada kode Edge Function. Tidak ada policy yang
-perlu "diubah" — yang perlu dilakukan adalah **memutuskan model**:
+perlu "diubah" — modelnya sudah **diputuskan** (keputusan 7):
 
-- **Model A (rekomendasi untuk sekarang)**: akui `service_role` sebagai satu-satunya
-  jalur data. Pertahankan otorisasi di Edge Function, tambahkan constraint
-  database (PK/FK komposit + trigger validasi) sebagai lapis kedua. Untuk setiap
-  tabel baru: `GRANT` ke `service_role`, `enable row level security`, dan policy
-  eksplisit — sesuai aturan AGENTS.md — meski policy-nya hanya berlaku untuk
-  `authenticated`/`anon` yang tidak dipakai aplikasi. RLS tetap "menutup pintu"
-  kalau suatu saat ada key anon yang bocor.
-- **Model B (jangka menengah)**: migrasi ke Supabase Auth, taruh `cabang_id` di
-  JWT claim, dan tulis policy `cabang_id = (auth.jwt() ->> 'cabang_id')`. Ini
-  perubahan besar pada alur login (`js_core.js`, `api:94-104`) dan **wajib
-  konfirmasi pemilik project** karena menyentuh alur login dan hak akses.
+- **Model A — DIPILIH.** Akui `service_role` sebagai satu-satunya jalur data.
+  Otorisasi tetap di Edge Function, ditambah constraint database sebagai lapis
+  kedua. Untuk setiap tabel baru (termasuk `supplier_cabang`): `GRANT` ke
+  `service_role`, `enable row level security`, dan policy eksplisit — sesuai
+  aturan AGENTS.md — meski policy-nya tidak dipakai aplikasi. RLS tetap "menutup
+  pintu" kalau suatu saat ada key anon yang bocor.
+- ~~**Model B** (migrasi ke Supabase Auth + claim `cabang_id` di JWT)~~ —
+  **DIBATALKAN**. Tidak dikerjakan dan tidak direncanakan lagi.
+
+**Batas jujur Model A — apa yang bisa dan tidak bisa dijaga database.** Ini perlu
+dicatat supaya tidak ada harapan keliru soal "lapis kedua":
+
+| Jenis aturan | Bisa dijaga database? | Kenapa |
+|---|---|---|
+| Kolom wajib terisi (`cabang_id NOT NULL`) | **Ya** | `NOT NULL` tidak peduli peran |
+| Relasi antar tabel (`(cabang_id, kode_obat)` harus ada) | **Ya** | FK komposit |
+| Keunikan per cabang | **Ya** | unique index komposit |
+| Rentang nilai (harga ≥ 0, qty > 0) | **Ya** | `CHECK` |
+| Kesamaan cabang induk–anak (detail vs notanya) | **Ya** | trigger validasi |
+| **Siapa** yang boleh mengubah (Owner/Apoteker vs Kasir) | **TIDAK** | sesi database aplikasi adalah `service_role`; `auth.uid()` selalu `NULL`, sehingga `has_app_role()` selalu `false` untuk trafik aplikasi |
+
+Konsekuensi praktis untuk keputusan 2 (harga): pembatasan "hanya Owner dan
+Apoteker" **hanya bisa ditegakkan di Edge Function**. Tidak ada identitas peran
+yang sampai ke database, jadi constraint tidak bisa menggantikan otorisasi Edge
+Function — yang bisa ditambahkan database hanyalah penjaga keutuhan nilai
+(`CHECK` harga ≥ 0), bukan penjaga izin.
 
 **Keterbatasan yang jujur:** snapshot ini **tidak memuat status RLS** (kolom
 `pg_class.relrowsecurity` tidak ikut diekspor). Jadi dari CSV kita bisa memastikan
@@ -638,14 +855,21 @@ Belum dibuat di PR ini. Urutan yang direncanakan:
 
 | # | File | Isi |
 |---|---|---|
-| 1 | `..._master_barang_per_cabang.sql` | kolom + FK cabang, PK komposit, salin 137×3, ganti 3 index lama |
-| 2 | `..._master_supplier_per_cabang.sql` | kolom + FK cabang, PK & unique `(cabang_id, nama_supplier)` komposit, **buat** FK komposit baru dari `trx_pembelian` dan `trx_retur_beli` |
+| 1 | `..._master_barang_per_cabang.sql` | kolom + FK cabang, PK komposit, salin 137×3, ganti 3 index lama, tambah `CHECK` harga ≥ 0 |
+| 2 | `..._supplier_cabang.sql` | **tabel baru** `supplier_cabang` + PK komposit + 2 FK + index + `GRANT`/RLS/policy + penanaman data awal (menunggu keputusan bagian 10 poin C) |
 | 3 | `..._stok_batch_unik_per_cabang.sql` | unique `(cabang_id, kode_obat, kode_batch)`, FK komposit ke `master_barang`; `refill_programs`; penanganan `promo_bundle_items` |
-| 4 | `..._cabang_id_wajib.sql` | hapus default `'KARLA'` di **14 kolom**; tambah unique `(cabang_id, no_nota)`/`(cabang_id, no_faktur)` kalau diputuskan |
-| 5 | `..._pos_fungsi_cabang.sql` | kelima fungsi kasir + `drop function` overload lama |
+| 4 | `..._cabang_id_wajib.sql` | hapus default `'KARLA'` di **14 kolom**; tambah unique `(cabang_id, tanggal, no_nota)` pada `trx_penjualan` |
+| 5 | `..._pos_fungsi_cabang.sql` | kelima fungsi kasir + `drop function` **overload lama saja** (7-param `pos_checkout`, 7-param `purchase_save`) |
 | 6 | `..._rls_dan_hak_akses.sql` | `GRANT` + RLS + policy untuk tabel yang belum punya; `revoke execute` untuk fungsi `SECURITY DEFINER` |
 
 Setiap file wajib memuat blok rollback sebagai komentar di akhir file.
+
+**Batas tegas:** tidak ada satu pun dari enam file itu yang boleh memuat
+`DROP TABLE`, `TRUNCATE`, atau `DROP FUNCTION` untuk tabel lama berbahasa Inggris
+dan `create_sale_with_fefo` (keputusan 6). Satu-satunya `DROP` yang diizinkan
+adalah `DROP FUNCTION` untuk **dua overload lama** di file 5, karena fungsi itu
+bagian dari jalur aplikasi yang sedang diperbaiki dan masih bisa dipanggil untuk
+menembus isolasi. Bahkan itu pun sebaiknya dikonfirmasi saat review.
 
 ### 4.7 Inventaris unique index (dari `index.csv`)
 
@@ -678,6 +902,74 @@ Index non-unique yang juga perlu perhatian karena dipakai jalur panas:
 
 Catatan: `stok_batch` **sudah** punya `idx_stok_batch_cabang_obat (cabang_id, kode_obat)`
 — jadi separuh jalan sudah benar. Yang perlu diperbaiki hanya index FEFO-nya.
+
+### 4.8 Pensiun tabel lama & `create_sale_with_fefo` — prosedur pembuktian
+
+**Keputusan 6: pensiun hanya jika terbukti tidak dipakai, dan tidak ada
+penghapusan tanpa izin eksplisit terpisah.** Jadi bagian ini **bukan** rencana
+penghapusan — ini prosedur untuk mengumpulkan bukti, supaya nanti bisa diputuskan
+dengan data, bukan dugaan.
+
+**Bukti dari sisi kode — sudah dikumpulkan, hasilnya bersih:**
+
+| Pemeriksaan | Hasil |
+|---|---|
+| Nama tabel lama (`products`, `sales`, `sale_items`, `purchases`, `purchase_items`, `purchase_returns`, `purchase_return_items`, `sales_returns`, `sales_return_items`, `stock_batches`, `stock_counts`, `customers`, `suppliers`, `profiles`, `operating_expenses`) dirujuk di `supabase/functions/` dan `public/` | **0 kemunculan** untuk semuanya |
+| `create_sale_with_fefo` disebut di kode | **0 kemunculan** (hanya ada di `supabase/schema/fungsi.csv` dan dokumen ini) |
+| RPC yang benar-benar dipanggil Edge Function | hanya **5**: `pos_checkout`, `purchase_save`, `generate_refill_reminders`, `pos_checkout_promo`, `pos_checkout_bundle` |
+| `public/*.js` mengakses Supabase langsung (`.from(`, `/rest/v1/`) | **tidak ada** — semua lewat Edge Function |
+
+Artinya dari sisi aplikasi yang ada di repo ini, tabel lama dan
+`create_sale_with_fefo` memang tidak dipakai.
+
+**Bukti dari sisi database — belum bisa diambil dari sesi ini, wajib dijalankan
+sebelum ada keputusan pensiun:**
+
+```sql
+-- 1. pernah dipanggil lewat aplikasi? (activity_log mencatat nama fungsi)
+select fungsi, count(*), max(created_at)
+from public.activity_log group by 1 order by 2 desc;
+
+-- 2. ada aktivitas nyata? (statistik sejak terakhir reset, bukan permanen)
+select relname, n_tup_ins, n_tup_upd, n_tup_del, seq_scan, idx_scan, last_vacuum
+from pg_stat_user_tables
+where relname in ('products','sales','sale_items','purchases','purchase_items',
+  'purchase_returns','purchase_return_items','sales_returns','sales_return_items',
+  'stock_batches','stock_counts','customers','suppliers','operating_expenses')
+order by relname;
+
+-- 3. ada objek lain yang bergantung padanya? (view, trigger, policy, FK)
+select dependent.relname as objek_bergantung, dependent.relkind,
+       pg_get_constraintdef(con.oid) as definisi
+from pg_constraint con
+join pg_class dependent on dependent.oid = con.conrelid
+join pg_class target    on target.oid    = con.confrelid
+where target.relname in ('products','customers','suppliers','profiles')
+order by 1;
+
+select schemaname, viewname from pg_views where definition ilike '%stock_batches%'
+   or definition ilike '%products%' or definition ilike '%sales%';
+```
+
+**Yang sudah diketahui pasti dari snapshot lengkap, dan penting untuk keputusan
+pensiun:** `profiles` **tidak bisa** dipensiunkan sendirian, karena masih menjadi
+target FK dari empat tabel (`operating_expenses.officer_id`,
+`purchases.officer_id`, `sales.cashier_id`, `stock_counts.officer_id`). Rantai
+ketergantungan antar tabel lama cukup rapat: `sales` ← `sale_items`,
+`sales_returns`; `purchases` ← `purchase_items`, `purchase_returns`;
+`products` ← `sale_items`, `purchase_items`, `stock_batches`, `stock_counts`;
+`customers` ← `sales`, `sales_returns`; `suppliers` ← `purchases`,
+`purchase_returns`. Jadi pensiun berarti **satu paket besar**, bukan satu per satu.
+
+**Yang juga perlu dicek di luar repo:** apakah ada yang memakai tabel lama lewat
+REST langsung (dashboard Supabase, n8n, Google Sheets, atau skrip lain). Repo ini
+tidak bisa membuktikannya. **Pemilik project perlu mengonfirmasi.**
+
+**Rencana untuk PR ini: tidak ada apa pun yang dikerjakan.** Tabel lama dan
+`create_sale_with_fefo` dibiarkan apa adanya. Kalau nanti terbukti tidak dipakai
+dan pemilik memberi izin terpisah, pensiunnya dibuat sebagai PR tersendiri dengan
+urutan: cabut dulu dari `policy.csv`/RLS → baru `DROP`, plus backup penuh sebelum
+eksekusi.
 
 ---
 
@@ -745,14 +1037,46 @@ Yang berubah:
    tapi `stok_batch` unique-nya masih global (`kode_obat, kode_batch`). Kalau
    batch yang sama sudah ada di cabang lain, `INSERT` akan gagal karena unique
    global. **Migrasi 3 wajib jalan sebelum migrasi 5.**
-5. **Nomor faktur**: pemeriksaan duplikat sudah per cabang; PK tetap global
-   (lihat rekomendasi 4.2). Pertimbangkan memberi prefix cabang pada nomor faktur.
-6. **Supplier**: setelah `master_supplier` per cabang, validasi bahwa `p_supplier`
-   benar-benar milik `v_cabang_id` (sekarang tidak diperiksa sama sekali).
+5. **Nomor faktur diberi prefix cabang (keputusan 4).** Sekarang nomor faktur
+   **diketik pengguna** (`js_trx.js:41`) dan langsung dipakai sebagai `no_faktur`.
+   Mengikuti format nota penjualan berarti nomor dibuat **oleh fungsi**:
+
+   ```
+   nota penjualan (sekarang):  INV-<CABANG>-<YYYYMMDD>-####
+   faktur pembelian (rencana): FK-<CABANG>-<YYYYMMDD>-####
+   ```
+
+   dengan `####` = `count(*) + 1` untuk cabang + tanggal itu (pola sama dengan
+   `pos_checkout`). PK `trx_pembelian(no_faktur)` tetap global. Akibatnya:
+   - Pemeriksaan duplikat jadi sederhana: `exists (... where no_faktur = ...)` —
+     tanpa perlu per cabang, karena nomornya sudah memuat cabang.
+   - Input `blFaktur` di form pembelian tidak lagi menjadi nomor nota. Lihat
+     bagian 10 poin A untuk sub-keputusan nomor faktur dari supplier.
+   - `pos_checkout` memakai `pg_advisory_xact_lock(hashtext('pos_checkout'))` yang
+     mengunci **semua** cabang sekaligus. Untuk faktur, pakai kunci per cabang
+     (`hashtext('purchase_save:'||v_cabang_id)`) supaya cabang tidak saling
+     menunggu, dan pastikan `count(*)+1` tetap benar di bawah konkurensi.
+6. **Supplier**: validasi bahwa supplier yang dipakai ada di **daftar cabang**
+   `v_cabang_id` (lewat `supplier_cabang`). Sekarang tidak diperiksa sama sekali.
+   Perlu diperhatikan: `p_supplier` berisi **nama**, bukan kode (lihat 3.2), jadi
+   validasinya harus lewat nama — kecuali diputuskan menyimpan kode (bagian 10
+   poin B).
 7. **Hapus overload 7 parameter** (versi lama: cek faktur tanpa cabang, tidak
    menulis `cabang_id` ke `trx_pembelian`/`trx_pembelian_detail`/`stok_batch`).
+8. **Tambah `CHECK` harga ≥ 0** pada `master_barang` (lihat 3.1) — bukan urusan
+   `purchase_save` langsung, tapi jalur ini menulis harga jadi perlu ikut diuji.
 
 ### 5.3 `generate_refill_reminders(p_cabang_id DEFAULT NULL)`
+
+> **Dua lingkup berbeda di bagian ini (keputusan 8).** Bagian 5.3 ini memuat dua
+> hal yang **tidak** dikerjakan di PR yang sama:
+> - **Milik PR ini:** parameter cabang dijadikan wajib dari aplikasi, arti `NULL`
+>   dipersempit, nama cabang di teks pesan, FK komposit `refill_programs`, dan
+>   `revoke execute`.
+> - **Milik PR TERPISAH (temuan 15):** perbaikan salah huruf besar/kecil pada
+>   `status`/`channel`. Sesuai keputusan 8, arahnya **mengikuti constraint DB
+>   (huruf kecil) dan kode yang diperbaiki.** Rinciannya tetap dicatat di bawah
+>   supaya tidak hilang, tapi **jangan dikerjakan di PR isolasi cabang.**
 
 Fungsi ini relatif bersih dari sisi isolasi cabang: `JOIN master_customer c ON
 c.id = p.customer_id AND c.cabang_id = p.cabang_id`, dan
@@ -864,7 +1188,7 @@ Yang berubah untuk isolasi cabang:
 |---|---|---|---|---|
 | `pos_checkout` (9 param) | Ya, dengan fallback KARLA | `master_barang` (2 tempat) | **Ada (7 param)** | hapus fallback, filter barang, hapus overload |
 | `purchase_save` (8 param) | Ya, dengan fallback KARLA | `master_barang` (baca **dan** `UPDATE` harga) | **Ada (7 param)** | filter cabang pada `UPDATE master_barang`, hapus overload |
-| `generate_refill_reminders` | Param `NULL` = semua cabang | — (sudah join cabang) | Tidak | jadikan cabang wajib dari aplikasi; **perbaiki 2 tabrakan CHECK + 1 filter status (temuan 15)** |
+| `generate_refill_reminders` | Param `NULL` = semua cabang | — (sudah join cabang) | Tidak | jadikan cabang wajib dari aplikasi. **Perbaikan 2 tabrakan CHECK + 1 filter status (temuan 15) DIPINDAH ke PR terpisah — keputusan 8** |
 | `pos_checkout_promo` | Ya, dengan fallback KARLA | `master_barang` (subtotal) | Tidak | filter cabang pada harga |
 | `pos_checkout_bundle` | Ya, dengan fallback KARLA | `master_barang` (join) | Tidak | filter cabang pada join |
 
@@ -909,11 +1233,12 @@ adalah daftar cabang yang di-hardcode di frontend. Kalau nanti ada cabang baru
 menolak jalan (`js_ai.js:107-109`, `290-292`). Lebih baik daftar ini diambil dari
 `master_cabang` lewat API.
 
-**Keputusan yang perlu diambil**: `app_users` PK-nya `(username)` global. Artinya
-username harus unik lintas cabang (`owner.karla` vs `owner.kendal`). Mengubahnya
-jadi `(cabang_id, username)` berarti mengubah `app_sessions.username` FK dan alur
-login `api:95`. Rekomendasi: **tetap global** (username unik sepanjang sistem),
-karena perubahan alur login berisiko dan tidak menambah isolasi data.
+**Username: sudah diputuskan tetap unik global (keputusan 5).** PK `app_users` tetap
+`(username)` dan **tidak diubah**. Artinya username harus unik lintas cabang
+(`owner.karla` vs `owner.kendal`) — dan itu memang diinginkan. Mengubahnya jadi
+`(cabang_id, username)` berarti mengubah 3 FK (`app_sessions.username`,
+`trx_retur_beli.created_by`, `trx_retur_beli.approved_by`) plus alur login
+`api:95`, tanpa menambah isolasi data apa pun. **Tidak dikerjakan.**
 
 ---
 
@@ -1062,8 +1387,10 @@ verifikasi lengkap ini.
 14. **`beli.supplier` / `beli.simpanSupplier` (`api:264`, `api:270`)** —
     `master_supplier` tanpa `cabang_id` sama sekali. Snapshot `constraint.csv`
     memastikan tabel itu hanya punya PK `kode_supplier` dan `UNIQUE (nama_supplier)`
-    tanpa FK cabang → **memang master global**, dan sekarang akan diubah jadi per
-    cabang (bagian 3.2).
+    tanpa FK cabang → **memang master global**, dan **tetap global** menurut
+    keputusan 3. Pemisahan per cabang dilakukan lewat tabel relasi baru
+    `supplier_cabang`, bukan dengan menambah `cabang_id` ke `master_supplier`
+    (bagian 3.2).
 15. **Fitur refill & notifikasi rusak total karena salah besar/kecil huruf** (baru,
     dari snapshot lengkap). `generate_refill_reminders` memakai `status='ACTIVE'`
     padahal constraint-nya `'active'` → 0 baris terpilih; dan menulis
@@ -1076,6 +1403,9 @@ verifikasi lengkap ini.
     **Temuan ini tidak berkaitan dengan isolasi cabang**, tapi ditemukan saat
     verifikasi ulang karena satu-satunya cara menemukannya adalah membandingkan
     definisi fungsi dengan constraint lengkap.
+    **STATUS: dikerjakan di PR TERPISAH (keputusan 8), bukan di PR ini.** Arah
+    perbaikannya sudah ditetapkan: ikuti constraint DB (huruf kecil) dan perbaiki
+    kodenya (keputusan 10).
 
 Catatan metode: temuan 8–10 bergantung pada string filter yang salah tulis. Itu
 diverifikasi tiga cara (ordinal karakter, pencarian literal, dump byte) karena
@@ -1087,9 +1417,14 @@ Temuan 15 diverifikasi dengan membandingkan tiga sumber: definisi fungsi di
 `kolom.csv`. Ketiganya konsisten menunjukkan tabrakan huruf besar/kecil.
 
 Temuan 1–7, 9, 11, 12, 13 akan hilang sebagai *efek samping* migrasi isolasi cabang
-(karena `master_barang`/`master_supplier` jadi per cabang dan semua query bercabang
-ditambahi filter), **kecuali** kalau tidak sengaja dilewatkan. Karena itu bagian 9
-memuat satu test case per temuan.
+(karena `master_barang` jadi per cabang dan semua query bercabang ditambahi filter),
+**kecuali** kalau tidak sengaja dilewatkan. Karena itu bagian 9 memuat satu test case
+per temuan.
+
+**Temuan 15 adalah pengecualian:** tidak ada satu pun perubahan di PR isolasi cabang
+yang memperbaikinya, karena perbaikannya adalah perubahan kode yang dipindah ke PR
+terpisah (keputusan 8). Jadi jangan harap temuan ini ikut hilang setelah migrasi —
+kalau tidak dikerjakan di PR terpisah itu, `refill.list` akan tetap selalu kosong.
 
 ---
 
@@ -1110,6 +1445,39 @@ select kode_cabang, nama_cabang, aktif from public.master_cabang order by kode_c
 Kalau `on conflict (kode_cabang)` menolak dengan error "no unique or exclusion
 constraint", berarti `kode_cabang` tidak punya unique index — hentikan dan
 laporkan, karena 13 FK mengandalkannya (bagian 4.1).
+
+**Cabang baru tidak cukup hanya didaftarkan di `master_cabang`.** Dua langkah
+lanjutan wajib, kalau tidak cabang itu kosong melompong dan tidak bisa dipakai
+berjualan maupun membeli:
+
+```sql
+-- 1. salin 137 barang dari cabang sumber (keputusan 1: 137 barang tersedia di
+--    semua cabang, kode_obat sama). Stok TIDAK ikut disalin — stok mulai 0.
+insert into public.master_barang
+  (cabang_id, kode_obat, nama_obat, kategori, golongan, satuan, barcode,
+   harga_modal, harga_jual_umum, harga_khusus, harga_jual_mutasi, ppn,
+   stok_min, aktif, updated_at)
+select 'PULE', kode_obat, nama_obat, kategori, golongan, satuan, barcode,
+       harga_modal, harga_jual_umum, harga_khusus, harga_jual_mutasi, ppn,
+       stok_min, aktif, now()
+from public.master_barang
+where cabang_id = 'KARLA'
+on conflict (cabang_id, kode_obat) do nothing;
+
+-- 2. daftar supplier untuk cabang baru (tabel supplier_cabang, lihat 3.2).
+--    Tanpa ini form pembelian cabang baru akan kosong.
+insert into public.supplier_cabang (cabang_id, kode_supplier)
+select 'PULE', kode_supplier from public.master_supplier
+on conflict (cabang_id, kode_supplier) do nothing;
+
+-- 3. verifikasi
+select cabang_id, count(*) from public.master_barang group by 1;
+select cabang_id, count(*) from public.supplier_cabang group by 1;
+```
+
+Catatan: langkah 2 mengasumsikan keputusan penanaman 10.2 poin C dipilih
+"semua supplier ke semua cabang". Kalau dipilih "KARLA saja", langkah 2 diganti
+dengan penanaman bertahap sesuai kebutuhan cabang baru.
 
 ### 8.2 Hitung hash password
 
@@ -1249,11 +1617,16 @@ Peringatan operasional:
 | T1 | `select cabang_id, count(*) from master_barang group by 1` | 4 baris × 137 = 548 total |
 | T2 | `select count(*) from master_barang where cabang_id is null` | 0 |
 | T3 | Insert `stok_batch` dengan `(kode_obat, kode_batch)` sama di KENDAL dan KARLA | keduanya berhasil (bukti unique sudah per cabang) |
-| T4 | Insert `master_supplier` nama sama di dua cabang | berhasil |
+| T4 | Insert `master_supplier` dengan `nama_supplier` sama **dua kali** | **ditolak** — `UNIQUE (nama_supplier)` tetap global (keputusan 3). Yang benar: satu baris master, dipakai beberapa cabang lewat `supplier_cabang` (lihat T42–T44) |
 | T5 | Insert `master_barang` dengan `cabang_id` yang tidak ada di `master_cabang` | ditolak FK |
 | T6 | Insert baris tanpa `cabang_id` di `app_users`/`biaya_operasional`/`master_customer` | ditolak (default `'KARLA'` sudah dihapus) |
 | T7 | `insert into master_customer (nomor_wa, ...)` dua cabang dengan nomor WA sama | keduanya berhasil, unique-nya `(cabang_id, nomor_wa)` |
 | T8 | `select * from master_customer where cabang_id='KENDAL'` + jalankan `loyalty_after_sale` lewat insert `trx_penjualan` | tier/poin hanya berubah di KENDAL |
+| T41 | Insert `master_barang` dengan `harga_jual_umum = -1` (atau `harga_modal = -1`) | ditolak `CHECK` harga ≥ 0 (constraint baru, 3.1) |
+| T42 | `select cabang_id, count(*) from supplier_cabang group by 1` | tidak ada cabang yang kosong — sesuai keputusan penanaman (10.2 poin C) |
+| T43 | Insert `supplier_cabang` dengan `kode_supplier` yang tidak ada di `master_supplier` | ditolak FK |
+| T44 | Insert `supplier_cabang` dua kali untuk pasangan `(cabang_id, kode_supplier)` yang sama | ditolak PK komposit |
+| T45 | `select relrowsecurity from pg_class where relname='supplier_cabang'` + `has_table_privilege('service_role','public.supplier_cabang','SELECT')` | RLS aktif, `service_role` punya hak, `anon` tidak — sesuai AGENTS.md untuk tabel baru |
 
 **Tahap 2 — fungsi kasir (setelah migrasi 5)**
 
@@ -1269,6 +1642,9 @@ Peringatan operasional:
 | T16 | `generate_refill_reminders('KENDAL')` | hanya membuat `notification_log` pelanggan KENDAL |
 | T17 | Panggil `pos_checkout` dengan `p_username` milik cabang lain | ditolak / cabang tidak bisa ditentukan |
 | T18 | `revoke execute` terverifikasi: panggil RPC langsung sebagai `authenticated` | **ditolak** (permission denied) |
+| T46 | `purchase_save` di KENDAL: periksa `no_faktur` yang dihasilkan | berformat `FK-KENDAL-<YYYYMMDD>-####` (keputusan 4), PK tetap global |
+| T47 | `purchase_save` di KENDAL dan PUCUK pada hari yang sama (uji balapan) | nomor berbeda dan tidak bentrok meski PK global; tidak ada deadlock |
+| T48 | `purchase_save` di KENDAL dengan supplier yang **tidak ada** di daftar KENDAL | ditolak (validasi `supplier_cabang`) |
 
 **Tahap 3 — Edge Function & temuan audit (satu test per temuan)**
 
@@ -1290,12 +1666,21 @@ Peringatan operasional:
 | T32 | `user.simpan` dengan `Cabang_ID` palsu (mis. 'KARLA') di sesi KENDAL | tersimpan sebagai KENDAL | bagian 6 |
 | T33 | `user.hapus` username cabang lain | ditolak | 13 |
 | T34 | Login user dengan `cabang_id` kosong | gagal login dengan pesan jelas (bukan masuk KARLA) | bagian 6 |
-| T35 | `beli.supplier` sebagai Owner KENDAL | hanya supplier KENDAL | 14 |
-| T36 | `refill.list` setelah perbaikan huruf | daftar program refill **terisi** (sekarang selalu kosong) | 15 |
-| T37 | `refill.status` (jeda/aktifkan) | berhasil, tidak lagi 400 check_violation | 15 |
-| T38 | `refill.generate` di KENDAL | baris `notification_log` benar-benar bertambah, `cabang_id` = KENDAL, `channel`/`status` sesuai constraint | 15 |
-| T39 | `refill.generate` dijalankan dua kali di hari yang sama | yang kedua menambah 0 baris (bukti dedup `NOT EXISTS` bekerja) | 15 |
+| T35 | `beli.supplier` sebagai Owner KENDAL | hanya supplier yang ada di `supplier_cabang` KENDAL | 14 |
+| T36 | `refill.list` setelah perbaikan huruf | daftar program refill **terisi** (sekarang selalu kosong) | 15 — **PR TERPISAH** |
+| T37 | `refill.status` (jeda/aktifkan) | berhasil, tidak lagi 400 check_violation | 15 — **PR TERPISAH** |
+| T38 | `refill.generate` di KENDAL | baris `notification_log` benar-benar bertambah, `cabang_id` = KENDAL, `channel`/`status` sesuai constraint | 15 — **PR TERPISAH** |
+| T39 | `refill.generate` dijalankan dua kali di hari yang sama | yang kedua menambah 0 baris (bukti dedup `NOT EXISTS` bekerja) | 15 — **PR TERPISAH** |
 | T40 | `select relname, relrowsecurity from pg_class ...` | setiap tabel aplikasi terdaftar status RLS-nya, dan `anon`/`authenticated` tidak punya `EXECUTE` atas fungsi `SECURITY DEFINER` | 4.5 |
+| T49 | Hapus satu baris `supplier_cabang` KENDAL, lalu `beli.supplier` sebagai Owner KENDAL | supplier itu **hilang** dari daftar KENDAL, masih ada di KARLA (bukti pemisahan benar-benar bekerja) | 3.2 |
+| T50 | `beli.simpanSupplier` dengan nama supplier yang **sudah ada** di `master_supplier` | tidak error; hanya menambah baris `supplier_cabang`. Cabang kedua bisa memakai supplier yang sama | 3.2 |
+| T51 | Login **Kasir**, lalu panggil `barang.simpan` dan `beli.simpan` (jalur yang menulis harga) | **ditolak** — Kasir tidak boleh mengubah harga (keputusan 2) | 3.1 |
+| T52 | Login **Apoteker KENDAL**, ubah `harga_jual_umum` satu barang | berhasil di KENDAL; `harga_jual_umum` barang itu di KARLA **tidak berubah** | 3.1 |
+
+**Catatan lingkup pengujian (keputusan 8):** T36–T39 adalah uji untuk **temuan 15**
+yang dikerjakan di **PR terpisah**. Barisnya sengaja dipertahankan di sini supaya
+tidak hilang, tapi **jangan dijalankan sebagai bagian dari pengujian PR isolasi
+cabang** — perbaikannya tidak ada di PR ini, jadi hasilnya memang akan gagal.
 
 **Tahap 4 — regresi data (wajib, sebelum menyentuh production)**
 
@@ -1313,9 +1698,10 @@ Migrasi ini **memindahkan dimensi cabang**, bukan mengubah angka. Jadi:
 
 ### 9.3 Kriteria lulus
 
-Semua uji T1–T40 lulus, regresi Tahap 4 identik, tidak ada error konsol, dan check
-"Cloudflare Pages" di PR hijau. Kalau salah satu gagal, migrasi **tidak** dijalankan
-ke production.
+Semua uji milik PR ini (**T1–T35 dan T40–T52**) lulus, regresi Tahap 4 identik,
+tidak ada error konsol, dan check "Cloudflare Pages" di PR hijau. T36–T39 **tidak**
+termasuk — itu milik PR terpisah untuk temuan 15. Kalau salah satu uji gagal,
+migrasi **tidak** dijalankan ke production.
 
 ### 9.4 Urutan penerapan ke production (setelah semua lulus)
 
@@ -1323,58 +1709,113 @@ ke production.
 2. Jalankan migrasi 1–4 (perubahan struktur; masih kompatibel dengan kode lama
    karena `pos_checkout` versi lama tetap ada dan `cabang_id` sudah ada defaultnya
    saat itu — **jangan** hapus default sebelum kode baru siap).
-3. Deploy Edge Function `api`, `promo`, `hutang` (kode sudah memakai cabang sesi).
-4. Deploy frontend (hapus field Cabang di form user).
-5. Jalankan migrasi 5 (fungsi baru + `drop function` overload lama) dan migrasi 6
+3. **Tanam `supplier_cabang` (migrasi 2 bagian data) SEBELUM** men-deploy kode baru.
+   Urutan ini wajib: begitu `beli.supplier` difilter `cabang_id`, cabang yang belum
+   punya baris relasi akan melihat daftar supplier **kosong**. Migrasi dulu, deploy
+   kemudian.
+4. Deploy Edge Function `api`, `promo`, `hutang` (kode sudah memakai cabang sesi).
+5. Deploy frontend (hapus field Cabang di form user).
+6. Jalankan migrasi 5 (fungsi baru + `drop function` overload lama) dan migrasi 6
    (RLS/GRANT/revoke).
-6. Ulangi Tahap 4 regresi di production pada hari yang sama, di luar jam sibuk.
-7. Rollback: setiap migrasi punya blok rollback; kalau ada masalah, kembalikan
+7. Ulangi Tahap 4 regresi di production pada hari yang sama, di luar jam sibuk.
+8. Rollback: setiap migrasi punya blok rollback; kalau ada masalah, kembalikan
    fungsi lama (overload lama disimpan sebagai komentar di file migrasi) dan
-   `alter column ... set default 'KARLA'` untuk membatalkan poin 4.3.
+   `alter column ... set default 'KARLA'` untuk membatalkan poin 4.3. Rollback
+   `supplier_cabang` cukup dengan mengembalikan `beli.supplier` ke versi lama —
+   tabel relasinya boleh dibiarkan (tidak mengganggu).
 
-Semua langkah 2–6 **butuh izin eksplisit pemilik project** (`db push` dan deploy
+Semua langkah 2–7 **butuh izin eksplisit pemilik project** (`db push` dan deploy
 dilarang tanpa izin).
 
 ---
 
-## 10. Pertanyaan yang perlu keputusan pemilik project
+## 10. Keputusan yang sudah diambil dan sisa sub-keputusan
 
-1. **137 barang milik siapa?** Rencana ini mengasumsikan semua baris `master_barang`
-   sekarang milik KARLA. Benar?
-2. **Harga boleh berbeda antar cabang?** (kalau ya: siapa yang boleh mengubah harga
-   per cabang? Apoteker atau hanya Owner?)
-3. **Supplier benar-benar per cabang**, atau global dengan daftar per cabang?
-   Catatan baru: hari ini **tidak ada FK sama sekali** dari `trx_pembelian` /
-   `trx_retur_beli` ke `master_supplier`, jadi memisahkannya per cabang berarti
-   menambah FK baru — bukan sekadar mengubah yang ada.
-4. **Nomor faktur pembelian**: tetap unik global, atau diberi prefix cabang seperti
-   nota penjualan? Catatan baru: PK `trx_pembelian` tetap `(no_faktur)` global, dan
-   **tidak ada** unique index `(cabang_id, no_faktur)` — jadi keunikan per cabang
-   harus dijamin kode kalau tidak ditambahkan index.
-5. **Username**: tetap unik global (`owner.karla`, `owner.kendal`), atau per cabang?
-   Catatan baru: mengubah PK `app_users` jadi `(cabang_id, username)` berarti harus
-   mengubah **3 FK** sekaligus (`app_sessions.username`, `trx_retur_beli.created_by`,
-   `trx_retur_beli.approved_by`) plus alur login `api:95`. Rekomendasi tetap global.
-6. **Tabel lama berbahasa Inggris** (`products`, `sales`, `stock_batches`,
-   `customers`, `suppliers`, `profiles`) dan fungsi `create_sale_with_fefo`:
-   dipensiunkan atau dibiarkan? Ini butuh izin karena berarti menghapus sesuatu.
-   Catatan baru: tabel lama itu masih punya 33 policy RLS dan `profiles` masih
-   direferensikan oleh `operating_expenses`, `purchases`, `sales`, dan
-   `stock_counts` (FK ke `profiles(id)`), jadi tidak bisa dihapus sembarangan.
-7. **RLS**: tetap model `service_role` (Model A), atau mulai migrasi ke Supabase
-   Auth + claim `cabang_id` (Model B)?
-8. **Cabang baru**: kalau nanti ada cabang kelima, apakah cukup insert ke
-   `master_cabang` + salin 137 barang (jalankan ulang migrasi 1 untuk cabang itu)?
-9. **Temuan 15 (refill/notifikasi rusak)**: dikerjakan bersamaan dengan migrasi
-   isolasi cabang, atau jadi PR terpisah? Rekomendasi: **PR terpisah** — temuan ini
-   tidak ada hubungannya dengan isolasi cabang, dan mencampurnya membuat PR isolasi
-   sulit ditinjau. Kalau dipisah, cukup dicatat dulu di sini.
-10. **Besar/kecil huruf status**: mana yang jadi sumber kebenaran — constraint DB
-    (huruf kecil `active`) atau kode (huruf besar `ACTIVE`)? Rekomendasi: ikuti
-    constraint DB dan perbaiki kode (lihat 5.3).
-11. **`promo_bundle_items`**: tambahkan kolom `cabang_id` (dijaga trigger agar sama
-    dengan `promo_bundles.cabang_id`), atau pindahkan validasi barang-bundle ke
-    trigger tanpa mengubah FK? Lihat 4.2.
+### 10.1 Sebelas pertanyaan lama — semuanya sudah dijawab
+
+| # | Pertanyaan lama | Jawaban pemilik project (25 Sep 2026) | Dampak ke dokumen ini |
+|---|---|---|---|
+| 1 | 137 barang milik siapa? | Tersedia di **semua** cabang; PK `(cabang_id, kode_obat)`; `kode_obat` sama di semua cabang | 3.3 jadi keputusan, bukan asumsi |
+| 2 | Harga boleh berbeda? Siapa yang boleh ubah? | Boleh berbeda. **Owner dan Apoteker** (cabangnya sendiri). Kasir tidak. | 3.1 diperluas: daftar jalur tulis + batas lapis database |
+| 3 | Supplier per cabang atau global? | `master_supplier` **tetap global** + tabel relasi `supplier_cabang` | 3.2, 4.1, 4.2, 4.6 dirombak. Rencana lama (PK komposit) **batal**. |
+| 4 | Nomor faktur pembelian? | Prefix cabang, format mengikuti nota penjualan; PK `(no_faktur)` tetap global | 5.2 poin 5, 4.2 diperbarui |
+| 5 | Username unik global atau per cabang? | Tetap **unik global**; PK `app_users` tidak diubah | Bagian 6 ditutup; tidak ada FK yang berubah |
+| 6 | Tabel lama & `create_sale_with_fefo` dipensiunkan? | Hanya jika **terbukti tidak dipakai**; tidak ada penghapusan tanpa izin eksplisit terpisah | 4.8 baru: prosedur pembuktian, bukan rencana hapus |
+| 7 | RLS Model A atau Model B? | **Model A** (`service_role`); otorisasi di Edge Function + constraint DB sebagai lapis kedua | 4.5 diperbarui; Model B dibatalkan; batas lapis DB dijelaskan jujur |
+| 8 | Cabang baru: cukup insert + salin 137 barang? | Ya — implisit dari keputusan 1 (137 tersedia di semua cabang) | 3.3 + bagian 8 |
+| 9 | Temuan 15 dikerjakan di PR ini atau terpisah? | **PR TERPISAH** | 5.3, 5.6, bagian 7, bagian 9 diperbarui |
+| 10 | Huruf besar/kecil: ikuti constraint DB atau kode? | **Ikuti constraint DB (huruf kecil)**, perbaiki kodenya | 5.3 — dikerjakan di PR terpisah itu |
+| 11 | `promo_bundle_items` diapakan? | **Belum dijawab** — lihat 10.2 poin D | masih terbuka |
+
+### 10.2 Sisa sub-keputusan yang masih perlu jawaban
+
+Keputusan 1–10 sudah menutup hampir semua pertanyaan lama, tapi ada tiga hal yang
+**belum tercakup** dan muncul justru karena keputusan itu. Ketiganya perlu
+jawaban sebelum migrasi ditulis. Rekomendasi saya ada di masing-masing poin.
+
+**A. Nomor faktur dari supplier mau ditaruh di mana?**
+
+Hari ini nomor faktur **diketik pengguna** dan itu biasanya nomor faktur dari PBF
+(`js_trx.js:41`, placeholder `FK-2026-0012`), lalu disimpan sebagai `no_faktur`.
+Kalau `no_faktur` diubah jadi nomor buatan sistem (`FK-<CABANG>-<YYYYMMDD>-####`),
+nomor asli dari supplier **tidak punya tempat lagi**. Itu merugikan, karena nomor
+tersebut yang dipakai saat:
+- retur ke PBF (`trx_retur_beli.no_faktur_asal` merujuk ke faktur pembelian),
+- mencocokkan tagihan/jatuh tempo dengan surat jalan dan tagihan PBF,
+- menyelesaikan selisih harga atau barang kurang dengan PBF.
+
+Pilihan:
+
+1. **Tambah kolom `no_faktur_supplier text` (nullable) di `trx_pembelian`**
+   *(rekomendasi)*. `no_faktur` jadi nomor sistem, input `blFaktur` di form
+   berpindah ke kolom baru ini dan labelnya diubah. Sifatnya additive — kolom
+   baru, tidak ada data lama yang hilang, dan baris lama bisa di-backfill
+   (`no_faktur_supplier = no_faktur`) kalau perlu.
+2. **Prefix saja yang diketik**: `no_faktur = 'FK-' || cabang || '-' || <yang
+   diketik>`. Nomor supplier tetap terbaca, tapi menyimpang dari "format mengikuti
+   nota penjualan" (tidak ada urutan harian `####`) dan tidak menjamin panjang
+   format yang seragam.
+3. **Buang nomor supplier.** Paling sederhana, tapi jejak rekonsiliasi dengan PBF
+   hilang. **Tidak disarankan.**
+
+**B. Supplier disimpan sebagai nama atau kode?**
+
+`trx_pembelian.supplier` dan `trx_retur_beli.supplier` menyimpan **nama**, bukan
+kode (bukti di 3.2). Supaya validasi "supplier harus ada di daftar cabang" bisa
+jalan, perlu dipilih:
+
+1. **Tetap simpan nama, validasi lewat pencarian nama → kode di `supplier_cabang`**
+   *(rekomendasi untuk sekarang)*. Tidak menyentuh data lama sama sekali. Risiko
+   yang perlu diterima: kalau `nama_supplier` diubah di master, baris transaksi
+   lama tidak ikut berubah (teks beku) — dan itu justru diinginkan untuk arsip.
+2. **Ubah jadi menyimpan `kode_supplier`**: `<option>` di `js_trx.js:146` diberi
+   `value`, dan data lama di-backfill nama → kode. Lebih benar secara relasional,
+   tapi baris lama yang namanya tidak ketemu di `master_supplier` akan jadi NULL
+   dan perlu ditangani. Lebih baik dikerjakan sebagai PR tersendiri saat modul
+   supplier disentuh lagi.
+
+**C. `supplier_cabang` diisi apa saat migrasi?**
+
+Tabel baru ini mulai **kosong**. Kalau `beli.supplier` langsung difilter tanpa
+penanaman data, **ketiga cabang selain KARLA akan kehilangan seluruh daftar
+supplier-nya** dan form pembelian jadi kosong — kerusakan yang langsung terasa di
+hari penerapan.
+
+1. **Tanam semua supplier yang ada ke keempat cabang** *(rekomendasi)*. Aman:
+   tidak ada cabang yang kehilangan apa pun, dan pemilik bisa mempersempit daftar
+   per cabang kapan saja dengan menghapus baris yang tidak relevan. Cocok dengan
+   kenyataan bahwa satu PBF biasanya melayani beberapa cabang sekaligus.
+2. **Tanam ke KARLA saja**, cabang lain mulai kosong. Lebih ketat, tapi
+   memaksa Apoteker tiap cabang mendaftar ulang semua supplier sebelum bisa
+   melakukan pembelian — berisiko menghambat operasional di hari penerapan.
+
+Catatan teknis: jumlah baris supplier yang ada **belum diketahui** (snapshot ini
+tidak memuat jumlah baris). Perlu diambil dari database sebelum migrasi ditulis.
+
+**D. `promo_bundle_items`** (pertanyaan lama nomor 11, masih terbuka):
+tambahkan kolom `cabang_id` (dijaga trigger agar selalu sama dengan
+`promo_bundles.cabang_id`), atau pindahkan validasi barang-bundle ke trigger tanpa
+mengubah FK? Lihat 4.2. Ini satu-satunya pertanyaan lama yang belum terjawab.
 
 ---
 
@@ -1386,8 +1827,22 @@ dilarang tanpa izin).
 - Tidak ada `db push`, tidak ada deploy Edge Function, tidak ada
   `wrangler pages deploy`.
 - Tidak ada perubahan skema, policy RLS, atau hak akses.
+- **Tidak ada `DROP` apa pun** — termasuk untuk tabel lama berbahasa Inggris dan
+  `create_sale_with_fefo` (keputusan 6). Pensiun menunggu pembuktian (4.8) **dan**
+  izin eksplisit terpisah.
+- **Temuan 15 tidak dikerjakan di sini** (keputusan 8) — dipindah ke PR terpisah.
+  Di dokumen ini temuan itu tetap didokumentasikan (5.3, 7.2, T36–T39) supaya tidak
+  hilang, tapi tidak ada perbaikan kodenya.
 - Tidak ada merge ke `main`.
 
 Isi PR: `supabase/schema/*.csv` (6 file: 5 snapshot + `index.csv`, backup struktur
 sementara) + `supabase/schema/baseline.sql` (placeholder) + dokumen ini. Folder
 `schema/` yang lama sudah dihapus (isinya dipindahkan ke `supabase/schema/`).
+
+**PR lanjutan yang sudah diketahui akan menyusul (di luar PR ini):**
+
+| PR | Isi |
+|---|---|
+| PR temuan 15 | perbaikan salah huruf besar/kecil pada `refill.list`/`refill.status`/`generate_refill_reminders`, mengikuti constraint DB huruf kecil (keputusan 8, 10). Uji T36–T39. |
+| PR pensiun tabel lama | hanya jika 4.8 membuktikan tidak dipakai **dan** ada izin terpisah (keputusan 6). |
+| PR migrasi isolasi cabang | enam file migrasi di 4.6, dibuat setelah sub-keputusan 10.2 A–D dijawab. |
