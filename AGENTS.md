@@ -11,31 +11,35 @@ Baca seluruh file ini sebelum mengubah kode apa pun.
 - Package manager: tidak ada (tidak ada package.json). Jangan menambahkan framework, bundler, atau npm dependency tanpa izin.
 - Backend: Supabase Edge Functions (`api`, `promo`, `hutang`) + Postgres
 - Asisten AI: webhook n8n (`window.AI_CFG` di `index.html`)
-- Hosting: Cloudflare Pages (situs statis)
+- Hosting: Cloudflare Workers dengan Static Assets (Workers Builds terhubung ke GitHub), nama Worker: `famitra-web`
 - Repository: GitHub, branch utama `main`
 
 ## Struktur File
 
-- `index.html` - halaman utama, layar login, dan konfigurasi `window.AI_CFG`
-- `style.css` - seluruh styling
-- `js_core.js` - inti: URL Edge Function, pemanggil API, sesi login, modal, utilitas
-- `js_pos.js` - kasir / point of sale
-- `js_trx.js` - transaksi, retur, hutang
-- `js_master.js` - master data (obat, pelanggan, dll.)
-- `js_dashboard.js` - dashboard dan ringkasan AI
-- `js_ai.js` - chat asisten AI (khusus Owner)
+- `wrangler.jsonc` - konfigurasi Cloudflare Worker (assets diambil dari `./public`)
+- `public/` - SELURUH file website (hanya folder ini yang dipublikasikan):
+  - `index.html` - halaman utama, layar login, dan konfigurasi `window.AI_CFG`
+  - `style.css` - seluruh styling
+  - `js_core.js` - inti: URL Edge Function, pemanggil API, sesi login, modal, utilitas
+  - `js_pos.js` - kasir / point of sale
+  - `js_trx.js` - transaksi, retur, hutang
+  - `js_master.js` - master data (obat, pelanggan, dll.)
+  - `js_dashboard.js` - dashboard dan ringkasan AI
+  - `js_ai.js` - chat asisten AI (khusus Owner)
+- File di luar `public/` (AGENTS.md, supabase/, catatan .md) TIDAK boleh ikut dipublikasikan. Jangan pernah mengubah assets directory ke root repo (`.`).
 - `supabase/` - Edge Functions dan migrasi database
   - Catatan: saat ini hanya function `promo` yang ada di repo. Function `api` dan `hutang` sudah ter-deploy di Supabase tapi kodenya belum ada di repo.
   - `supabase/.temp/` adalah cache CLI, jangan di-commit (masukkan ke .gitignore).
 
 ## Cara Menjalankan & Mengetes
 
-Tidak ada proses build. Untuk tes lokal cukup jalankan server statis dari root repo:
+Tidak ada proses build. Untuk tes lokal jalankan server statis dari folder public:
 
 ```bash
-python3 -m http.server 8080
+python -m http.server 8080 --directory public
 # lalu buka http://localhost:8080
 ```
+(Di laptop ini perintahnya `python`, bukan `python3`.)
 
 - Setelah edit, buka halaman di browser dan pastikan tidak ada error di console.
 - Tes alur yang terdampak (login, kasir, transaksi, dsb.) secara manual.
