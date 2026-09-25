@@ -51,6 +51,10 @@ DROP FUNCTION IF EXISTS public.purchase_save(text, text, text, text, date, date,
 
 DROP FUNCTION IF EXISTS public.purchase_save(text, text, text, text, date, date, jsonb, text);
 
+-- generate_refill_reminders lama punya DEFAULT NULL::text pada p_cabang_id;
+-- perubahan ini MENGHAPUS default -> CREATE OR REPLACE tidak bisa -> must DROP dulu.
+DROP FUNCTION IF EXISTS public.generate_refill_reminders(text);
+
 -- -----------------------------------------------------------------------------
 -- 1. pos_checkout (versi 9 parameter)
 -- -----------------------------------------------------------------------------
@@ -412,7 +416,7 @@ $function$;
 --        seperti versi lama. Perbaikannya (mengikuti CHECK constraint huruf kecil)
 --        adalah PR terpisah. Jangan "merapikan" hurufnya di file ini.
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.generate_refill_reminders(p_cabang_id text)
+CREATE FUNCTION public.generate_refill_reminders(p_cabang_id text)
  RETURNS integer
  LANGUAGE plpgsql
  SECURITY DEFINER
