@@ -73,6 +73,7 @@ var PERM = {
   "user.list": ["Owner"],
   "user.simpan": ["Owner"],
   "user.hapus": ["Owner"],
+  "cabang.list": ["Owner", "Apoteker"],
   "retur.jualList": ["Owner", "Apoteker", "Kasir"],
   "retur.jualSimpan": ["Owner", "Apoteker", "Kasir"],
   "retur.beliList": ["Owner"],
@@ -500,15 +501,21 @@ async function action(name, data, s) {
     if (!r.ok) throw new Error(await r.text());
     return (await r.json()).map((x) => ({ Username: x.username, Nama: x.nama, Role: x.role, Aktif: x.aktif, Cabang_ID: x.cabang_id, Dibuat: x.created_at }));
   }
+  if (name === "cabang.list") {
+    const r = await db("master_cabang", `?select=kode_cabang,nama_cabang&order=kode_cabang.asc&limit=50`);
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
   if (name === "user.simpan") {
-    // Cabang user SELALU dari sesi. Field Cabang_ID dari form diabaikan (bagian 6).
-    const cabang = cabangSesi(s);
+    // Owner bisa pilih cabang via form (field Cabang). Untuk role lain, pakai sesi.
+    const cabang = s.role === "Owner" && data.Cabang ? String(data.Cabang).trim() : cabangSesi(s);
     const p = { username: String(data.Username || data.username || "").trim(), nama: data.Nama || data.nama, role: data.Role || data.role, aktif: data.Aktif || "YA", cabang_id: cabang };
     if (!p.username || !p.nama || !p.role) throw new Error("Username, nama, dan role wajib diisi.");
+    if (!p.cabang_id) throw new Error("Cabang wajib dipilih untuk akun ini.");
     if (data.mode === "edit") {
       const target = await one("app_users", `?username=eq.${encodeURIComponent(p.username)}&select=username,cabang_id`);
       if (!target) throw new Error("User tidak ditemukan.");
-      if (String(target.cabang_id || "") !== cabang) throw new Error("User ini bukan milik cabang Anda.");
+      if (String(target.cabang_id || "") !== p.cabang_id) throw new Error("User ini bukan milik cabang yang dipilih.");
     }
     if (data.Password || data.password) p.password_hash = await sha256(data.Password || data.password);
     const r = await db("app_users", data.mode === "edit" ? `?username=eq.${encodeURIComponent(p.username)}` : "", { method: data.mode === "edit" ? "PATCH" : "POST", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify(p) });

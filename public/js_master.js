@@ -456,9 +456,14 @@ function muatUser() {
   });
 }
 
-function formUser(u) {
+async function formUser(u) {
   var edit = !!u;
   u = u || {};
+  var cabangList = [];
+  try { cabangList = await api('cabang.list', {}); } catch (e) { toast(e.message, true); return; }
+  var cabangSelect = '<select id="fuCabang" class="inp">' + cabangList.map(function (c) {
+    return '<option value="' + esc(c.kode_cabang) + '"' + (u.Cabang_ID === c.kode_cabang ? ' selected' : '') + '>' + esc(c.nama_cabang) + '</option>';
+  }).join('') + '</select>';
   modalBuka(edit ? 'Ubah akun ' + u.Username : 'Tambah user',
     '<label class="field"><span>Username</span><input id="fuUser" class="inp" value="' +
       esc(u.Username || '') + '"' + (edit ? ' readonly' : '') + '></label>' +
@@ -467,6 +472,7 @@ function formUser(u) {
       ['Owner', 'Apoteker', 'Kasir'].map(function (r) {
         return '<option value="' + r + '"' + (u.Role === r ? ' selected' : '') + '>' + labelRole_(r) + '</option>';
       }).join('') + '</select></label>' +
+    '<label class="field"><span>Cabang</span>' + cabangSelect + '</label>' +
     '<label class="field"><span>Password' + (edit ? ' baru (kosongkan bila tidak diubah)' : '') +
       '</span><input id="fuPass" class="inp" type="password" placeholder="Minimal 6 karakter"></label>' +
     '<label class="field"><span>Status</span><select id="fuAktif" class="inp">' +
@@ -477,12 +483,22 @@ function formUser(u) {
       { label: 'Simpan akun', kelas: 'btn-primary', aksi: function () {
           api('user.simpan', {
             Username: val('fuUser'), Nama: val('fuNama'), Role: val('fuRole'),
-            Password: val('fuPass'), Aktif: val('fuAktif')
+            Password: val('fuPass'), Aktif: val('fuAktif'),
+            Cabang: val('fuCabang'),
+            mode: edit ? 'edit' : 'create'
           }).then(function () {
             modalTutup(); toast('Akun tersimpan.'); muatUser();
           }).catch(function (e) { toast(e.message, true); });
         } }
-    ]);
+    ]
+  );
+}
+
+function muatCabang() {
+  if (typeof window.G_BRANCHES === 'undefined') window.G_BRANCHES = {};
+  api('cabang.list', {}).then(function (rows) {
+    rows.forEach(function (c) { window.G_BRANCHES[c.kode_cabang] = c.nama_cabang; });
+  }).catch(function () {});
 }
 
 function muatPromo() {
