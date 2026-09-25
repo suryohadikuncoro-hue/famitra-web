@@ -90,6 +90,10 @@ function formBarang(b) {
       '<label class="field"><span>Stok minimum</span><input id="fbMin" class="inp num" type="number" value="' +
         (b.Stok_Min || 10) + '"></label>' +
     '</div>' +
+    '<label class="field"><span>Golongan</span><select id="fbGol" class="inp">' +
+      ['Bebas', 'Bebas Terbatas', 'Resep', 'Khusus'].map(function (g) {
+        return '<option value="' + g + '"' + (b.Golongan === g ? ' selected' : '') + '>' + g + '</option>';
+      }).join('') + '</select></label>' +
     '<div class="grid g2">' +
       '<label class="field"><span>Harga modal (beli)</span><input id="fbModal" class="inp num" type="number" value="' +
         (b.Harga_Modal || 0) + '"></label>' +
@@ -109,7 +113,7 @@ function formBarang(b) {
           api('barang.simpan', {
             mode: edit ? 'edit' : 'baru',
             Kode_Obat: val('fbKode'), Nama_Obat: val('fbNama'), Kategori: val('fbKat'),
-            Satuan: val('fbSatuan'), Barcode: val('fbBarcode'), Stok_Min: numVal('fbMin'),
+            Satuan: val('fbSatuan'), Barcode: val('fbBarcode'), Stok_Min: numVal('fbMin'), Golongan: val('fbGol'),
             Harga_Modal: numVal('fbModal'), Harga_Jual_Umum: numVal('fbUmum'),
             Harga_Khusus: numVal('fbKhusus'), Harga_Jual_Mutasi: numVal('fbMutasi'),
             PPN: numVal('fbPPN')

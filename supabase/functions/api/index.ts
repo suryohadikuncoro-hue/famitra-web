@@ -246,7 +246,7 @@ async function action(name, data, s) {
   if (name === "barang.simpan") {
     // Harga per cabang (keputusan 2): cabang_id SELALU dari sesi, tidak dari payload.
     const cabang = cabangSesi(s);
-    const p = { cabang_id: cabang, kode_obat: String(data.Kode_Obat).toUpperCase(), nama_obat: data.Nama_Obat, kategori: data.Kategori || "", satuan: data.Satuan || "Pcs", barcode: data.Barcode || null, stok_min: data.Stok_Min || 10, harga_modal: data.Harga_Modal || 0, harga_jual_umum: data.Harga_Jual_Umum || 0, harga_khusus: data.Harga_Khusus || 0, harga_jual_mutasi: data.Harga_Jual_Mutasi || 0, ppn: data.PPN || 0, aktif: "YA" };
+    const p = { cabang_id: cabang, kode_obat: String(data.Kode_Obat).toUpperCase(), nama_obat: data.Nama_Obat, kategori: data.Kategori || "", golongan: data.Golongan || data.golongan || "Bebas", satuan: data.Satuan || "Pcs", barcode: data.Barcode || null, stok_min: data.Stok_Min || 10, harga_modal: data.Harga_Modal || 0, harga_jual_umum: data.Harga_Jual_Umum || 0, harga_khusus: data.Harga_Khusus || 0, harga_jual_mutasi: data.Harga_Jual_Mutasi || 0, ppn: data.PNN || 0, aktif: "YA" };
     const r = await db("master_barang", data.mode === "edit" ? `?kode_obat=eq.${encodeURIComponent(p.kode_obat)}&cabang_id=eq.${encodeURIComponent(cabang)}` : "", { method: data.mode === "edit" ? "PATCH" : "POST", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify(p) });
     if (!r.ok) throw new Error(await r.text());
     return true;
