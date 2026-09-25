@@ -174,14 +174,25 @@ function gambarDashboard(d) {
       '</div>';
   }
 
-  /* 4. Strip segmen pelanggan */
+  /* 4. Strip segmen pelanggan dengan visual donut */
   var s = d.segmen_pelanggan;
+  var totalPel = (s.VIP || 0) + (s['Active Routine'] || 0) + (s['At-Risk'] || 0) + (s.Baru || 0);
+  var donutData = [
+    { label: 'VIP', nilai: s.VIP || 0 },
+    { label: 'Rutin', nilai: s['Active Routine'] || 0 },
+    { label: 'Risiko', nilai: s['At-Risk'] || 0 },
+    { label: 'Baru', nilai: s.Baru || 0 }
+  ];
+  
   var segStrip =
-    '<div class="segstrip">' +
-      seg('vip', s.VIP || 0, 'Pelanggan VIP') +
-      seg('rutin', s['Active Routine'] || 0, 'Rutin belanja') +
-      seg('risk', s['At-Risk'] || 0, 'Perlu ditindak') +
-      seg('', s.Baru || 0, 'Baru terdaftar') +
+    '<div class="card" style="margin-bottom:14px; display:flex; align-items:center; gap:20px;">' +
+      svgDonut(donutData, totalPel) +
+      '<div class="segstrip" style="margin-bottom:0; flex:1">' +
+        seg('vip', s.VIP || 0, 'VIP') +
+        seg('rutin', s['Active Routine'] || 0, 'Rutin') +
+        seg('risk', s['At-Risk'] || 0, 'Risiko') +
+        seg('', s.Baru || 0, 'Baru') +
+      '</div>' +
     '</div>';
 
   /* 5. Feed transaksi + panel kanan */
