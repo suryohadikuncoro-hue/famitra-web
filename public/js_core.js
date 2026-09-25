@@ -204,26 +204,6 @@ function svgBar(data, opts) {
     '<line class="axis" x1="0" y1="100" x2="' + w + '" y2="100"/>' + bars + '</svg>';
 }
 
-/** Grafik donat berbasis CSS conic-gradient untuk distribusi segmen. */
-function svgDonut(items, total, opts) {
-  opts = opts || {};
-  if (!total) return '<div class="empty">Tidak ada data.</div>';
-  var conic = [];
-  var currentDeg = 0;
-  var colors = ['var(--brand)', 'var(--ink)', 'var(--muted)', '#ced4da'];
-  items.forEach(function(item, i) {
-    var deg = (item.nilai / total) * 360;
-    conic.push(colors[i % colors.length] + ' ' + currentDeg.toFixed(1) + 'deg ' + (currentDeg + deg).toFixed(1) + 'deg');
-    currentDeg += deg;
-  });
-  
-  return '<div style="width:120px;height:120px;border-radius:50%;' +
-    'background:conic-gradient(' + conic.join(', ') + ');' +
-    'display:grid;place-items:center;position:relative">' +
-    '<div style="width:70px;height:70px;border-radius:50%;background:var(--surface)"></div>' +
-    '</div>';
-}
-
 /** Daftar peringkat sebagai bar horizontal. */
 function barPeringkat(items, opts) {
   opts = opts || {};
