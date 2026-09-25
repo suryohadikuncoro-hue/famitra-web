@@ -1,0 +1,456 @@
+table_name,column_name,data_type,is_nullable,column_default
+activity_log,id,bigint,NO,nextval('activity_log_id_seq'::regclass)
+activity_log,fungsi,text,NO,null
+activity_log,username,text,YES,null
+activity_log,durasi_ms,integer,YES,null
+activity_log,catatan,text,YES,null
+activity_log,created_at,timestamp with time zone,NO,now()
+app_sessions,token,text,NO,null
+app_sessions,username,text,NO,null
+app_sessions,nama,text,NO,null
+app_sessions,role,text,NO,null
+app_sessions,login_at,timestamp with time zone,NO,now()
+app_sessions,shift,text,NO,null
+app_sessions,expires_at,timestamp with time zone,NO,null
+app_sessions,cabang_id,text,NO,'KARLA'::text
+app_users,username,text,NO,null
+app_users,nama,text,NO,null
+app_users,password_hash,text,NO,null
+app_users,role,text,NO,null
+app_users,aktif,text,NO,'YA'::text
+app_users,created_at,timestamp with time zone,NO,now()
+app_users,cabang_id,text,NO,'KARLA'::text
+biaya_operasional,id,text,NO,null
+biaya_operasional,tanggal,date,NO,null
+biaya_operasional,keterangan,text,NO,null
+biaya_operasional,nominal,numeric,NO,null
+biaya_operasional,shift,text,NO,null
+biaya_operasional,petugas,text,NO,null
+biaya_operasional,timestamp,timestamp with time zone,NO,now()
+biaya_operasional,cabang_id,text,NO,'KARLA'::text
+customers,phone,text,NO,null
+customers,name,text,NO,null
+customers,customer_type,USER-DEFINED,NO,'Umum'::customer_type
+customers,address,text,NO,''::text
+customers,license_number,text,NO,''::text
+customers,total_spend,numeric,NO,0
+customers,transaction_count,integer,NO,0
+customers,last_purchase_date,date,YES,null
+customers,crm_segment,text,NO,'Baru'::text
+customers,created_at,timestamp with time zone,NO,now()
+loyalty_redemptions,id,uuid,NO,gen_random_uuid()
+loyalty_redemptions,cabang_id,text,NO,null
+loyalty_redemptions,customer_id,uuid,NO,null
+loyalty_redemptions,reward_id,uuid,NO,null
+loyalty_redemptions,no_nota,text,YES,null
+loyalty_redemptions,points_used,integer,NO,null
+loyalty_redemptions,reward_value,numeric,NO,0
+loyalty_redemptions,status,text,NO,'redeemed'::text
+loyalty_redemptions,created_at,timestamp with time zone,NO,now()
+loyalty_rewards,id,uuid,NO,gen_random_uuid()
+loyalty_rewards,cabang_id,text,NO,null
+loyalty_rewards,name,text,NO,null
+loyalty_rewards,points_required,integer,NO,null
+loyalty_rewards,reward_type,text,NO,'discount'::text
+loyalty_rewards,reward_value,numeric,NO,0
+loyalty_rewards,min_tier,text,NO,'reguler'::text
+loyalty_rewards,is_active,boolean,NO,true
+loyalty_rewards,created_at,timestamp with time zone,NO,now()
+loyalty_transactions,id,uuid,NO,gen_random_uuid()
+loyalty_transactions,cabang_id,text,NO,null
+loyalty_transactions,customer_id,uuid,NO,null
+loyalty_transactions,no_nota,text,YES,null
+loyalty_transactions,points_change,integer,NO,null
+loyalty_transactions,reason,text,NO,null
+loyalty_transactions,created_at,timestamp with time zone,NO,now()
+master_barang,kode_obat,text,NO,null
+master_barang,nama_obat,text,NO,null
+master_barang,kategori,text,YES,null
+master_barang,golongan,text,YES,null
+master_barang,satuan,text,NO,'Pcs'::text
+master_barang,barcode,text,YES,null
+master_barang,harga_modal,numeric,NO,0
+master_barang,harga_jual_umum,numeric,NO,0
+master_barang,harga_khusus,numeric,NO,0
+master_barang,harga_jual_mutasi,numeric,NO,0
+master_barang,ppn,numeric,NO,0
+master_barang,stok_min,numeric,NO,10
+master_barang,aktif,text,NO,'YA'::text
+master_barang,updated_at,timestamp with time zone,NO,now()
+master_cabang,kode_cabang,text,NO,null
+master_cabang,nama_cabang,text,NO,null
+master_cabang,aktif,text,NO,'YA'::text
+master_cabang,created_at,timestamp with time zone,NO,now()
+master_customer,nomor_wa,text,NO,null
+master_customer,nama,text,NO,null
+master_customer,tipe_customer,text,NO,'Umum'::text
+master_customer,alamat,text,YES,null
+master_customer,nomor_izin,text,YES,null
+master_customer,total_belanja,numeric,NO,0
+master_customer,jumlah_transaksi,integer,NO,0
+master_customer,tanggal_terakhir_beli,date,YES,null
+master_customer,segment_crm,text,NO,'Baru'::text
+master_customer,created_at,timestamp with time zone,NO,now()
+master_customer,id,uuid,NO,gen_random_uuid()
+master_customer,cabang_id,text,NO,'KARLA'::text
+master_customer,email,text,YES,null
+master_customer,birth_date,date,YES,null
+master_customer,preferred_language,text,NO,'id'::text
+master_customer,preferred_pickup_time,text,YES,null
+master_customer,family_group_id,uuid,YES,null
+master_customer,tier,text,NO,'reguler'::text
+master_customer,total_points,integer,NO,0
+master_customer,total_spend_mtd,numeric,NO,0
+master_customer,consent_marketing,boolean,NO,false
+master_supplier,kode_supplier,text,NO,null
+master_supplier,nama_supplier,text,NO,null
+master_supplier,telepon,text,YES,null
+master_supplier,alamat,text,YES,null
+n8n_chat_histories,id,integer,NO,nextval('n8n_chat_histories_id_seq'::regclass)
+n8n_chat_histories,session_id,character varying,NO,null
+n8n_chat_histories,message,jsonb,NO,null
+notification_log,id,uuid,NO,gen_random_uuid()
+notification_log,cabang_id,text,NO,null
+notification_log,customer_id,uuid,NO,null
+notification_log,refill_program_id,uuid,YES,null
+notification_log,channel,text,NO,null
+notification_log,message,text,YES,null
+notification_log,status,text,NO,'sent'::text
+notification_log,sent_at,timestamp with time zone,NO,now()
+notification_log,created_at,timestamp with time zone,NO,now()
+operating_expenses,id,uuid,NO,gen_random_uuid()
+operating_expenses,expense_date,date,NO,CURRENT_DATE
+operating_expenses,description,text,NO,null
+operating_expenses,amount,numeric,NO,null
+operating_expenses,shift,text,NO,'Luar Jam'::text
+operating_expenses,officer_id,uuid,YES,null
+operating_expenses,officer_name,text,NO,''::text
+operating_expenses,created_at,timestamp with time zone,NO,now()
+products,code,text,NO,null
+products,name,text,NO,null
+products,category,text,NO,''::text
+products,unit,text,NO,'Unit'::text
+products,barcode,text,YES,null
+products,cost,numeric,NO,0
+products,price_general,numeric,NO,0
+products,price_special,numeric,NO,0
+products,price_transfer,numeric,NO,0
+products,tax,numeric,NO,0
+products,min_stock,integer,NO,10
+products,active,boolean,NO,true
+products,updated_at,timestamp with time zone,NO,now()
+profiles,id,uuid,NO,null
+profiles,username,text,NO,null
+profiles,name,text,NO,null
+profiles,role,USER-DEFINED,NO,'Kasir'::app_role
+profiles,active,boolean,NO,true
+profiles,created_at,timestamp with time zone,NO,now()
+promo_bundle_items,bundle_id,uuid,NO,null
+promo_bundle_items,kode_obat,text,NO,null
+promo_bundle_items,qty,numeric,NO,1
+promo_bundles,id,uuid,NO,gen_random_uuid()
+promo_bundles,cabang_id,text,NO,null
+promo_bundles,name,text,NO,null
+promo_bundles,code,text,NO,null
+promo_bundles,description,text,NO,''::text
+promo_bundles,bundle_price,numeric,NO,null
+promo_bundles,starts_at,timestamp with time zone,NO,null
+promo_bundles,ends_at,timestamp with time zone,NO,null
+promo_bundles,status,text,NO,'DRAFT'::text
+promo_bundles,created_by,text,NO,null
+promo_bundles,created_at,timestamp with time zone,NO,now()
+promo_bundles,updated_at,timestamp with time zone,NO,now()
+promo_campaigns,id,uuid,NO,gen_random_uuid()
+promo_campaigns,cabang_id,text,NO,null
+promo_campaigns,name,text,NO,null
+promo_campaigns,description,text,NO,''::text
+promo_campaigns,starts_at,timestamp with time zone,NO,null
+promo_campaigns,ends_at,timestamp with time zone,NO,null
+promo_campaigns,status,text,NO,'DRAFT'::text
+promo_campaigns,created_by,text,NO,null
+promo_campaigns,created_at,timestamp with time zone,NO,now()
+promo_campaigns,updated_at,timestamp with time zone,NO,now()
+promo_coupons,id,uuid,NO,gen_random_uuid()
+promo_coupons,campaign_id,uuid,NO,null
+promo_coupons,cabang_id,text,NO,null
+promo_coupons,code,text,NO,null
+promo_coupons,discount_type,text,NO,null
+promo_coupons,discount_value,numeric,NO,null
+promo_coupons,max_discount,numeric,YES,null
+promo_coupons,min_purchase,numeric,NO,0
+promo_coupons,usage_limit_total,integer,YES,null
+promo_coupons,usage_limit_per_customer,integer,NO,1
+promo_coupons,is_active,boolean,NO,true
+promo_coupons,created_at,timestamp with time zone,NO,now()
+promo_redemptions,id,uuid,NO,gen_random_uuid()
+promo_redemptions,coupon_id,uuid,NO,null
+promo_redemptions,campaign_id,uuid,NO,null
+promo_redemptions,customer_id,uuid,NO,null
+promo_redemptions,cabang_id,text,NO,null
+promo_redemptions,invoice_no,text,NO,null
+promo_redemptions,discount_amount,numeric,NO,null
+promo_redemptions,redeemed_at,timestamp with time zone,NO,now()
+promo_redemptions,status,text,NO,'APPLIED'::text
+promo_segment_targets,campaign_id,uuid,NO,null
+promo_segment_targets,segment,text,NO,null
+promo_segment_targets,customer_type,text,YES,null
+purchase_items,id,uuid,NO,gen_random_uuid()
+purchase_items,invoice_no,text,NO,null
+purchase_items,product_code,text,NO,null
+purchase_items,product_name,text,NO,null
+purchase_items,batch_code,text,NO,null
+purchase_items,expiry_date,date,NO,null
+purchase_items,quantity,integer,NO,null
+purchase_items,net_price,numeric,NO,0
+purchase_items,tax,numeric,NO,0
+purchase_items,discount,numeric,NO,0
+purchase_items,new_general_price,numeric,YES,null
+purchase_items,subtotal,numeric,NO,0
+purchase_return_items,id,uuid,NO,gen_random_uuid()
+purchase_return_items,return_no,text,NO,null
+purchase_return_items,product_code,text,NO,null
+purchase_return_items,product_name,text,NO,null
+purchase_return_items,batch_code,text,NO,null
+purchase_return_items,quantity,integer,NO,null
+purchase_return_items,net_price,numeric,NO,0
+purchase_return_items,subtotal,numeric,NO,0
+purchase_return_items,condition,text,NO,'Rusak'::text
+purchase_returns,return_no,text,NO,null
+purchase_returns,original_invoice,text,NO,null
+purchase_returns,supplier_code,text,YES,null
+purchase_returns,return_date,date,NO,CURRENT_DATE
+purchase_returns,created_by,text,NO,''::text
+purchase_returns,approved_by,text,YES,null
+purchase_returns,status,text,NO,'Menunggu Approval'::text
+purchase_returns,reason,text,NO,''::text
+purchase_returns,total_refund,numeric,NO,0
+purchase_returns,approved_at,timestamp with time zone,YES,null
+purchase_returns,created_at,timestamp with time zone,NO,now()
+purchases,invoice_no,text,NO,null
+purchases,supplier_code,text,YES,null
+purchases,category,text,NO,''::text
+purchases,invoice_date,date,NO,null
+purchases,due_date,date,YES,null
+purchases,total_items,integer,NO,0
+purchases,total_bill,numeric,NO,0
+purchases,officer_id,uuid,YES,null
+purchases,officer_name,text,NO,''::text
+purchases,created_at,timestamp with time zone,NO,now()
+referrals,id,uuid,NO,gen_random_uuid()
+referrals,cabang_id,text,NO,null
+referrals,referrer_customer_id,uuid,NO,null
+referrals,referred_customer_id,uuid,NO,null
+referrals,bonus_points_awarded,integer,NO,0
+referrals,created_at,timestamp with time zone,NO,now()
+refill_programs,id,uuid,NO,gen_random_uuid()
+refill_programs,cabang_id,text,NO,null
+refill_programs,customer_id,uuid,NO,null
+refill_programs,kode_obat,text,NO,null
+refill_programs,cycle_days,integer,NO,null
+refill_programs,last_purchase_date,date,NO,null
+refill_programs,next_reminder_date,date,NO,null
+refill_programs,stamp_count,integer,NO,0
+refill_programs,status,text,NO,'active'::text
+refill_programs,created_at,timestamp with time zone,NO,now()
+sale_items,id,uuid,NO,gen_random_uuid()
+sale_items,invoice_no,text,NO,null
+sale_items,product_code,text,NO,null
+sale_items,product_name,text,NO,null
+sale_items,batch_code,text,NO,null
+sale_items,expiry_date,date,NO,null
+sale_items,quantity,integer,NO,null
+sale_items,unit_price,numeric,NO,null
+sale_items,batch_cost,numeric,NO,null
+sale_items,subtotal,numeric,NO,null
+sales,invoice_no,text,NO,null
+sales,sale_date,date,NO,CURRENT_DATE
+sales,sale_time,time without time zone,NO,LOCALTIME
+sales,customer_phone,text,YES,null
+sales,customer_name,text,NO,'Umum'::text
+sales,customer_type,USER-DEFINED,NO,'Umum'::customer_type
+sales,cashier_id,uuid,YES,null
+sales,cashier_name,text,NO,''::text
+sales,shift,text,NO,'Luar Jam'::text
+sales,subtotal,numeric,NO,0
+sales,discount,numeric,NO,0
+sales,final_price,numeric,NO,0
+sales,total_hpp,numeric,NO,0
+sales,paid,numeric,NO,0
+sales,change,numeric,NO,0
+sales,created_at,timestamp with time zone,NO,now()
+sales_return_items,id,uuid,NO,gen_random_uuid()
+sales_return_items,return_no,text,NO,null
+sales_return_items,product_code,text,NO,null
+sales_return_items,product_name,text,NO,null
+sales_return_items,batch_code,text,NO,null
+sales_return_items,quantity,integer,NO,null
+sales_return_items,unit_price,numeric,NO,0
+sales_return_items,subtotal,numeric,NO,0
+sales_return_items,condition,text,NO,'Baik'::text
+sales_returns,return_no,text,NO,null
+sales_returns,original_invoice,text,NO,null
+sales_returns,return_date,date,NO,CURRENT_DATE
+sales_returns,return_time,time without time zone,NO,LOCALTIME
+sales_returns,customer_phone,text,YES,null
+sales_returns,customer_name,text,NO,''::text
+sales_returns,officer_name,text,NO,''::text
+sales_returns,shift,text,NO,'Luar Jam'::text
+sales_returns,reason,text,NO,''::text
+sales_returns,total_refund,numeric,NO,0
+sales_returns,created_at,timestamp with time zone,NO,now()
+stock_batches,id,uuid,NO,gen_random_uuid()
+stock_batches,product_code,text,NO,null
+stock_batches,batch_code,text,NO,null
+stock_batches,expiry_date,date,NO,null
+stock_batches,stock_real,integer,NO,0
+stock_batches,batch_cost,numeric,NO,0
+stock_batches,updated_at,timestamp with time zone,NO,now()
+stock_counts,id,uuid,NO,gen_random_uuid()
+stock_counts,count_date,date,NO,CURRENT_DATE
+stock_counts,product_code,text,NO,null
+stock_counts,batch_code,text,NO,null
+stock_counts,system_stock,integer,NO,null
+stock_counts,physical_stock,integer,NO,null
+stock_counts,difference,integer,YES,null
+stock_counts,note,text,NO,''::text
+stock_counts,officer_id,uuid,YES,null
+stock_counts,officer_name,text,NO,''::text
+stock_counts,created_at,timestamp with time zone,NO,now()
+stok_batch,id_batch,text,NO,null
+stok_batch,kode_obat,text,NO,null
+stok_batch,kode_batch,text,NO,null
+stok_batch,expired_date,date,NO,null
+stok_batch,stok_real,numeric,NO,0
+stok_batch,harga_modal_batch,numeric,NO,0
+stok_batch,updated_at,timestamp with time zone,NO,now()
+stok_batch,cabang_id,text,NO,'KARLA'::text
+stok_opname,id,text,NO,null
+stok_opname,tanggal,date,NO,null
+stok_opname,kode_obat,text,NO,null
+stok_opname,kode_batch,text,NO,null
+stok_opname,stok_sistem,numeric,NO,null
+stok_opname,stok_fisik,numeric,NO,null
+stok_opname,selisih,numeric,NO,null
+stok_opname,keterangan,text,YES,null
+stok_opname,petugas,text,NO,null
+stok_opname,cabang_id,text,NO,'KARLA'::text
+suppliers,code,text,NO,null
+suppliers,name,text,NO,null
+suppliers,phone,text,NO,''::text
+suppliers,address,text,NO,''::text
+trx_pembayaran_hutang,id,uuid,NO,gen_random_uuid()
+trx_pembayaran_hutang,cabang_id,text,NO,null
+trx_pembayaran_hutang,no_faktur,text,NO,null
+trx_pembayaran_hutang,tanggal_bayar,date,NO,CURRENT_DATE
+trx_pembayaran_hutang,jumlah_bayar,numeric,NO,null
+trx_pembayaran_hutang,metode_bayar,text,NO,null
+trx_pembayaran_hutang,referensi,text,NO,''::text
+trx_pembayaran_hutang,catatan,text,NO,''::text
+trx_pembayaran_hutang,dibayar_oleh,text,NO,null
+trx_pembayaran_hutang,status,text,NO,'AKTIF'::text
+trx_pembayaran_hutang,alasan_pembatalan,text,YES,null
+trx_pembayaran_hutang,dibatalkan_oleh,text,YES,null
+trx_pembayaran_hutang,dibatalkan_pada,timestamp with time zone,YES,null
+trx_pembayaran_hutang,created_at,timestamp with time zone,NO,now()
+trx_pembelian,no_faktur,text,NO,null
+trx_pembelian,supplier,text,NO,null
+trx_pembelian,kategori,text,NO,'Tidak Berpajak'::text
+trx_pembelian,tanggal_faktur,date,NO,null
+trx_pembelian,jatuh_tempo,date,YES,null
+trx_pembelian,total_item,numeric,NO,0
+trx_pembelian,total_tagihan,numeric,NO,0
+trx_pembelian,petugas,text,NO,null
+trx_pembelian,timestamp,timestamp with time zone,NO,now()
+trx_pembelian,cabang_id,text,NO,'KARLA'::text
+trx_pembelian_detail,id,bigint,NO,nextval('trx_pembelian_detail_id_seq'::regclass)
+trx_pembelian_detail,no_faktur,text,NO,null
+trx_pembelian_detail,kode_obat,text,NO,null
+trx_pembelian_detail,nama_obat,text,NO,null
+trx_pembelian_detail,kode_batch,text,NO,null
+trx_pembelian_detail,expired_date,date,NO,null
+trx_pembelian_detail,qty,numeric,NO,null
+trx_pembelian_detail,harga_netto,numeric,NO,null
+trx_pembelian_detail,ppn,numeric,NO,0
+trx_pembelian_detail,diskon,numeric,NO,0
+trx_pembelian_detail,harga_jual_umum_baru,numeric,NO,0
+trx_pembelian_detail,subtotal,numeric,NO,null
+trx_pembelian_detail,cabang_id,text,NO,'KARLA'::text
+trx_penjualan,no_nota,text,NO,null
+trx_penjualan,tanggal,date,NO,null
+trx_penjualan,jam,text,NO,null
+trx_penjualan,nomor_wa,text,YES,null
+trx_penjualan,nama_pelanggan,text,NO,'Umum'::text
+trx_penjualan,tipe_customer,text,NO,'Umum'::text
+trx_penjualan,petugas_transaksi,text,NO,null
+trx_penjualan,shift,text,NO,null
+trx_penjualan,subtotal,numeric,NO,null
+trx_penjualan,diskon,numeric,NO,0
+trx_penjualan,harga_akhir,numeric,NO,null
+trx_penjualan,total_hpp,numeric,NO,null
+trx_penjualan,bayar,numeric,NO,null
+trx_penjualan,kembalian,numeric,NO,null
+trx_penjualan,timestamp,timestamp with time zone,NO,now()
+trx_penjualan,cabang_id,text,NO,'KARLA'::text
+trx_penjualan,coupon_id,uuid,YES,null
+trx_penjualan,coupon_code,text,YES,null
+trx_penjualan,campaign_id,uuid,YES,null
+trx_penjualan,coupon_discount,numeric,NO,0
+trx_penjualan,bundle_id,uuid,YES,null
+trx_penjualan,bundle_code,text,YES,null
+trx_penjualan,bundle_discount,numeric,NO,0
+trx_penjualan_detail,id,bigint,NO,nextval('trx_penjualan_detail_id_seq'::regclass)
+trx_penjualan_detail,no_nota,text,NO,null
+trx_penjualan_detail,tanggal,date,NO,null
+trx_penjualan_detail,kode_obat,text,NO,null
+trx_penjualan_detail,nama_obat,text,NO,null
+trx_penjualan_detail,kode_batch,text,NO,null
+trx_penjualan_detail,expired_date,date,YES,null
+trx_penjualan_detail,qty,numeric,NO,null
+trx_penjualan_detail,harga_satuan,numeric,NO,null
+trx_penjualan_detail,harga_modal,numeric,NO,null
+trx_penjualan_detail,subtotal,numeric,NO,null
+trx_penjualan_detail,cabang_id,text,NO,'KARLA'::text
+trx_retur_beli,no_retur,text,NO,null
+trx_retur_beli,no_faktur_asal,text,NO,null
+trx_retur_beli,supplier,text,NO,null
+trx_retur_beli,tanggal,date,NO,null
+trx_retur_beli,created_by,text,NO,null
+trx_retur_beli,approved_by,text,YES,null
+trx_retur_beli,status,text,NO,'PENDING_APPROVAL'::text
+trx_retur_beli,alasan,text,NO,null
+trx_retur_beli,total_refund,numeric,NO,null
+trx_retur_beli,tanggal_approval,date,YES,null
+trx_retur_beli,timestamp,timestamp with time zone,NO,now()
+trx_retur_beli,cabang_id,text,NO,'KARLA'::text
+trx_retur_beli_detail,id,bigint,NO,nextval('trx_retur_beli_detail_id_seq'::regclass)
+trx_retur_beli_detail,no_retur,text,NO,null
+trx_retur_beli_detail,kode_obat,text,NO,null
+trx_retur_beli_detail,nama_obat,text,NO,null
+trx_retur_beli_detail,kode_batch,text,NO,null
+trx_retur_beli_detail,qty,numeric,NO,null
+trx_retur_beli_detail,harga_netto,numeric,NO,null
+trx_retur_beli_detail,subtotal,numeric,NO,null
+trx_retur_beli_detail,kondisi,text,NO,'Baik'::text
+trx_retur_beli_detail,cabang_id,text,NO,'KARLA'::text
+trx_retur_jual,no_retur,text,NO,null
+trx_retur_jual,no_nota_asal,text,NO,null
+trx_retur_jual,tanggal,date,NO,null
+trx_retur_jual,jam,text,NO,null
+trx_retur_jual,nomor_wa,text,YES,null
+trx_retur_jual,nama_pelanggan,text,YES,null
+trx_retur_jual,petugas,text,NO,null
+trx_retur_jual,shift,text,NO,null
+trx_retur_jual,alasan,text,NO,null
+trx_retur_jual,total_refund,numeric,NO,null
+trx_retur_jual,timestamp,timestamp with time zone,NO,now()
+trx_retur_jual,cabang_id,text,NO,'KARLA'::text
+trx_retur_jual_detail,id,bigint,NO,nextval('trx_retur_jual_detail_id_seq'::regclass)
+trx_retur_jual_detail,no_retur,text,NO,null
+trx_retur_jual_detail,kode_obat,text,NO,null
+trx_retur_jual_detail,nama_obat,text,NO,null
+trx_retur_jual_detail,kode_batch,text,NO,null
+trx_retur_jual_detail,qty,numeric,NO,null
+trx_retur_jual_detail,harga_satuan,numeric,NO,null
+trx_retur_jual_detail,subtotal,numeric,NO,null
+trx_retur_jual_detail,kondisi,text,NO,'Baik'::text
+trx_retur_jual_detail,cabang_id,text,NO,'KARLA'::text

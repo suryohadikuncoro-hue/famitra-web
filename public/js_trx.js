@@ -38,7 +38,7 @@ VIEWS.beli = {
       '<div class="card"><div class="card-head"><h3>Faktur masuk dari PBF</h3>' +
         '<button id="blSupplierBaru" class="btn btn-sm">Tambah supplier</button></div>' +
         '<div class="grid g4">' +
-          '<label class="field"><span>Nomor faktur</span><input id="blFaktur" class="inp" placeholder="FK-2026-0012"></label>' +
+          '<label class="field"><span>Nomor faktur PBF</span><input id="blFaktur" class="inp" placeholder="FK-2026-0012"></label>' +
           '<label class="field"><span>Supplier</span><select id="blSupplier" class="inp"></select></label>' +
           '<label class="field"><span>Kategori pembelian</span><select id="blKategori" class="inp">' +
             '<option>Berpajak</option><option>Tidak Berpajak</option><option>Konsinyasi</option>' +
@@ -63,7 +63,7 @@ VIEWS.beli = {
       '</div>' +
 
       '<div class="card"><div class="card-head"><h3>Riwayat faktur</h3></div>' +
-        '<div class="table-wrap"><table><thead><tr><th>No. faktur</th><th>Supplier</th>' +
+        '<div class="table-wrap"><table><thead><tr><th>No. faktur</th><th>No. faktur PBF</th><th>Supplier</th>' +
           '<th>Kategori</th><th>Tanggal</th><th>Jatuh tempo</th><th class="c">Item</th>' +
           '<th class="r">Tagihan</th><th class="r">Dibayar</th><th class="r">Sisa hutang</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="blRiwayat"></tbody></table></div></div>';
 
@@ -248,13 +248,13 @@ function muatRiwayatBeli() {
   apiHutang('list', {}).then(function (rows) {
     tb.innerHTML = rows.length ? rows.map(function (r) {
       var bayar = r.Status_Pembayaran === 'LUNAS' ? '<button class="btn btn-sm" data-riwayat-hutang="' + esc(r.No_Faktur) + '">Riwayat</button>' : '<button class="btn btn-sm btn-primary" data-bayar-hutang="' + esc(r.No_Faktur) + '">Bayar</button> <button class="btn btn-sm" data-riwayat-hutang="' + esc(r.No_Faktur) + '">Riwayat</button>';
-      return '<tr><td>' + esc(r.No_Faktur) + '</td><td>' + esc(r.Supplier) + '</td>' +
+      return '<tr><td>' + esc(r.No_Faktur) + '</td><td>' + esc(r.No_Faktur_Supplier || '') + '</td><td>' + esc(r.Supplier) + '</td>' +
         '<td>' + esc(r.Kategori) + '</td><td>' + tglIndo(r.Tanggal_Faktur) + '</td>' +
         '<td>' + (r.Jatuh_Tempo ? tglIndo(r.Jatuh_Tempo) + '<br>' + labelJatuhTempoHutang(r) : '—') + '</td>' +
         '<td class="c num">' + angka(r.Total_Item) + '</td>' +
         '<td class="r num">' + rupiah(r.Total_Tagihan) + '</td><td class="r num">' + rupiah(r.Total_Dibayar) + '</td>' +
         '<td class="r num">' + rupiah(r.Sisa_Hutang) + '</td><td>' + chipStatusHutang(r.Status_Pembayaran) + '</td><td class="c">' + bayar + '</td></tr>';
-    }).join('') : tabelKosong('Belum ada faktur tercatat.', 11);
+    }).join('') : tabelKosong('Belum ada faktur tercatat.', 12);
     tb.onclick = function (e) {
       var bayar = e.target.closest('[data-bayar-hutang]');
       var riwayat = e.target.closest('[data-riwayat-hutang]');
@@ -262,7 +262,7 @@ function muatRiwayatBeli() {
       if (bayar) bukaBayarHutang(r);
       if (riwayat) bukaRiwayatHutang(r.No_Faktur);
     };
-  }).catch(function (e) { tb.innerHTML = '<tr><td colspan="11" class="empty">' + esc(e.message) + '</td></tr>'; });
+  }).catch(function (e) { tb.innerHTML = '<tr><td colspan="12" class="empty">' + esc(e.message) + '</td></tr>'; });
 }
 /* ------------------------------------------------- Biaya operasional ---- */
 
@@ -579,6 +579,7 @@ function muatFakturUntukRetur() {
     }
     sel.innerHTML = d.faktur.map(function (f) {
       return '<option value="' + esc(f.No_Faktur) + '">' + esc(f.No_Faktur) + ' · ' +
+        (f.No_Faktur_Supplier ? esc(f.No_Faktur_Supplier) + ' · ' : '') +
         esc(f.Supplier) + ' · ' + esc(f.Tanggal_Faktur) +
         (f.sudah_retur > 0 ? ' (sudah diretur ' + rupiah(f.sudah_retur) + ')' : '') +
       '</option>';
@@ -606,7 +607,8 @@ function muatItemFakturRetur() {
   var totalNetto = f.items.reduce(function (a, it) { return a + it.Harga_Netto * it.Qty; }, 0);
   var proporsi = totalNetto > 0 ? Math.min(1, sudah / totalNetto) : 0;
   area.innerHTML =
-    '<div class="kpi-sub">Faktur <strong>' + esc(f.No_Faktur) + '</strong> · ' +
+    '<div class="kpi-sub">Faktur <strong>' + esc(f.No_Faktur) + '</strong>' +
+      (f.No_Faktur_Supplier ? ' · PBF: ' + esc(f.No_Faktur_Supplier) : '') + ' · ' +
       esc(f.Supplier) + ' · tagihan ' + rupiah(f.Total_Tagihan) +
       (sudah > 0 ? ' · sudah diretur ' + rupiah(sudah) : '') +
     '</div>' +

@@ -1,1 +1,5 @@
 /supabase/.temp/
+
+# Placeholder migration files matching remote-only CLI-generated migrations.
+# These exist locally so `supabase db push` works; they must NOT be committed.
+/supabase/migrations/*_remote_placeholder.sql
