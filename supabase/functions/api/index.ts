@@ -66,6 +66,7 @@ var PERM = {
   "beli.simpan": ["Owner", "Apoteker"],
   "beli.supplier": ["Owner", "Apoteker"],
   "beli.simpanSupplier": ["Owner", "Apoteker"],
+  "loyalty.expire": ["Owner", "Apoteker"],
   "biaya.list": ["Owner", "Kasir"],
   "biaya.simpan": ["Owner", "Kasir"],
   "biaya.hapus": ["Owner"],
@@ -187,6 +188,8 @@ async function action(name, data, s) {
     return await r.json();
   }
   if (name === "crm.list") {
+    // Auto-expire poin yang lebih tua dari 12 bulan sebelum tampilkan CRM
+    await db("rpc/expire_loyalty_points", "", { method: "POST", headers: { ...headers, Prefer: "return=representation" } });
     const q = String(data.q || "").trim();
     const tipe = String(data.tipe || "Semua");
     const parts = [`select=*`, `order=nama.asc`, `limit=500`];
@@ -196,6 +199,11 @@ async function action(name, data, s) {
     if (!r.ok) throw new Error(await r.text());
     const rows = await r.json();
     return rows.map((c) => ({ ID: c.id, Nomor_WA: c.nomor_wa, Nama: c.nama, Tipe_Customer: c.tipe_customer, Alamat: c.alamat, Nomor_Izin: c.nomor_izin, Total_Belanja: c.total_belanja, Jumlah_Transaksi: c.jumlah_transaksi, Tanggal_Terakhir_Beli: c.tanggal_terakhir_beli, Segment_CRM: c.segment_crm, Tier: c.tier, Total_Points: c.total_points, Total_Spend_MTD: c.total_spend_mtd, Consent_Marketing: c.consent_marketing }));
+  }
+  if (name === "loyalty.expire") {
+    const r = await db("rpc/expire_loyalty_points", "", { method: "POST", headers: { ...headers, Prefer: "return=representation" } });
+    if (!r.ok) throw new Error(await r.text());
+    return { expired: Number(await r.json()) || 0 };
   }
   if (name === "pos.cariCustomer") {
     const wa = normWA(data.wa);
