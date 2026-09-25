@@ -1,15 +1,12 @@
 /* ================================================================= Token ===
-   Palet diambil langsung dari logo: palang merah bata dan siluet arang.
-
-   Merah sengaja TIDAK dipakai sebagai tombol aksi biasa. Di dashboard apotek,
-   merah berarti rugi, stok habis, kedaluwarsa — kalau tombol "Simpan" juga
-   merah, sinyal bahayanya hilang. Jadi merah untuk identitas dan bahaya,
-   arang untuk aksi.
+   Warna diambil dari referensi premium dashboard:
+   Palet hijau emerald untuk brand, biruabu untuk latar, hitam untuk teks.
+   Hijau = positif, aksi utama di dashboard. Merah = bahaya (stok habis, edasi).
    ========================================================================= */
 :root{
-  --brand:#CE2C2B;        /* merah logo: identitas, blok hero, menu aktif */
-  --brand-dark:#A61F1E;
-  --brand-soft:#FCEBEA;
+  --brand:#10b981;        /* hijau logo: identitas, aksi utama */
+  --brand-dark:#059669;   /* hijau lebih gelap untuk hover */
+  --brand-soft:#d1fae5;   /* hijau pastel untuk background akcent */
 
   --ink:#2E2E2E;          /* arang logo: tombol aksi utama */
   --ink-deep:#1A1A1A;
@@ -37,7 +34,7 @@ html,body{height:100%}
 body{
   margin:0;
   font-family:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
-  font-size:15px; line-height:1.5; color:var(--text); background:var(--paper);
+  font-size:15px; line-height:1.5; color:var(--text); background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);
   -webkit-text-size-adjust:100%;
 }
 h1,h2,h3,h4{margin:0; color:var(--ink-deep); font-weight:700; letter-spacing:-.015em}
@@ -60,8 +57,8 @@ a{color:var(--brand-dark)}
 .login-screen{
   min-height:100dvh; display:grid; place-items:center; padding:24px;
   background:
-    radial-gradient(90% 70% at 50% 0%, rgba(206,44,43,.30) 0%, transparent 65%),
-    linear-gradient(165deg,#262626 0%, #1A1A1A 60%, #101010 100%);
+    radial-gradient(90% 70% at 50% 0%, rgba(16,185,129,.30) 0%, transparent 65%),
+    linear-gradient(165deg,#0f172a 0%, #1e293b 60%, #1e293b 100%);
 }
 .login-card{
   width:100%; max-width:396px; background:var(--surface);
@@ -130,29 +127,18 @@ a{color:var(--brand-dark)}
 /* ================================================================= Layout == */
 .app{display:grid; grid-template-columns:236px 1fr; min-height:100dvh}
 .sidebar{
-  background:var(--ink-nav); color:#A9ADB4; display:flex; flex-direction:column;
-  padding:18px 12px; position:sticky; top:0; height:100dvh;
+  background:linear-gradient(180deg,#0f172a,#1e293b); box-shadow:8px 0 26px rgba(20,22,27,.14)
 }
-.sidebar-brand{display:flex; gap:11px; align-items:center; margin-bottom:24px; padding:0 4px}
-.sidebar-brand .logo{width:38px; height:38px; flex:0 0 38px}
-.sidebar-brand-text strong{display:block; color:#F5F6F7; font-size:15px; letter-spacing:-.02em}
-.sidebar-brand-text span{font-size:11px; color:#7E838B}
-.nav{display:flex; flex-direction:column; gap:2px; flex:1; overflow-y:auto}
-.nav button{
-  text-align:left; border:0; background:transparent; color:#A9ADB4;
-  padding:10px 12px; border-radius:var(--r-sm); cursor:pointer;
-  font-size:14px; font-weight:500; transition:background .14s, color .14s;
-}
-.nav button:hover{background:#2B2B2B; color:#F5F6F7}
-.nav button.is-active{background:var(--brand); color:#fff; font-weight:600}
+.sidebar-brand{border-bottom:1px solid rgba(255,255,255,.12)}
+.nav button{transition:transform .18s,background .18s,box-shadow .18s}.nav button:hover{background:#0f172a;color:#fff;transform:translateX(3px)}.nav button.is-active{background:var(--brand);color:#fff;box-shadow:0 7px 18px rgba(16,185,129,.22);transform:translateX(3px)}
 .sidebar-foot{
-  border-top:1px solid #333; padding-top:13px; margin-top:8px;
+  border-top:1px solid rgba(255,255,255,.08); padding-top:13px; margin-top:8px;
   display:flex; align-items:center; justify-content:space-between; gap:8px;
 }
-.whoami strong{display:block; color:#F5F6F7; font-size:13.5px}
-.whoami span{font-size:11px; color:#7E838B}
-.sidebar-foot .btn{color:#A9ADB4; border-color:#3A3A3A; background:transparent}
-.sidebar-foot .btn:hover{background:#2B2B2B; color:#fff}
+.whoami strong{display:block; color:#f8fafc; font-size:13.5px}
+.whoami span{font-size:11px; color:#94a3b8}
+.sidebar-foot .btn{color:#94a3b8; border-color:#334155; background:transparent}
+.sidebar-foot .btn:hover{background:#0f172a; color:#fff}
 
 .main{display:flex; flex-direction:column; min-width:0}
 .topbar{
@@ -652,21 +638,21 @@ html,body{max-width:100%;overflow-x:hidden}
 .sidebar-foot{min-width:0;overflow:hidden}.whoami{min-width:0;overflow:hidden}.whoami strong,.whoami span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .table-wrap{max-width:100%;overflow-x:auto}
 /* Dynamic header: dark control bar, brand accent, live indicator, and depth. */
-.topbar{position:sticky;top:0;z-index:20;min-height:64px;padding:12px 22px;background:linear-gradient(105deg,#171719 0%,#28292e 68%,#3a2025 100%);color:#fff;border-bottom:0;box-shadow:0 8px 22px rgba(20,22,27,.16)}
-.topbar::before{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--brand),#e2615b,var(--brand));background-size:200% 100%;animation:headerAccent 5s linear infinite}
+.topbar{position:sticky;top:0;z-index:20;min-height:64px;padding:12px 22px;background:linear-gradient(105deg,#0f172a 0%,#1e293b 68%,#1e293b 100%);color:#fff;border-bottom:0;box-shadow:0 8px 22px rgba(20,22,27,.16)}
+.topbar::before{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--brand),var(--brand-dark),var(--brand));background-size:200% 100%;animation:headerAccent 5s linear infinite}
 @keyframes headerAccent{from{background-position:0 0}to{background-position:200% 0}}
 .topbar h2{position:relative;color:#fff;font-size:18px;letter-spacing:-.02em}
-.topbar h2::after{content:"";display:inline-block;width:7px;height:7px;margin:0 0 2px 9px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px rgba(206,44,43,.18);animation:headerPulse 2s ease-in-out infinite}
-@keyframes headerPulse{50%{box-shadow:0 0 0 7px rgba(206,44,43,0)}}
-.topbar-meta{position:relative;gap:8px}.topbar-meta .chip{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);color:#f4f4f5;box-shadow:none}.topbar-meta .chip:first-child{background:rgba(206,44,43,.18);border-color:rgba(226,97,91,.45);color:#ffd9d6}
+.topbar h2::after{content:'';display:inline-block;width:7px;height:7px;margin:0 0 2px 9px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px rgba(16,185,129,.18);animation:headerPulse 2s ease-in-out infinite}
+@keyframes headerPulse{50%{box-shadow:0 0 0 7px rgba(16,185,129,0)}}
+.topbar-meta{position:relative;gap:8px}.topbar-meta .chip{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);color:#f4f4f5;box-shadow:none}.topbar-meta .chip:first-child{background:rgba(16,185,129,.18);border-color:rgba(16,185,129,.45);color:#d1fae5}
 #menuToggle{color:#fff}.topbar .icon-btn:hover{background:rgba(255,255,255,.12)}
-/* More balanced canvas: neutral gray sections with black/brand accents. */
-.view{background:linear-gradient(180deg,#eef0f3 0%,#f6f7f9 260px);padding-top:22px}
+/* Canvas: neutral gray sections with black/brand accents. */
+.view{background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 200px);padding-top:22px}
 .filterbar{background:#fff;border-left:4px solid var(--ink);box-shadow:var(--sh-2)}
-#dbIsi .segstrip .seg:nth-child(1),#dbIsi .segstrip .seg:nth-child(3){background:linear-gradient(145deg,#fff,#fff3f3);border-top:3px solid var(--brand)}
-#dbIsi .segstrip .seg:nth-child(2),#dbIsi .segstrip .seg:nth-child(4){background:linear-gradient(145deg,#fff,#eef0f3);border-top:3px solid var(--ink)}
-#dbIsi .card:nth-child(odd){background:linear-gradient(145deg,#fff,#f1f2f4)}
-#dbIsi .card:nth-child(even){background:linear-gradient(145deg,#fff,#fff5f5)}
+#dbIsi .segstrip .seg:nth-child(1),#dbIsi .segstrip .seg:nth-child(3){background:linear-gradient(145deg,#fff,#f8fafc);border-top:3px solid var(--brand)}
+#dbIsi .segstrip .seg:nth-child(2),#dbIsi .segstrip .seg:nth-child(4){background:linear-gradient(145deg,#fff,#f1f5f9);border-top:3px solid var(--ink)}
+#dbIsi .card:nth-child(odd){background:linear-gradient(145deg,#fff,#f8fafc)}
+#dbIsi .card:nth-child(even){background:linear-gradient(145deg,#fff,#fcfcfc)}
 #dbIsi .card-head h3{color:var(--ink-deep)}
 #dbIsi .alertstrip{border-left:4px solid var(--brand)}
 #dbIsi .fold>summary{border-left:4px solid var(--ink)}
