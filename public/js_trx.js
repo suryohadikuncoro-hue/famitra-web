@@ -99,9 +99,16 @@ function tutupSaranBeli() {
 function posisikanSaranBeli(input) {
   var box = document.getElementById('beliSuggest'); if (!box || !input) return;
   var r = input.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) { tutupSaranBeli(); return; }
   box.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 328)) + 'px';
-  box.style.top = Math.min(window.innerHeight - 12, r.bottom + 5) + 'px';
   box.style.minWidth = Math.max(r.width, 280) + 'px';
+  var top = r.bottom + 5, height = Math.min(box.scrollHeight || 280, 280);
+  if (top + height > window.innerHeight && r.top > height) top = r.top - height - 5;
+  box.style.top = Math.max(8, top) + 'px';
+}
+function sinkronkanSaranBeli() {
+  var box = document.getElementById('beliSuggest');
+  if (box && !box.hidden && BELI_SUGGEST.input) posisikanSaranBeli(BELI_SUGGEST.input);
 }
 function tampilkanSaranBeli(rows, input) {
   var box = document.getElementById('beliSuggest');
@@ -187,6 +194,11 @@ function gambarBeli() {
   };
   var suggest = document.getElementById('beliSuggest');
   if (suggest) suggest.onclick = function (e) { var b = e.target.closest('[data-beli-suggest]'); if (b) pilihSaranBeli(Number(b.dataset.beliSuggest)); };
+  if (!window._beliSuggestViewportBound) {
+    window._beliSuggestViewportBound = true;
+    window.addEventListener('scroll', sinkronkanSaranBeli, true);
+    window.addEventListener('resize', sinkronkanSaranBeli);
+  }
   ringkasBeli();
 }
 
