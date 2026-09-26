@@ -114,7 +114,7 @@ async function login(username, password, roleDipilih) {
   return { ok: true, data: { token, user } };
 }
 var menus = {
-  Owner: [{ id: "dashboard", label: "Dashboard" }, { id: "pos", label: "Kasir / POS" }, { id: "barang", label: "Master Barang" }, { id: "stok", label: "Stok & Batch" }, { id: "beli", label: "Pembelian" }, { id: "crm", label: "Pelanggan" }, { id: "biaya", label: "Biaya Operasional" }, { id: "opname", label: "Stokopname" }, { id: "laporan", label: "Laporan Laba Rugi" }, { id: "retur", label: "Retur" }, { id: "user", label: "Manajemen User" }],
+  Owner: [{ id: "dashboard", label: "Dashboard" }, { id: "pos", label: "Kasir / POS" }, { id: "barang", label: "Master Barang" }, { id: "stok", label: "Stok & Batch" }, { id: "beli", label: "Pembelian" }, { id: "crm", label: "Pelanggan" }, { id: "marketing", label: "Marketing" }, { id: "biaya", label: "Biaya Operasional" }, { id: "opname", label: "Stokopname" }, { id: "laporan", label: "Laporan Laba Rugi" }, { id: "retur", label: "Retur" }, { id: "user", label: "Manajemen User" }],
   Apoteker: [{ id: "dashboard", label: "Dashboard" }, { id: "pos", label: "Kasir / POS" }, { id: "barang", label: "Master Barang" }, { id: "stok", label: "Stok & Batch" }, { id: "beli", label: "Pembelian" }, { id: "crm", label: "Pelanggan" }, { id: "opname", label: "Stokopname" }, { id: "retur", label: "Retur" }],
   Kasir: [{ id: "pos", label: "Kasir / POS" }, { id: "biaya", label: "Biaya Operasional" }, { id: "retur", label: "Retur" }]
 };

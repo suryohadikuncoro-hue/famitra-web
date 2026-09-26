@@ -1,6 +1,7 @@
 /* ================== Pembelian (Bab 5), Biaya (8.1), Laporan (Bab 7) ====== */
 
 var BELI = { items: [] };
+var BELI_SUGGEST = { timer: null, request: 0, rows: [], index: -1, input: null };
 var HUTANG_FN_URL = 'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/hutang';
 function apiHutang(action, data) {
   return fetch(HUTANG_FN_URL, {
@@ -55,6 +56,7 @@ VIEWS.beli = {
           '<th class="r">Netto</th><th class="c">PPN %</th><th class="r">Diskon</th>' +
           '<th class="r">Jual umum baru</th><th class="r">Subtotal</th><th></th>' +
         '</tr></thead><tbody id="blBody"></tbody></table></div>' +
+        '<div id="beliSuggest" class="suggest beli-suggest" hidden></div>' +
         '<div class="pay-row total"><span id="blTotalItem">0 item</span>' +
           '<span id="blTotalTagihan" class="money">Rp0</span></div>' +
         '<button id="blSimpan" class="btn btn-primary btn-block">Simpan pembelian</button>' +
@@ -89,13 +91,67 @@ function subtotalBaris(it) {
     (1 + (Number(it.PPN) || 0) / 100) - (Number(it.Diskon) || 0);
 }
 
+function tutupSaranBeli() {
+  var box = document.getElementById('beliSuggest');
+  if (box) box.hidden = true;
+  BELI_SUGGEST.rows = []; BELI_SUGGEST.index = -1; BELI_SUGGEST.input = null;
+}
+function posisikanSaranBeli(input) {
+  var box = document.getElementById('beliSuggest'); if (!box || !input) return;
+  var r = input.getBoundingClientRect();
+  if (r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth) { tutupSaranBeli(); return; }
+  box.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 328)) + 'px';
+  box.style.minWidth = Math.max(r.width, 280) + 'px';
+  var top = r.bottom + 5, height = Math.min(box.scrollHeight || 280, 280);
+  if (top + height > window.innerHeight && r.top > height) top = r.top - height - 5;
+  box.style.top = Math.max(8, top) + 'px';
+}
+function sinkronkanSaranBeli() {
+  var box = document.getElementById('beliSuggest');
+  if (box && !box.hidden && BELI_SUGGEST.input) posisikanSaranBeli(BELI_SUGGEST.input);
+}
+function tampilkanSaranBeli(rows, input) {
+  var box = document.getElementById('beliSuggest');
+  if (!box || !input || !rows.length) { tutupSaranBeli(); return; }
+  BELI_SUGGEST.rows = rows.slice(0, 8); BELI_SUGGEST.index = -1; BELI_SUGGEST.input = input;
+  box.innerHTML = BELI_SUGGEST.rows.map(function (b, i) {
+    return '<button type="button" data-beli-suggest="' + i + '"><div class="s-name">' +
+      esc(b.Kode_Obat) + ' · ' + esc(b.Nama_Obat) + '</div><div class="s-meta"><span>' +
+      esc(b.Kategori || 'Tanpa kategori') + '</span>' + (b.Barcode ? '<span>Barcode ' + esc(b.Barcode) + '</span>' : '') +
+      '<span>Modal ' + rupiah(b.Harga_Modal || 0) + '</span></div></button>';
+  }).join('');
+  posisikanSaranBeli(input); box.hidden = false;
+}
+function pilihSaranBeli(index) {
+  var input = BELI_SUGGEST.input, b = BELI_SUGGEST.rows[index]; if (!input || !b) return;
+  var i = Number(input.dataset.i), it = BELI.items[i]; if (!it) return;
+  it.Kode_Obat = String(b.Kode_Obat || '').toUpperCase();
+  if (!Number(it.Harga_Netto)) it.Harga_Netto = Number(b.Harga_Modal) || 0;
+  if (!Number(it.PPN)) it.PPN = Number(b.PPN) || 0;
+  if (!Number(it.Harga_Jual_Umum_Baru)) it.Harga_Jual_Umum_Baru = Number(b.Harga_Jual_Umum) || 0;
+  tutupSaranBeli(); gambarBeli();
+  var next = document.querySelector('#blBody input[data-i="' + i + '"][data-f="Kode_Obat"]');
+  if (next) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
+}
+function jadwalkanSaranBeli(input) {
+  clearTimeout(BELI_SUGGEST.timer); var q = String(input.value || '').trim();
+  if (!q) { tutupSaranBeli(); return; }
+  var request = ++BELI_SUGGEST.request;
+  BELI_SUGGEST.timer = setTimeout(function () {
+    api('barang.list', { q: q }).then(function (rows) {
+      if (request === BELI_SUGGEST.request && document.activeElement === input) tampilkanSaranBeli(rows, input);
+    }).catch(function (e) { if (request === BELI_SUGGEST.request) { tutupSaranBeli(); toast(e.message, true); } });
+  }, 180);
+}
 function gambarBeli() {
   var tb = document.getElementById('blBody');
   if (!tb) return;
   tb.innerHTML = BELI.items.map(function (it, i) {
     function inp(field, tipe, lebar) {
-      return '<input class="inp num" style="min-width:' + lebar + 'px" type="' + tipe +
-        '" data-i="' + i + '" data-f="' + field + '" value="' + esc(it[field]) + '">';
+      var extra = field === 'Kode_Obat' ? ' beli-kode-input' : '';
+      var ac = field === 'Kode_Obat' ? ' autocomplete="off"' : '';
+      return '<input class="inp num' + extra + '" style="min-width:' + lebar + 'px" type="' + tipe +
+        '" data-i="' + i + '" data-f="' + field + '" value="' + esc(it[field]) + '"' + ac + '>';
     }
     return '<tr>' +
       '<td>' + inp('Kode_Obat', 'text', 90) + '</td>' +
@@ -118,16 +174,31 @@ function gambarBeli() {
     it[f.dataset.f] = (f.type === 'number') ? Number(f.value) || 0 : f.value;
     // Hanya perbarui angka total agar fokus pengetikan tidak hilang.
     ringkasBeli();
+    if (f.dataset.f === 'Kode_Obat') jadwalkanSaranBeli(f);
     var sel = f.closest('tr').children[8];
     if (sel) sel.textContent = rupiah(subtotalBaris(it));
   };
   tb.onclick = function (e) {
     var d = e.target.closest('[data-del]');
     if (!d) return;
-    BELI.items.splice(Number(d.dataset.del), 1);
-    if (!BELI.items.length) BELI.items.push(barisKosong());
-    gambarBeli();
+    tutupSaranBeli(); BELI.items.splice(Number(d.dataset.del), 1);
+    if (!BELI.items.length) BELI.items.push(barisKosong()); gambarBeli();
   };
+  tb.onkeydown = function (e) {
+    var input = e.target.closest('[data-f="Kode_Obat"]');
+    var box = document.getElementById('beliSuggest');
+    if (!input || !BELI_SUGGEST.input || !box || box.hidden) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); var d = e.key === 'ArrowDown' ? 1 : -1; BELI_SUGGEST.index = (BELI_SUGGEST.index + d + BELI_SUGGEST.rows.length) % BELI_SUGGEST.rows.length; document.querySelectorAll('#beliSuggest [data-beli-suggest]').forEach(function (b, j) { b.classList.toggle('is-cursor', j === BELI_SUGGEST.index); }); }
+    else if (e.key === 'Enter' && BELI_SUGGEST.index >= 0) { e.preventDefault(); pilihSaranBeli(BELI_SUGGEST.index); }
+    else if (e.key === 'Escape') tutupSaranBeli();
+  };
+  var suggest = document.getElementById('beliSuggest');
+  if (suggest) suggest.onclick = function (e) { var b = e.target.closest('[data-beli-suggest]'); if (b) pilihSaranBeli(Number(b.dataset.beliSuggest)); };
+  if (!window._beliSuggestViewportBound) {
+    window._beliSuggestViewportBound = true;
+    window.addEventListener('scroll', sinkronkanSaranBeli, true);
+    window.addEventListener('resize', sinkronkanSaranBeli);
+  }
   ringkasBeli();
 }
 
