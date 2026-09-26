@@ -66,6 +66,7 @@ var PERM = {
   "beli.simpan": ["Owner", "Apoteker"],
   "beli.supplier": ["Owner", "Apoteker"],
   "beli.simpanSupplier": ["Owner", "Apoteker"],
+  "loyalty.expire": ["Owner", "Apoteker"],
   "biaya.list": ["Owner", "Kasir"],
   "biaya.simpan": ["Owner", "Kasir"],
   "biaya.hapus": ["Owner"],
@@ -73,6 +74,7 @@ var PERM = {
   "user.list": ["Owner"],
   "user.simpan": ["Owner"],
   "user.hapus": ["Owner"],
+  "cabang.list": ["Owner", "Apoteker"],
   "retur.jualList": ["Owner", "Apoteker", "Kasir"],
   "retur.jualSimpan": ["Owner", "Apoteker", "Kasir"],
   "retur.beliList": ["Owner"],
@@ -186,6 +188,8 @@ async function action(name, data, s) {
     return await r.json();
   }
   if (name === "crm.list") {
+    // Auto-expire poin yang lebih tua dari 12 bulan sebelum tampilkan CRM
+    await db("rpc/expire_loyalty_points", "", { method: "POST", headers: { ...headers, Prefer: "return=representation" } });
     const q = String(data.q || "").trim();
     const tipe = String(data.tipe || "Semua");
     const parts = [`select=*`, `order=nama.asc`, `limit=500`];
@@ -195,6 +199,11 @@ async function action(name, data, s) {
     if (!r.ok) throw new Error(await r.text());
     const rows = await r.json();
     return rows.map((c) => ({ ID: c.id, Nomor_WA: c.nomor_wa, Nama: c.nama, Tipe_Customer: c.tipe_customer, Alamat: c.alamat, Nomor_Izin: c.nomor_izin, Total_Belanja: c.total_belanja, Jumlah_Transaksi: c.jumlah_transaksi, Tanggal_Terakhir_Beli: c.tanggal_terakhir_beli, Segment_CRM: c.segment_crm, Tier: c.tier, Total_Points: c.total_points, Total_Spend_MTD: c.total_spend_mtd, Consent_Marketing: c.consent_marketing }));
+  }
+  if (name === "loyalty.expire") {
+    const r = await db("rpc/expire_loyalty_points", "", { method: "POST", headers: { ...headers, Prefer: "return=representation" } });
+    if (!r.ok) throw new Error(await r.text());
+    return { expired: Number(await r.json()) || 0 };
   }
   if (name === "pos.cariCustomer") {
     const wa = normWA(data.wa);
@@ -245,7 +254,7 @@ async function action(name, data, s) {
   if (name === "barang.simpan") {
     // Harga per cabang (keputusan 2): cabang_id SELALU dari sesi, tidak dari payload.
     const cabang = cabangSesi(s);
-    const p = { cabang_id: cabang, kode_obat: String(data.Kode_Obat).toUpperCase(), nama_obat: data.Nama_Obat, kategori: data.Kategori || "", satuan: data.Satuan || "Pcs", barcode: data.Barcode || null, stok_min: data.Stok_Min || 10, harga_modal: data.Harga_Modal || 0, harga_jual_umum: data.Harga_Jual_Umum || 0, harga_khusus: data.Harga_Khusus || 0, harga_jual_mutasi: data.Harga_Jual_Mutasi || 0, ppn: data.PPN || 0, aktif: "YA" };
+    const p = { cabang_id: cabang, kode_obat: String(data.Kode_Obat).toUpperCase(), nama_obat: data.Nama_Obat, kategori: data.Kategori || "", golongan: data.Golongan || data.golongan || "Bebas", satuan: data.Satuan || "Pcs", barcode: data.Barcode || null, stok_min: data.Stok_Min || 10, harga_modal: data.Harga_Modal || 0, harga_jual_umum: data.Harga_Jual_Umum || 0, harga_khusus: data.Harga_Khusus || 0, harga_jual_mutasi: data.Harga_Jual_Mutasi || 0, ppn: data.PNN || 0, aktif: "YA" };
     const r = await db("master_barang", data.mode === "edit" ? `?kode_obat=eq.${encodeURIComponent(p.kode_obat)}&cabang_id=eq.${encodeURIComponent(cabang)}` : "", { method: data.mode === "edit" ? "PATCH" : "POST", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify(p) });
     if (!r.ok) throw new Error(await r.text());
     return true;
@@ -500,15 +509,21 @@ async function action(name, data, s) {
     if (!r.ok) throw new Error(await r.text());
     return (await r.json()).map((x) => ({ Username: x.username, Nama: x.nama, Role: x.role, Aktif: x.aktif, Cabang_ID: x.cabang_id, Dibuat: x.created_at }));
   }
+  if (name === "cabang.list") {
+    const r = await db("master_cabang", `?select=kode_cabang,nama_cabang&order=kode_cabang.asc&limit=50`);
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
   if (name === "user.simpan") {
-    // Cabang user SELALU dari sesi. Field Cabang_ID dari form diabaikan (bagian 6).
-    const cabang = cabangSesi(s);
+    // Owner bisa pilih cabang via form (field Cabang). Untuk role lain, pakai sesi.
+    const cabang = s.role === "Owner" && data.Cabang ? String(data.Cabang).trim() : cabangSesi(s);
     const p = { username: String(data.Username || data.username || "").trim(), nama: data.Nama || data.nama, role: data.Role || data.role, aktif: data.Aktif || "YA", cabang_id: cabang };
     if (!p.username || !p.nama || !p.role) throw new Error("Username, nama, dan role wajib diisi.");
+    if (!p.cabang_id) throw new Error("Cabang wajib dipilih untuk akun ini.");
     if (data.mode === "edit") {
       const target = await one("app_users", `?username=eq.${encodeURIComponent(p.username)}&select=username,cabang_id`);
       if (!target) throw new Error("User tidak ditemukan.");
-      if (String(target.cabang_id || "") !== cabang) throw new Error("User ini bukan milik cabang Anda.");
+      if (String(target.cabang_id || "") !== p.cabang_id) throw new Error("User ini bukan milik cabang yang dipilih.");
     }
     if (data.Password || data.password) p.password_hash = await sha256(data.Password || data.password);
     const r = await db("app_users", data.mode === "edit" ? `?username=eq.${encodeURIComponent(p.username)}` : "", { method: data.mode === "edit" ? "PATCH" : "POST", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify(p) });
