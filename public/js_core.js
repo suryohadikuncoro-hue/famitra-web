@@ -281,7 +281,15 @@ function tampilkanErrorLogin(pesan) {
 function masukAplikasi() {
   return call('menuSaya', [SESSION.token]).then(function (res) {
     if (!res.ok) { paksaLogin(res.error); return; }
-    MENU = res.data.menu;
+    MENU = Array.isArray(res.data.menu) ? res.data.menu.slice() : [];
+    // Backward-compatible guard: older api deployments may omit the newly
+    // introduced Marketing item even though the frontend view is available.
+    if (res.data.user && res.data.user.role === 'Owner' &&
+        !MENU.some(function (m) { return m.id === 'marketing'; })) {
+      var crmIndex = MENU.findIndex(function (m) { return m.id === 'crm'; });
+      MENU.splice(crmIndex < 0 ? MENU.length : crmIndex + 1, 0,
+        { id: 'marketing', label: 'Marketing' });
+    }
     SESSION.user = res.data.user;
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('appScreen').hidden = false;
