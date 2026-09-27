@@ -251,7 +251,6 @@ function bangunNav() {
   });
   MENU.slice(0, 5).forEach(function (m) {
     var b = document.createElement('button');
-    b.className = 'tab-btn';
     b.textContent = m.label.split(' ')[0]; b.dataset.id = m.id;
     b.onclick = function () { gantiHalaman(m.id); };
     tab.appendChild(b);
