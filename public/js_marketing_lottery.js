@@ -15,18 +15,44 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fn: action, args: [data || {}, token] }),
+    }).catch(function (cause) {
+      // Fetch rejection gives no HTTP status: network, browser blocking and CORS
+      // are indistinguishable here. Do not claim the function is undeployed.
+      var err = new Error("Tidak dapat terhubung ke layanan Kupon Undian. Periksa koneksi lalu coba lagi.");
+      err.code = "LOTTERY_NETWORK";
+      err.cause = cause;
+      throw err;
     }).then(function (r) {
-      return r.json().then(function (j) {
+      return r.json().catch(function (cause) {
+        var err = new Error("Respons layanan Kupon Undian tidak valid (HTTP " + r.status + ").");
+        err.code = "LOTTERY_RESPONSE";
+        err.status = r.status;
+        err.cause = cause;
+        throw err;
+      }).then(function (j) {
         if (!r.ok || !j || j.ok === false) {
           if (j && j.code === "NO_SESSION" && typeof paksaLogin === "function") paksaLogin("Sesi berakhir. Silakan login ulang.");
-          var msg = (j && j.error) || ("HTTP " + r.status);
+          var msg = (j && (j.error || j.message)) || ("HTTP " + r.status);
           var err = new Error(msg);
           err.payload = j;
+          err.status = r.status;
           throw err;
         }
         return j.data;
       });
     });
+  }
+
+  function listErrorHtml(e) {
+    var connection = e.code === "LOTTERY_NETWORK";
+    var deployment = connection || e.code === "LOTTERY_RESPONSE" || e.status === 404 || e.status >= 500;
+    return '<div role="alert" style="color:#b91c1c;">' +
+      '<strong>Daftar campaign belum berhasil dimuat.</strong><p>' + esc(e.message) + '</p>' +
+      (deployment ? '<p>Jika tetap gagal, minta pengelola memeriksa deployment Edge Function <code>lottery</code>, migrasi database, dan CORS untuk alamat preview ini. Deploy frontend saja tidak menyiapkan backend. Penyebab pastinya perlu diperiksa; pesan ini bukan bukti backend belum ter-deploy.</p>' : '') +
+      '<button type="button" id="lot-retry">Coba Lagi</button>' +
+      '<details style="margin-top:8px;"><summary>Detail teknis</summary><div>' +
+      esc(e.cause ? e.cause.message : e.message) +
+      (e.status ? ' · HTTP ' + esc(e.status) : '') + '</div></details></div>';
   }
 
   function esc(s) {
@@ -104,11 +130,12 @@
       tabs
         .map(function (t) {
           var active = state.tab === t.id;
-          var dis = t.disabled ? "opacity:.5;pointer-events:none;" : "";
+          var dis = t.disabled ? "opacity:.5;cursor:not-allowed;" : "";
           return (
-            '<button class="tab-btn" data-tab="' +
+            '<button type="button" class="tab-btn" data-tab="' +
             t.id +
-            '" style="padding:8px 14px;border:1px solid #cbd5e1;border-radius:8px;background:' +
+            '"' + (t.disabled ? ' disabled aria-disabled="true" aria-describedby="lot-campaign-help"' : '') +
+            ' style="padding:8px 14px;border:1px solid #cbd5e1;border-radius:8px;background:' +
             (active ? "#1e293b" : "#fff") +
             ";color:" +
             (active ? "#fff" : "#1e293b") +
@@ -120,7 +147,8 @@
           );
         })
         .join("") +
-      "</div>"
+      "</div>" +
+      (!state.detailCampaign ? '<p id="lot-campaign-help" style="color:#475569;font-size:13px;">Peserta, Pemenang, dan Laporan aktif setelah campaign dibuka. Pilih <b>Buka</b> pada Daftar Campaign. Jika daftar belum termuat, gunakan <b>Muat Ulang</b>; jika masih kosong, pilih <b>Buat Campaign</b>.</p>' : '')
     );
   }
 
@@ -244,7 +272,9 @@
         });
       })
       .catch(function (e) {
-        body.innerHTML = '<div style="color:#b91c1c;">Gagal: ' + esc(e.message) + "</div>";
+        body.innerHTML = listErrorHtml(e);
+        var retry = document.getElementById("lot-retry");
+        if (retry) retry.onclick = loadList;
       });
   }
 
@@ -776,9 +806,11 @@
 
     root.querySelectorAll(".tab-btn").forEach(function (b) {
       b.onclick = function () {
+        var tab = b.getAttribute("data-tab");
+        if (b.disabled || (!state.detailCampaign && ["participants", "winners", "report"].indexOf(tab) >= 0)) return;
         _generation++;
         resetCustomer();
-        state.tab = b.getAttribute("data-tab");
+        state.tab = tab;
         render();
       };
     });

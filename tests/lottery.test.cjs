@@ -76,6 +76,18 @@ test('canonical frontend router, CORS success/error/preflight, method and malfor
     assert.equal(response.status, 400); assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
   }
 });
+test('committed lottery preflight accepts preview origin and content-type without database access', async () => {
+  const b = backend();
+  const response = await b.raw(new Request('https://offline.invalid', { method: 'OPTIONS', headers: {
+    Origin: 'https://feat-kupon-undian.famitra-web.pages.dev',
+    'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'content-type'
+  } }));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
+  assert.match(response.headers.get('Access-Control-Allow-Headers'), /content-type/);
+  assert.match(response.headers.get('Access-Control-Allow-Methods'), /POST/);
+  assert.equal(b.calls.length, 0);
+});
 test('expired/missing sessions rejected; database errors do not leak token/URL/details', async () => {
   for (const b of [backend({ session: { expires_at: '2000-01-01' } }), backend({ tables: { app_sessions: [] } })]) {
     const r = await b.request('lotteryList'); assert.equal(r.status, 401); assert.equal(r.body.code, 'NO_SESSION');
@@ -148,11 +160,79 @@ function frontend(opts = {}) {
   });
   // Lexical SESSION specifically tests no reliance on window.SESSION.
   vm.runInContext('let SESSION = {token: "lexical-token", user: {role:"Owner", cabang_id:"KARLA"}};', ctx);
-  const src = source('public/js_marketing_lottery.js').replace('  // expose entry', `  window.test = { lotteryApi, bindWinners, showCustSuggest, clearCampaign, openDetail, readForm, renderForm, saveForm, saveWinner, rupiah, minimumHtml, validMinimum, tableParticipants, state: () => state, selected: () => _selectedCustomer, cache: () => _custCache, branches: () => _branches };\n  // expose entry`);
+  const src = source('public/js_marketing_lottery.js').replace('  // expose entry', `  window.test = { lotteryApi, tabsHtml, render, loadList, listErrorHtml, bindWinners, showCustSuggest, clearCampaign, openDetail, readForm, renderForm, saveForm, saveWinner, rupiah, minimumHtml, validMinimum, tableParticipants, state: () => state, selected: () => _selectedCustomer, cache: () => _custCache, branches: () => _branches };\n  // expose entry`);
   vm.runInContext(src, ctx);
   return { ctx, t: ctx.window.test, el, elements, requests, timers };
 }
 const flush = () => new Promise(resolve => setImmediate(resolve));
+test('network failure has retry/deployment guidance, keeps escaped diagnostic and never shows empty success', async () => {
+  const f = frontend(), cause = new TypeError('Failed to fetch <blocked>');
+  f.ctx.fetch = async () => { throw cause; };
+  await assert.rejects(f.t.lotteryApi('lotteryList'), e => {
+    assert.equal(e.code, 'LOTTERY_NETWORK'); assert.equal(e.cause, cause);
+    assert.match(e.message, /Periksa koneksi/); return true;
+  });
+  const body = f.el('lot-list-body'), retry = f.el('lot-retry');
+  f.t.loadList(); await flush();
+  assert.match(body.innerHTML, /role="alert"/); assert.match(body.innerHTML, /Coba Lagi/);
+  assert.match(body.innerHTML, /Edge Function/); assert.match(body.innerHTML, /migrasi database/);
+  assert.match(body.innerHTML, /CORS/); assert.match(body.innerHTML, /bukan bukti/);
+  assert.match(body.innerHTML, /Failed to fetch &lt;blocked&gt;/);
+  assert.doesNotMatch(body.innerHTML, /Belum ada campaign\./);
+  assert.equal(f.t.state().detailCampaign, null);
+  f.ctx.fetch = async () => new Response(JSON.stringify({ ok: true, data: [] }));
+  retry.onclick(); await flush();
+  assert.match(body.innerHTML, /Belum ada campaign\./); assert.doesNotMatch(body.innerHTML, /role="alert"/);
+});
+test('HTTP/backend/session errors are not mislabeled as network failures; non-JSON keeps status', async () => {
+  const f = frontend(); let login = 0;
+  f.ctx.paksaLogin = () => login++;
+  for (const [status, payload] of [[401, { ok: false, code: 'NO_SESSION', error: 'Sesi berakhir' }], [403, { ok: false, error: 'Akses ditolak' }], [404, { message: 'Function not found' }], [500, { ok: false, error: 'Gagal mengakses data lottery' }]]) {
+    f.ctx.fetch = async () => new Response(JSON.stringify(payload), { status });
+    await assert.rejects(f.t.lotteryApi('lotteryList'), e => {
+      assert.equal(e.status, status); assert.notEqual(e.code, 'LOTTERY_NETWORK');
+      assert.equal(e.message, payload.error || payload.message);
+      const html = f.t.listErrorHtml(e);
+      if (status === 401 || status === 403) assert.doesNotMatch(html, /deployment/);
+      else assert.match(html, /deployment/);
+      return true;
+    });
+  }
+  assert.equal(login, 1);
+  f.ctx.fetch = async () => new Response('<html>bad gateway</html>', { status: 502 });
+  await assert.rejects(f.t.lotteryApi('lotteryList'), e => {
+    assert.equal(e.code, 'LOTTERY_RESPONSE'); assert.equal(e.status, 502);
+    assert.match(e.message, /HTTP 502/); return true;
+  });
+});
+test('campaign-dependent buttons have native disabled state and visible linked explanation', () => {
+  const f = frontend();
+  for (const selected of [false, true, false]) {
+    f.t.state().detailCampaign = selected ? campaign : null;
+    const html = f.t.tabsHtml();
+    for (const id of ['participants', 'winners', 'report']) {
+      const button = html.match(new RegExp('<button[^>]*data-tab="' + id + '"[^>]*>'))[0];
+      if (selected) assert.doesNotMatch(button, /disabled|aria-describedby/);
+      else { assert.match(button, / disabled aria-disabled="true"/); assert.match(button, /aria-describedby="lot-campaign-help"/); }
+    }
+    if (!selected) assert.match(html, /id="lot-campaign-help"[\s\S]*Pilih <b>Buka<\/b>/);
+    assert.doesNotMatch(html, /pointer-events:none/);
+    for (const id of ['list', 'form']) assert.doesNotMatch(html.match(new RegExp('<button[^>]*data-tab="' + id + '"[^>]*>'))[0], /disabled/);
+  }
+});
+test('disabled tab handler cannot navigate without campaign; opens after selection and guards stale state', () => {
+  const f = frontend(), rootEl = f.el('lottery-root');
+  const buttons = ['participants', 'winners', 'report'].map(id => ({ disabled: false, getAttribute: () => id }));
+  rootEl.querySelectorAll = () => buttons;
+  f.t.render();
+  for (const button of buttons) { button.onclick(); assert.equal(f.t.state().tab, 'list'); }
+  f.t.state().detailCampaign = campaign;
+  for (const button of buttons) { button.onclick(); assert.equal(f.t.state().tab, button.getAttribute()); }
+  f.t.clearCampaign(); f.t.state().tab = 'list';
+  for (const button of buttons) { button.onclick(); assert.equal(f.t.state().tab, 'list'); }
+  f.t.state().detailCampaign = campaign; buttons[0].disabled = true;
+  buttons[0].onclick(); assert.equal(f.t.state().tab, 'list');
+});
 test('frontend lexical session contract and real cabang.list source', async () => {
   const f = frontend(); await f.t.lotteryApi('lotteryList', {});
   assert.equal(f.requests[0].fn, 'lotteryList'); assert.equal(f.requests[0].args[1], 'lexical-token');
