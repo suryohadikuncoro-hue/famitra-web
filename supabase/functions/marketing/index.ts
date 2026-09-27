@@ -323,7 +323,7 @@ async function dashboardProgressPerCabang(_data: any, s: any) {
     out.push({
       kode_cabang: kode,
       nama_cabang: c.nama_cabang,
-      target: { id: t.id, nama: t.nama, periode_mulai: t.periode_mulai, periode_selesai: t.periode_selesai, target_omset_idr: num(t.target_omset_idr, 0) },
+      target: { id: t.id, nama: t.nama_target, periode_mulai: t.periode_mulai, periode_selesai: t.periode_selesai, target_omset_idr: num(t.target_omset_idr, 0) },
       ringkasan: withVisibility(agg, t),
     });
   }
