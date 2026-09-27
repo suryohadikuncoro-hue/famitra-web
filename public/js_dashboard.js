@@ -82,9 +82,114 @@ function muatDashboard() {
   api('dashboard.ringkasan', { filter: bacaFilter('db') }).then(function (d) {
     isi.innerHTML = gambarDashboard(d);
     pasangEventDashboard(d);
+    // Widget target omset bersifat independen (Edge Function marketing),
+    // tidak bergantung pada payload dashboard utama, jadi diload paralel.
+    muatTargetOmsetWidget();
   }).catch(function (e) {
     isi.innerHTML = '<div class="card"><p>' + esc(e.message) + '</p></div>';
   });
+}
+
+/* -------------------- Widget Target Omset di Dashboard --------------------
+   Memanggil Edge Function `marketing` action `dashboardProgressPerCabang`.
+   Aturan visibilitas laba sudah diterapkan di backend (withVisibility di
+   marketing-function-paste.txt); frontend cukup render apa adanya. */
+var SUPABASE_MARKETING_URL =
+  'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/marketing';
+
+function widgetMarketingApi(action, data) {
+  var token = (window.SESSION && window.SESSION.token) || null;
+  return fetch(SUPABASE_MARKETING_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ args: [action, data || {}, token] }),
+  }).then(function (r) {
+    return r.json().then(function (j) {
+      if (!r.ok || !j || j.ok === false) {
+        throw new Error((j && j.error) || ('HTTP ' + r.status));
+      }
+      return j.data;
+    });
+  });
+}
+
+function muatTargetOmsetWidget() {
+  var box = document.getElementById('dbTargetOmsetBody');
+  if (!box) return;
+  box.innerHTML = kerangka(2);
+  widgetMarketingApi('dashboardProgressPerCabang', {}).then(function (rows) {
+    box.innerHTML = renderTargetOmsetRows(rows || []);
+  }).catch(function (e) {
+    box.innerHTML = '<div class="empty" style="color:#dc2626">Gagal memuat target omset: ' +
+      esc(e.message) + '</div>';
+  });
+}
+
+function renderTargetOmsetRows(rows) {
+  if (!rows.length) {
+    return '<div class="empty">Belum ada cabang terdaftar.</div>';
+  }
+  var ada = rows.some(function (r) { return r.target; });
+  if (!ada) {
+    var link = (SESSION && SESSION.user && SESSION.user.role === 'Owner')
+      ? '<div style="margin-top:10px"><a class="btn btn-primary" href="javascript:gantiHalaman(\'targetOmset\')">' +
+        '+ Buat target omset</a></div>'
+      : '';
+    return '<div class="empty">Owner belum menetapkan target omset untuk periode ini.' +
+      link + '</div>';
+  }
+  return rows.map(function (r) {
+    if (!r.target) {
+      return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f1f5f9;">' +
+        '<div style="flex:1"><strong>' + esc(r.nama_cabang || r.kode_cabang) + '</strong>' +
+          '<div class="sub" style="font-weight:400">Belum ada target aktif</div></div>' +
+        '<span class="chip" style="background:#f1f5f9;color:#64748b">—</span>' +
+      '</div>';
+    }
+    var s = r.ringkasan || {};
+    var tercapai = !!s.tercapai;
+    var pct = Math.max(0, Math.min(100, Number(s.progress_persen) || 0));
+    var barColor = tercapai ? '#16a34a' : '#0ea5e9';
+    var badge = tercapai
+      ? '<span class="chip" style="background:#d1fae5;color:#065f46">✓ Tercapai</span>'
+      : '<span class="chip" style="background:#fef3c7;color:#92400e">Belum tercapai</span>';
+
+    var financial = '';
+    if (tercapai && s.laba_bersih_idr !== null && s.laba_bersih_idr !== undefined) {
+      var warnaLaba = Number(s.laba_bersih_idr) >= 0 ? '#16a34a' : '#dc2626';
+      financial =
+        '<div style="margin-top:8px;display:flex;gap:18px;flex-wrap:wrap;font-size:13px">' +
+          '<div><span class="sub">Laba bersih</span> ' +
+            '<strong style="color:' + warnaLaba + '">' + rupiah(s.laba_bersih_idr) + '</strong></div>' +
+        '</div>';
+    } else if (tercapai) {
+      financial =
+        '<div style="margin-top:8px;font-size:12px;color:#991b1b">⚠ HPP tidak tersedia/lengkap</div>';
+    } else {
+      financial =
+        '<div style="margin-top:8px;font-size:12px;color:#475569">🔒 Laba disembunyikan — target belum tercapai</div>';
+    }
+
+    return '<div style="padding:10px 0;border-bottom:1px solid #f1f5f9;">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+        '<div style="flex:1;min-width:140px"><strong>' + esc(r.nama_cabang || r.kode_cabang) + '</strong>' +
+          '<div class="sub" style="font-weight:400">' + esc(r.target.nama) + ' · ' +
+            tglIndo(r.target.periode_mulai) + ' s.d. ' + tglIndo(r.target.periode_selesai) + '</div></div>' +
+        '<div style="text-align:right"><div><strong>' + rupiah(s.omset_idr) + '</strong></div>' +
+          '<div class="sub" style="font-weight:400">dari target ' + rupiah(s.target_omset_idr) + '</div></div>' +
+        badge +
+      '</div>' +
+      '<div style="margin-top:6px;background:#e2e8f0;height:8px;border-radius:4px;overflow:hidden;">' +
+        '<div style="background:' + barColor + ';width:' + pct.toFixed(1) + '%;height:100%;transition:width .3s ease;"></div>' +
+      '</div>' +
+      '<div class="sub" style="margin-top:4px;font-weight:400">' + pct.toFixed(1) + '% · ' +
+        angka(s.transaksi_count) + ' transaksi</div>' +
+      financial +
+    '</div>';
+  }).join('') +
+  '<div style="margin-top:10px;text-align:right">' +
+    '<a class="btn btn-sm" href="javascript:gantiHalaman(\'targetOmset\')">Buka halaman Target Omset ›</a>' +
+  '</div>';
 }
 
 function gambarDashboard(d) {
@@ -182,6 +287,14 @@ function gambarDashboard(d) {
       seg('rutin', s['Active Routine'] || 0, 'Rutin belanja') +
       seg('risk', s['At-Risk'] || 0, 'Perlu ditindak') +
       seg('', s.Baru || 0, 'Baru terdaftar') +
+    '</div>';
+
+  /* 4b. Target Omset per Cabang — widget marketing */
+  var widgetTargetOmset =
+    '<div class="card" id="dbTargetOmsetCard">' +
+      '<div class="card-head"><h3>Target omset per cabang</h3>' +
+        '<span class="sub" style="font-weight:400">Laba tampil setelah target tercapai</span></div>' +
+      '<div id="dbTargetOmsetBody">' + kerangka(2) + '</div>' +
     '</div>';
 
   /* 5. Feed transaksi + panel kanan */
@@ -288,7 +401,7 @@ function gambarDashboard(d) {
       '<div class="fold-body" id="aiInsights">' + kerangka(3) + '</div>' +
     '</details>' : '';
 
-  return hero + strip + segStrip +
+  return hero + strip + segStrip + widgetTargetOmset +
     '<div class="split">' +
       '<div>' + kartuShift + feedJual + '</div>' +
       '<div>' + kartuShiftBar + kartuProduk + kartuPelanggan + '</div>' +
