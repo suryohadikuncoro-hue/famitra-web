@@ -411,7 +411,7 @@
       var payload = {
         id: editing ? editing.id : null,
         kode_cabang: kode_cabang,
-        nama: nama,
+        nama_target: nama,
         periode_mulai: mulai,
         periode_selesai: selesai,
         target_omset_idr: target,
@@ -467,7 +467,7 @@
 
     // tab: target
     bodyEl.innerHTML = renderTargetTab(el);
-    loadTargetList(bodyEl);
+    loadTargetList(bodyEl.querySelector("#mt-target-body"));
 
     var reloadBtn = bodyEl.querySelector("#mt-reload");
     if (reloadBtn) reloadBtn.onclick = function () { loadTargetList(bodyEl); };
