@@ -271,7 +271,7 @@
     var html =
       '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;max-width:780px;">' +
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
-      formField("Nama Campaign", '<input id="lot-f-nama" value="' + esc(c.nama || "") + '" style="w-full"/>', true) +
+      formField("Nama Campaign", '<input id="lot-f-nama" value="' + esc(c.nama || "") + '" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;"/>', true) +
       formField("Cabang", cabangSel, true) +
       formField(
         "Periode Mulai",
