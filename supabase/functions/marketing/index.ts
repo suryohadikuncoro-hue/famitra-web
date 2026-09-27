@@ -301,7 +301,7 @@ async function dashboardProgressPerCabang(_data: any, s: any) {
   const cabangs = await rest(`/master_cabang?select=kode_cabang,nama_cabang&order=kode_cabang.asc`);
 
   // Ambil target aktif per cabang (1 row per cabang by unique index).
-  const targets = await allRows(`/marketing_target_omsets?aktif=eq.true&select=id,kode_cabang,nama,periode_mulai,periode_selesai,target_omset_idr`);
+  const targets = await allRows(`/marketing_target_omsets?aktif=eq.true&select=id,kode_cabang,nama_target,periode_mulai,periode_selesai,target_omset_idr`);
 
   const byCab = new Map<string, any>();
   for (const t of targets) byCab.set(String(t.kode_cabang), t);
