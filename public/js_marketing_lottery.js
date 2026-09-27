@@ -10,7 +10,7 @@
     "https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/lottery";
 
   function lotteryApi(action, data) {
-    var token = (window.SESSION && window.SESSION.token) || null;
+    var token = (typeof SESSION !== "undefined" && SESSION && SESSION.token) || null;
     return fetch(SUPABASE_LOTTERY_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -18,6 +18,7 @@
     }).then(function (r) {
       return r.json().then(function (j) {
         if (!r.ok || !j || j.ok === false) {
+          if (j && j.code === "NO_SESSION" && typeof paksaLogin === "function") paksaLogin("Sesi berakhir. Silakan login ulang.");
           var msg = (j && j.error) || ("HTTP " + r.status);
           var err = new Error(msg);
           err.payload = j;
@@ -39,7 +40,8 @@
   }
 
   function rupiah(n) {
-    var v = Number(n) || 0;
+    if (n === null || n === undefined || !Number.isFinite(Number(n))) return "Tidak tersedia";
+    var v = Number(n);
     return "Rp " + v.toLocaleString("id-ID");
   }
 
@@ -50,6 +52,24 @@
     return d.getFullYear() + "-" + m + "-" + day;
   }
 
+  var _branches = [];
+  var _generation = 0;
+  function currentSession() {
+    return typeof SESSION !== "undefined" && SESSION ? SESSION : { user: {} };
+  }
+  function resetCustomer() {
+    _selectedCustomer = null;
+    _custCache = [];
+    var old = document.getElementById("lot-w-suggest");
+    if (old) old.remove();
+  }
+  function clearCampaign() {
+    _generation++;
+    resetCustomer();
+    state.editId = null;
+    state.detailCampaign = null;
+    state.participants = []; state.prizes = []; state.winners = [];
+  }
   // ---------------- State ----------------
   var state = {
     tab: "list", // list | form | participants | winners | report
@@ -96,8 +116,8 @@
 
   // ---------------- List ----------------
   function renderList() {
-    var SESS = window.SESSION || {};
-    var cabangOpts = (SESS.cabangs || [])
+    var SESS = currentSession();
+    var cabangOpts = (_branches)
       .map(function (c) {
         return '<option value="' + esc(c.kode_cabang) + '">' + esc(c.nama_cabang) + "</option>";
       })
@@ -133,8 +153,7 @@
     var nw = document.getElementById("lot-new");
     if (nw)
       nw.onclick = function () {
-        state.editId = null;
-        state.detailCampaign = null;
+        clearCampaign();
         state.tab = "form";
         render();
       };
@@ -144,7 +163,7 @@
     var body = document.getElementById("lot-list-body");
     if (!body) return;
     body.innerHTML = "Memuat...";
-    var SESS = window.SESSION || {};
+    var SESS = currentSession();
     var fd = {
       only_aktif: document.getElementById("lot-only-aktif")?.checked || false,
       kode_cabang:
@@ -189,6 +208,7 @@
               '<button data-act="open" data-id="' +
               esc(r.id) +
               '" style="padding:6px 10px;background:#0ea5e9;color:#fff;border:0;border-radius:6px;cursor:pointer;">Buka</button>' +
+              '<button data-act="edit" data-id="' + esc(r.id) + '">Edit</button>' +
               '<button data-act="toggle" data-id="' +
               esc(r.id) +
               '" data-aktif="' +
@@ -207,7 +227,7 @@
           b.onclick = function () {
             var id = b.getAttribute("data-id");
             var act = b.getAttribute("data-act");
-            if (act === "open") openDetail(id);
+            if (act === "open" || act === "edit") openDetail(id, act === "edit");
             else toggleStatus(id, b.getAttribute("data-aktif") === "1");
           };
         });
@@ -217,13 +237,17 @@
       });
   }
 
-  function openDetail(id) {
+  function openDetail(id, edit) {
+    clearCampaign();
+    var generation = _generation;
     lotteryApi("lotteryGet", { id: id })
       .then(function (d) {
+        if (generation !== _generation) return;
         state.detailCampaign = d.campaign;
+        state.editId = id;
         state.prizes = d.prizes || [];
         state.winners = d.winners || [];
-        state.tab = "participants";
+        state.tab = edit ? "form" : "participants";
         render();
       })
       .catch(function (e) { alert("Gagal: " + e.message); });
@@ -238,14 +262,14 @@
 
   // ---------------- Form ----------------
   function renderForm() {
-    var SESS = window.SESSION || {};
+    var SESS = currentSession();
     var isEdit = !!state.editId;
-    var c = state.detailCampaign || {};
+    var c = isEdit ? state.detailCampaign || {} : {};
 
     var cabangSel =
       '<select id="lot-f-cabang" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;">' +
       (SESS.user.role === "Owner"
-        ? (SESS.cabangs || [])
+        ? (_branches)
             .map(function (x) {
               return (
                 '<option value="' + esc(x.kode_cabang) + '"' +
@@ -257,7 +281,7 @@
         : '<option value="' + esc(SESS.user.cabang_id) + '" selected>' + esc(SESS.user.cabang_id) + "</option>") +
       "</select>";
 
-    var prizes = state.prizes || [];
+    var prizes = (state.prizes || []).filter(function (p) { return !p.retired; });
     var prizesHtml =
       '<div id="lot-prizes">' +
       prizes
@@ -289,7 +313,7 @@
       ) +
       "</div>" +
       '<h4 style="margin:14px 0 6px;">Hadiah</h4>' +
-      '<div style="font-size:12px;color:#64748b;margin-bottom:6px;">Boleh produk di luar inventory. Total probabilitas tidak harus 100% (sisa = tidak menang).</div>' +
+      '<div style="font-size:12px;color:#64748b;margin-bottom:6px;">Hadiah boleh di luar inventory. Probabilitas hanya informasi untuk undian offline; aplikasi tidak mengundi. Hadiah yang dihapus dari form dinonaktifkan, histori tetap ada. Hadiah dengan pemenang tidak dapat diubah.</div>' +
       prizesHtml +
       '<div style="margin-top:14px;display:flex;gap:8px;">' +
       '<button id="lot-save" style="padding:8px 14px;background:#16a34a;color:#fff;border:0;border-radius:8px;cursor:pointer;">Simpan</button>' +
@@ -316,7 +340,7 @@
     return (
       '<div class="prize-row" data-i="' +
       i +
-      '" style="display:grid;grid-template-columns:2fr 1fr 1fr 0.7fr auto;gap:6px;margin-bottom:6px;align-items:center;">' +
+      '" data-id="' + esc(p.id || "") + '" data-image="' + esc(p.gambar_url || "") + '" style="display:grid;grid-template-columns:2fr 1fr 1fr 0.7fr auto;gap:6px;margin-bottom:6px;align-items:center;">' +
       '<input class="p-name" placeholder="Nama hadiah / produk" value="' + esc(p.nama_hadiah || p.nama_produk || "") + '" style="padding:6px;border:1px solid #cbd5e1;border-radius:6px;"/>' +
       '<input class="p-prod" placeholder="Nama produk (opsional)" value="' + esc(p.nama_produk || "") + '" style="padding:6px;border:1px solid #cbd5e1;border-radius:6px;"/>' +
       '<input class="p-nilai" type="number" min="0" step="1000" placeholder="Nilai (IDR)" value="' + esc(p.nilai_hadiah_idr || 0) + '" style="padding:6px;border:1px solid #cbd5e1;border-radius:6px;"/>' +
@@ -337,14 +361,15 @@
         rebindPrizeRows();
       };
     rebindPrizeRows();
+    var branch = document.getElementById("lot-f-cabang");
+    if (branch && state.editId) branch.disabled = true;
 
     var sv = document.getElementById("lot-save");
     if (sv) sv.onclick = saveForm;
     var cn = document.getElementById("lot-cancel");
     if (cn)
       cn.onclick = function () {
-        state.editId = null;
-        state.detailCampaign = null;
+        clearCampaign();
         state.tab = "list";
         render();
       };
@@ -367,6 +392,8 @@
       var prob = Number(r.querySelector(".p-prob").value) || 0;
       if (nama_hadiah || nama_produk) {
         prizes.push({
+          id: r.getAttribute("data-id") || undefined,
+          gambar_url: r.getAttribute("data-image") || null,
           nama_hadiah: nama_hadiah || nama_produk,
           nama_produk: nama_produk || null,
           nilai_hadiah_idr: nilai,
@@ -394,20 +421,27 @@
     if (fd.periode_selesai < fd.periode_mulai)
       return alert("Periode selesai tidak boleh sebelum periode mulai");
 
+    var btn = document.getElementById("lot-save");
+    if (btn.disabled) return;
+    btn.disabled = true;
+    var generation = _generation;
     lotteryApi("lotterySave", fd)
       .then(function (r) {
-        state.editId = r.id;
+        if (generation !== _generation) return;
+        clearCampaign();
         state.tab = "list";
-        state.detailCampaign = null;
         render();
       })
-      .catch(function (e) { alert("Gagal: " + e.message); });
+      .catch(function (e) { alert("Gagal: " + e.message); })
+      .finally(function () { btn.disabled = false; });
   }
 
   function loadFormForEdit() {
     if (!state.editId) return;
+    var generation = _generation;
     lotteryApi("lotteryGet", { id: state.editId })
       .then(function (d) {
+        if (generation !== _generation) return;
         state.detailCampaign = d.campaign;
         state.prizes = d.prizes || [];
         render();
@@ -442,8 +476,10 @@
     var body = document.getElementById("lot-part-body");
     if (!body) return;
     body.innerHTML = "Memuat...";
+    var generation = _generation;
     lotteryApi("lotteryEligibleParticipants", { campaign_id: state.detailCampaign.id })
       .then(function (d) {
+        if (generation !== _generation || document.getElementById("lot-part-body") !== body) return;
         state.participants = d.participants || [];
         body.innerHTML =
           '<div style="color:#475569;font-size:13px;margin-bottom:6px;">Total peserta eligible: <b>' +
@@ -490,7 +526,7 @@
       return '<div style="color:#64748b;">Buka campaign dari tab Daftar Campaign terlebih dahulu.</div>';
     }
     var c = state.detailCampaign;
-    var prizes = state.prizes || [];
+    var prizes = (state.prizes || []).filter(function (p) { return !p.retired; });
 
     var html =
       '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">' +
@@ -517,19 +553,36 @@
 
   var _custCache = [];
   function bindWinners() {
+    if (!state.detailCampaign) return;
+    resetCustomer();
+    var generation = _generation;
+    var campaignId = state.detailCampaign.id;
     var cust = document.getElementById("lot-w-cust");
     var sv = document.getElementById("lot-w-save");
     if (sv) sv.onclick = saveWinner;
     if (cust) {
       cust.addEventListener("input", function () {
+        _selectedCustomer = null;
         var q = cust.value.trim().toLowerCase();
-        if (q.length < 2) return;
+        if (q.length < 2) { showCustSuggest(cust, []); return; }
         var list = _custCache.filter(function (x) {
           return (x.nama || "").toLowerCase().includes(q) || (x.nomor_wa || "").includes(q);
         }).slice(0, 10);
         showCustSuggest(cust, list);
       });
     }
+    if (cust) cust.disabled = true;
+    lotteryApi("lotteryEligibleParticipants", { campaign_id: campaignId })
+      .then(function (d) {
+        if (generation !== _generation || document.getElementById("lot-w-cust") !== cust) return;
+        _custCache = d.participants || [];
+        cust.disabled = false;
+        cust.placeholder = _custCache.length ? "ketik min 2 huruf" : "Belum ada peserta eligible";
+      }).catch(function (e) {
+        if (generation !== _generation || document.getElementById("lot-w-cust") !== cust) return;
+        var msg = document.getElementById("lot-w-msg");
+        if (msg) msg.textContent = "Gagal memuat pelanggan: " + e.message;
+      });
     loadWinners();
   }
 
@@ -553,11 +606,6 @@
       div.appendChild(opt);
     });
     input.parentNode.appendChild(div);
-    // preload cache
-    if (_custCache.length === 0) {
-      lotteryApi("lotteryEligibleParticipants", { campaign_id: state.detailCampaign.id })
-        .then(function (d) { _custCache = d.participants || []; });
-    }
   }
 
   function saveWinner() {
@@ -579,8 +627,13 @@
       return;
     }
 
+    var btn = document.getElementById("lot-w-save");
+    if (btn.disabled) return;
+    btn.disabled = true;
+    var generation = _generation;
     lotteryApi("lotteryWinnerSave", fd)
       .then(function (w) {
+        if (generation !== _generation || document.getElementById("lot-w-msg") !== msg) return;
         msg.style.color = "#166534";
         msg.textContent = "Tersimpan. Kupon: " + (w.coupon_code || "");
         _selectedCustomer = null;
@@ -589,16 +642,19 @@
       })
       .catch(function (e) {
         msg.style.color = "#b91c1c";
+        if (generation !== _generation || document.getElementById("lot-w-msg") !== msg) return;
         msg.textContent = "Gagal: " + e.message;
-      });
+      }).finally(function () { btn.disabled = false; });
   }
 
   function loadWinners() {
     var body = document.getElementById("lot-w-body");
     if (!body) return;
     body.innerHTML = "Memuat...";
+    var generation = _generation;
     lotteryApi("lotteryGet", { id: state.detailCampaign.id })
       .then(function (d) {
+        if (generation !== _generation || document.getElementById("lot-w-body") !== body) return;
         state.winners = d.winners || [];
         var prizeMap = {};
         (d.prizes || []).forEach(function (p) { prizeMap[p.id] = p; });
@@ -657,10 +713,10 @@
           kpi("Total Biaya Hadiah", rupiah(r.total_biaya_hadiah_idr)) +
           kpi("Total Transaksi Peserta", r.total_transaksi_peserta) +
           kpi("Revenue", rupiah(r.total_revenue_idr)) +
-          kpi("Profit", rupiah(r.total_profit_idr)) +
+          kpi("Laba kotor peserta", rupiah(r.total_profit_idr)) +
           kpi("ROAS", r.roas === null ? "-" : (Math.round(r.roas * 100) / 100).toFixed(2)) +
-          kpi("ROI (%)", r.roi_direct_percent === null ? "-" : (Math.round(r.roi_direct_percent * 100) / 100).toFixed(2) + " %") +
-          "</div>";
+          kpi("ROI proxy (%)", r.roi_direct_percent === null ? "-" : (Math.round(r.roi_direct_percent * 100) / 100).toFixed(2) + " %") +
+          "</div><p>" + esc(d.basis || "") + "</p>" + (d.warning ? "<p>" + esc(d.warning) + "</p>" : "");
       })
       .catch(function (e) {
         body.innerHTML = '<div style="color:#b91c1c;">Gagal: ' + esc(e.message) + "</div>";
@@ -691,6 +747,8 @@
 
     root.querySelectorAll(".tab-btn").forEach(function (b) {
       b.onclick = function () {
+        _generation++;
+        resetCustomer();
         state.tab = b.getAttribute("data-tab");
         render();
       };
@@ -700,6 +758,20 @@
       loadFormForEdit();
     }
   }
+
+  // js_master registers the Owner promo screen first. Keep it unchanged and
+  // route Apoteker to lottery only, without invoking Owner-only promo APIs.
+  var ownerMarketingRender = VIEWS.marketing.render;
+  VIEWS.marketing.render = function (el) {
+    var role = currentSession().user.role;
+    if (role !== "Owner" && role !== "Apoteker") { el.textContent = "Akses Marketing ditolak"; return; }
+    if (role === "Apoteker") {
+      el.innerHTML = '<div id="lottery-root"></div>';
+      window.MarketingLottery.mount("lottery-root");
+      return;
+    }
+    ownerMarketingRender(el);
+  };
 
   // expose entry
   window.MarketingLottery = {
@@ -712,9 +784,22 @@
         rootEl.id = "lottery-root";
         main.appendChild(rootEl);
       }
-      // reset state
-      state = { tab: "list", editId: null, detailCampaign: null, participants: [], winners: [], prizes: [] };
-      render();
+      rootEl.id = "lottery-root";
+      clearCampaign();
+      state.tab = "list";
+      _branches = [];
+      var sess = currentSession(), role = sess.user && sess.user.role;
+      if (role !== "Owner" && role !== "Apoteker") { rootEl.textContent = "Akses lottery ditolak"; return; }
+      if (role === "Apoteker" && !sess.user.cabang_id) { rootEl.textContent = "Sesi ini tidak punya cabang"; return; }
+      if (role === "Owner") {
+        var generation = _generation;
+        rootEl.textContent = "Memuat cabang...";
+        api("cabang.list", {}).then(function (rows) {
+          if (generation !== _generation || document.getElementById("lottery-root") !== rootEl) return;
+          _branches = rows || [];
+          render();
+        }).catch(function (e) { if (generation === _generation) rootEl.textContent = "Gagal memuat cabang: " + e.message; });
+      } else render();
     },
   };
 })();
