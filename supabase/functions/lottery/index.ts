@@ -1,461 +1,188 @@
-// supabase/functions/lottery/index.ts
-// Edge Function: Kupon Undian (Marketing)
-//
-// Akses: Owner + Apoteker (Kasir ditolak)
-// Actions:
-//   lotteryList                  - daftar campaign
-//   lotteryGet                   - detail 1 campaign + hadiah
-//   lotterySave                  - buat/update campaign + hadiah
-//   lotteryStatus                - aktif/non-aktif campaign
-//   lotteryEligibleParticipants  - peserta eligible (filter tipe != 'Apotek Lain', ada nomor_wa, hitung trx di periode/cabang)
-//   lotteryWinnerSave            - catat pemenang (offline)
-//   lotteryReport                - ROI & ROAS
-
-// @ts-nocheck — Deno runtime, jalankan via `supabase functions deploy`
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-if (!SUPABASE_URL || !SERVICE_KEY) {
-  throw new Error("SUPABASE_URL dan SUPABASE_SERVICE_ROLE_KEY wajib di-set di environment Edge Function");
+// Kupon Undian: offline winner recording, not an automated draw.
+// @ts-nocheck
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_KEY");
+if (!SUPABASE_URL || !SERVICE_KEY) throw new Error("Konfigurasi backend lottery belum lengkap");
+const headers = { "Content-Type": "application/json", apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` };
+const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
+function json(payload, status = 200) {
+  return new Response(JSON.stringify(payload), { status, headers: { ...cors, "Content-Type": "application/json" } });
 }
-
-const REST = `${SUPABASE_URL}/rest/v1`;
-const headers = {
-  "Content-Type": "application/json",
-  apikey: SERVICE_KEY,
-  Authorization: `Bearer ${SERVICE_KEY}`,
-};
-
-function json(payload: unknown, status = 200) {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-async function rest(
-  path: string,
-  init: RequestInit & { prefer?: string } = {},
-) {
-  const h: Record<string, string> = { ...headers };
-  if (init.prefer) h.Prefer = init.prefer;
-  const res = await fetch(`${REST}${path}`, { ...init, headers: h });
+function fail(message, status = 400) { const e = new Error(message); e.status = status; throw e; }
+async function rest(path, init = {}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, { ...init, headers: { ...headers, ...(init.prefer ? { Prefer: init.prefer } : {}) } });
   const text = await res.text();
-  let body: any = null;
-  try { body = text ? JSON.parse(text) : null; } catch { body = text; }
+  let body; try { body = text ? JSON.parse(text) : null; } catch { body = null; }
   if (!res.ok) {
-    throw new Error(`REST ${path} -> ${res.status}: ${typeof body === "string" ? body : JSON.stringify(body)}`);
+    // Never return request URLs (session tokens) or arbitrary DB details to browsers.
+    const e = new Error(body?.code === "P0001" ? body.message : "Gagal mengakses data lottery. Coba lagi atau hubungi Owner.");
+    e.dbCode = body?.code; e.status = body?.code === "P0001" ? 400 : 500;
+    throw e;
   }
   return body;
 }
-
-// -------------------- session --------------------
-
-async function session(token: string | null) {
-  if (!token) return null;
-  const rows = await rest(
-    `/app_sessions?token=eq.${encodeURIComponent(token)}&select=token,username,nama,role,cabang_id`,
-  );
-  return Array.isArray(rows) && rows.length ? rows[0] : null;
+// PostgREST can cap rows below the requested limit. Advance by rows received,
+// not by requested size; stop only at an empty page. Never silently truncate.
+async function allRows(path) {
+  const rows = [];
+  for (;;) {
+    const page = await rest(`${path}&limit=500&offset=${rows.length}`);
+    if (!Array.isArray(page)) fail("Respons data lottery tidak valid", 502);
+    if (!page.length) return rows;
+    rows.push(...page);
+    if (rows.length > 200000) fail("Data terlalu besar. Gunakan periode campaign lebih pendek.", 422);
+  }
 }
-
-function allowed(role: string, name: string) {
-  // Semua aksi lottery hanya untuk Owner + Apoteker
-  const lotteryActions = [
-    "lotteryList",
-    "lotteryGet",
-    "lotterySave",
-    "lotteryStatus",
-    "lotteryEligibleParticipants",
-    "lotteryWinnerSave",
-    "lotteryReport",
-  ];
-  if (lotteryActions.includes(name)) return role === "Owner" || role === "Apoteker";
-  return false;
+async function session(token) {
+  if (typeof token !== "string" || !token.trim()) return null;
+  const rows = await rest(`/app_sessions?token=eq.${encodeURIComponent(token)}&expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=token,username,nama,role,cabang_id,expires_at&limit=1`);
+  const s = rows?.[0];
+  return s && Date.parse(s.expires_at) > Date.now() ? s : null;
 }
-
-// Apoteker terikat ke cabang sesi; Owner boleh lintas cabang (kalau dipilih)
-function cabangSesi(s: any, kodeCabang?: string) {
-  if (s.role === "Owner") return kodeCabang || null; // null = semua
-  return s.cabang_id || null; // Apoteker: WAJIB pakai cabang sesi
+function allowed(role) { return role === "Owner" || role === "Apoteker"; }
+function cabangSesi(s, requested) {
+  if (s.role === "Owner") return requested ? String(requested).trim() : null;
+  const branch = String(s.cabang_id || "").trim();
+  if (!branch) fail("Sesi ini tidak punya cabang. Hubungi Owner.", 403);
+  if (requested && requested !== branch) fail("Akses cabang ditolak", 403);
+  return branch;
 }
-
-// -------------------- helpers --------------------
-
+function authorizeCampaign(s, c) {
+  const branch = cabangSesi(s);
+  if (!c || !c.kode_cabang) fail("Campaign tidak ditemukan", 404);
+  if (branch && c.kode_cabang !== branch) fail("Akses cabang ditolak", 403);
+  return c;
+}
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function uuidOrThrow(v: any, label: string) {
-  if (!v || typeof v !== "string" || !UUID_RE.test(v)) throw new Error(`${label} tidak valid (uuid)`);
+function uuid(v, label) { if (typeof v !== "string" || !UUID_RE.test(v)) fail(`${label} tidak valid`); return v; }
+function date(v, label) {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v) || !Number.isFinite(Date.parse(v)) || new Date(v).toISOString().slice(0, 10) !== v) fail(`${label} tidak valid`);
   return v;
 }
-
-function strOrThrow(v: any, label: string) {
-  if (!v || typeof v !== "string") throw new Error(`${label} wajib diisi`);
-  return v;
+function money(v) { if (v === null || v === undefined || v === "" || !Number.isFinite(Number(v))) return null; return Math.round(Number(v) * 100); }
+function total(rows, key) { let cents = 0; for (const r of rows) { const n = money(r[key]); if (n === null) return null; cents += n; } return cents / 100; }
+async function campaign(id, s) {
+  uuid(id, "Campaign");
+  const rows = await rest(`/lottery_campaigns?id=eq.${id}&limit=1`);
+  return authorizeCampaign(s, rows?.[0]);
 }
-
-function num(v: any, def = 0) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : def;
+function period(c) {
+  // Schema: trx_penjualan.tanggal is DATE in the business calendar, not timestamp.
+  const from = date(c.periode_mulai, "Periode mulai"), to = date(c.periode_selesai, "Periode selesai");
+  if (to < from) fail("Periode selesai sebelum periode mulai");
+  return `cabang_id=eq.${encodeURIComponent(c.kode_cabang)}&tanggal=gte.${from}&tanggal=lte.${to}`;
 }
-
-function randomCouponCode() {
-  // LOT-XXXXXX (6 char alnum uppercase, tanpa 0/O/1/I supaya tidak rancu)
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let s = "";
-  for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return `LOT-${s}`;
+async function participantData(c, withHpp = false) {
+  const customers = await allRows(`/master_customer?cabang_id=eq.${encodeURIComponent(c.kode_cabang)}&tipe_customer=neq.Apotek%20Lain&nomor_wa=not.is.null&select=id,nomor_wa,nama,tipe_customer,segment_crm&order=id.asc`);
+  const eligible = customers.filter(x => String(x.nomor_wa || "").trim() && x.tipe_customer !== "Apotek Lain");
+  const wa = new Set(eligible.map(x => String(x.nomor_wa).trim()));
+  const base = `/trx_penjualan?${period(c)}&nomor_wa=not.is.null&order=no_nota.asc&select=no_nota,nomor_wa,harga_akhir`;
+  let trx, hppAvailable = withHpp;
+  try { trx = await allRows(base + (withHpp ? ",total_hpp" : "")); }
+  catch (e) {
+    if (!withHpp || !["42703", "PGRST204"].includes(e.dbCode)) throw e;
+    trx = await allRows(base); hppAvailable = false;
+  }
+  const matched = trx.filter(t => wa.has(String(t.nomor_wa || "").trim()));
+  const stats = new Map();
+  for (const t of matched) {
+    const key = String(t.nomor_wa).trim(), cur = stats.get(key) || { count: 0, cents: 0 };
+    const amount = money(t.harga_akhir);
+    if (amount === null) fail("Nilai transaksi tidak lengkap", 422);
+    cur.count++; cur.cents += amount; stats.set(key, cur);
+  }
+  const participants = eligible.filter(c => stats.has(String(c.nomor_wa).trim())).map(c => {
+    const st = stats.get(String(c.nomor_wa).trim());
+    return { customer_id: c.id, nomor_wa: c.nomor_wa, nama: c.nama, tipe_customer: c.tipe_customer, segment_crm: c.segment_crm, jumlah_transaksi_periode: st.count, total_belanja_periode: st.cents / 100 };
+  }).sort((a, b) => b.jumlah_transaksi_periode - a.jumlah_transaksi_periode || a.customer_id.localeCompare(b.customer_id));
+  return { participants, trx: matched, total_transaksi: trx.length, hppAvailable };
 }
-
-// -------------------- actions --------------------
-
-async function lotteryList(data: any, s: any) {
-  const filterCabang = cabangSesi(s, data?.kode_cabang);
-  const onlyAktif = data?.only_aktif === true;
-  const limit = Math.min(num(data?.limit, 100), 500);
-
-  let path = `/lottery_campaigns?order=periode_mulai.desc&limit=${limit}`;
-  if (filterCabang) path += `&kode_cabang=eq.${encodeURIComponent(filterCabang)}`;
-  if (onlyAktif) path += `&aktif=eq.true`;
-  const rows = await rest(path);
-
-  // attach prize summary (count & total nilai) per campaign
-  const ids = (rows || []).map((r: any) => r.id);
-  let prizeMap = new Map<string, { count: number; total_nilai: number }>();
-  if (ids.length) {
-    const inList = `(${ids.join(",")})`;
-    const prizes = await rest(`/lottery_prizes?campaign_id=in.${inList}&select=campaign_id,nilai_hadiah_idr`);
-    for (const p of prizes || []) {
-      const cur = prizeMap.get(p.campaign_id) || { count: 0, total_nilai: 0 };
-      cur.count += 1;
-      cur.total_nilai += num(p.nilai_hadiah_idr, 0);
-      prizeMap.set(p.campaign_id, cur);
-    }
+async function lotteryList(data, s) {
+  const branch = cabangSesi(s, data.kode_cabang);
+  let path = "/lottery_campaigns?order=periode_mulai.desc,id.asc";
+  if (branch) path += `&kode_cabang=eq.${encodeURIComponent(branch)}`;
+  if (data.only_aktif === true) path += "&aktif=eq.true";
+  const rows = await allRows(path);
+  // Batched IDs are UUIDs from the DB; no customer data in URL filters.
+  const summaries = new Map();
+  for (let i = 0; i < rows.length; i += 50) {
+    const ids = rows.slice(i, i + 50).map(c => c.id);
+    const prizes = await allRows(`/lottery_prizes?campaign_id=in.(${ids.join(",")})&retired=eq.false&select=id,campaign_id,nilai_hadiah_idr&order=id.asc`);
+    for (const p of prizes) { const z = summaries.get(p.campaign_id) || { count: 0, total_nilai: 0 }; z.count++; z.total_nilai += Number(p.nilai_hadiah_idr); summaries.set(p.campaign_id, z); }
   }
-  return (rows || []).map((r: any) => ({
-    ...r,
-    prize_summary: prizeMap.get(r.id) || { count: 0, total_nilai: 0 },
-  }));
+  return rows.map(c => ({ ...c, prize_summary: summaries.get(c.id) || { count: 0, total_nilai: 0 } }));
 }
-
-async function lotteryGet(data: any, _s: any) {
-  const id = uuidOrThrow(data?.id, "id campaign");
-  const [campaign] = await rest(`/lottery_campaigns?id=eq.${id}&limit=1`);
-  if (!campaign) throw new Error("Campaign tidak ditemukan");
-  const prizes = await rest(`/lottery_prizes?campaign_id=eq.${id}&order=probabilitas_persen.desc`);
-  const winners = await rest(
-    `/lottery_winners?campaign_id=eq.${id}&order=recorded_at.desc&limit=500`,
-  );
-  return { campaign, prizes, winners };
+async function lotteryGet(data, s) {
+  const c = await campaign(data.id, s);
+  const [prizes, winners] = await Promise.all([
+    allRows(`/lottery_prizes?campaign_id=eq.${c.id}&order=id.asc`),
+    allRows(`/lottery_winners?campaign_id=eq.${c.id}&order=recorded_at.desc,id.asc`)
+  ]);
+  return { campaign: c, prizes, winners };
 }
-
-async function lotterySave(data: any, s: any) {
-  const id = data?.id || null;
-  const kode_cabang = strOrThrow(data?.kode_cabang, "kode_cabang");
-
-  // Cabang enforcement: Apoteker hanya boleh di cabangnya
-  if (s.role === "Apoteker" && s.cabang_id !== kode_cabang) {
-    throw new Error("Apoteker hanya boleh membuat campaign di cabang sendiri");
-  }
-
-  const payload = {
-    kode_cabang,
-    nama: strOrThrow(data?.nama, "nama"),
-    periode_mulai: strOrThrow(data?.periode_mulai, "periode_mulai"),
-    periode_selesai: strOrThrow(data?.periode_selesai, "periode_selesai"),
-    aktif: data?.aktif === true,
-    catatan: data?.catatan ?? null,
-    updated_at: new Date().toISOString(),
-  };
-
-  let campaignId = id;
-  if (id) {
-    await rest(`/lottery_campaigns?id=eq.${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(payload),
-    });
-  } else {
-    const inserted = await rest(`/lottery_campaigns`, {
-      method: "POST",
-      prefer: "return=representation",
-      body: JSON.stringify({ ...payload, created_by: s.username || null }),
-    });
-    campaignId = inserted?.[0]?.id;
-  }
-  if (!campaignId) throw new Error("Gagal menyimpan campaign");
-
-  // Replace prizes (simple, transactional cukup untuk kasus offline)
-  if (Array.isArray(data?.prizes)) {
-    await rest(`/lottery_prizes?campaign_id=eq.${campaignId}`, { method: "DELETE" });
-    const prizes = data.prizes
-      .filter((p: any) => p && (p.nama_hadiah || p.nama_produk))
-      .map((p: any) => ({
-        campaign_id: campaignId,
-        nama_hadiah: strOrThrow(p.nama_hadiah || p.nama_produk, "nama hadiah"),
-        nama_produk: p.nama_produk || p.nama_hadiah || null,
-        nilai_hadiah_idr: num(p.nilai_hadiah_idr, 0),
-        probabilitas_persen: num(p.probabilitas_persen, 0),
-        gambar_url: p.gambar_url || null,
-      }));
-    if (prizes.length) {
-      await rest(`/lottery_prizes`, {
-        method: "POST",
-        body: JSON.stringify(prizes),
-      });
-    }
-  }
-
-  return { id: campaignId };
+async function lotterySave(data, s) {
+  if (data.id) await campaign(data.id, s); // authorize stored branch, not just input
+  cabangSesi(s, data.kode_cabang);
+  date(data.periode_mulai, "Periode mulai"); date(data.periode_selesai, "Periode selesai");
+  if (data.periode_selesai < data.periode_mulai) fail("Periode selesai sebelum periode mulai");
+  if (!Array.isArray(data.prizes)) fail("Daftar hadiah wajib dikirim");
+  // A single DB transaction validates, locks, updates, and retires prizes.
+  return rest("/rpc/lottery_save_campaign", { method: "POST", body: JSON.stringify({ p_token: s.token, p_data: data }) });
 }
-
-async function lotteryStatus(data: any, s: any) {
-  const id = uuidOrThrow(data?.id, "id campaign");
-  const aktif = data?.aktif === true;
-  // Validasi cabang utk Apoteker
-  const [cur] = await rest(`/lottery_campaigns?id=eq.${id}&limit=1&select=id,kode_cabang`);
-  if (!cur) throw new Error("Campaign tidak ditemukan");
-  if (s.role === "Apoteker" && s.cabang_id !== cur.kode_cabang) {
-    throw new Error("Apoteker hanya boleh mengubah status campaign di cabang sendiri");
-  }
-  await rest(`/lottery_campaigns?id=eq.${id}`, {
-    method: "PATCH",
-    body: JSON.stringify({ aktif, updated_at: new Date().toISOString() }),
-  });
-  return { id, aktif };
+async function lotteryStatus(data, s) {
+  const c = await campaign(data.id, s);
+  if (typeof data.aktif !== "boolean") fail("Status tidak valid");
+  await rest(`/lottery_campaigns?id=eq.${c.id}&kode_cabang=eq.${encodeURIComponent(c.kode_cabang)}`, { method: "PATCH", body: JSON.stringify({ aktif: data.aktif }) });
+  return { id: c.id, aktif: data.aktif };
 }
-
-async function lotteryEligibleParticipants(data: any, _s: any) {
-  const campaignId = uuidOrThrow(data?.campaign_id, "campaign_id");
-  const [campaign] = await rest(
-    `/lottery_campaigns?id=eq.${campaignId}&limit=1&select=id,kode_cabang,periode_mulai,periode_selesai,nama`,
-  );
-  if (!campaign) throw new Error("Campaign tidak ditemukan");
-
-  // Ambil customer eligible: tipe != 'Apotek Lain', ada nomor_wa, di cabang campaign
-  const customers = await rest(
-    `/master_customer?select=id,nomor_wa,nama,tipe_customer,cabang_id,segment_crm&cabang_id=eq.${encodeURIComponent(campaign.kode_cabang)}&tipe_customer=neq.Apotek%20Lain&nomor_wa=not.is.null&order=nama.asc&limit=5000`,
-  );
-
-  // Hitung jumlah transaksi & total belanja per customer di periode campaign, hanya yg ada nomor_wa
-  const trx = await rest(
-    `/trx_penjualan?select=nomor_wa,harga_akhir,tanggal&cabang_id=eq.${encodeURIComponent(campaign.kode_cabang)}&tanggal=gte.${campaign.periode_mulai}&tanggal=lte.${campaign.periode_selesai}&nomor_wa=not.is.null&limit=50000`,
-  );
-
-  const stats = new Map<string, { count: number; total: number }>();
-  for (const t of trx || []) {
-    const wa = String(t.nomor_wa || "").trim();
-    if (!wa) continue;
-    const cur = stats.get(wa) || { count: 0, total: 0 };
-    cur.count += 1;
-    cur.total += num(t.harga_akhir, 0);
-    stats.set(wa, cur);
-  }
-
-  // Filter hanya yg transaksi >=1 di periode tsb
-  const participants = (customers || [])
-    .map((c: any) => {
-      const s = stats.get(String(c.nomor_wa).trim()) || { count: 0, total: 0 };
-      return {
-        customer_id: c.id,
-        nomor_wa: c.nomor_wa,
-        nama: c.nama,
-        tipe_customer: c.tipe_customer,
-        segment_crm: c.segment_crm,
-        jumlah_transaksi_periode: s.count,
-        total_belanja_periode: s.total,
-      };
-    })
-    .filter((p: any) => p.jumlah_transaksi_periode > 0)
-    .sort((a: any, b: any) => b.jumlah_transaksi_periode - a.jumlah_transaksi_periode);
-
-  return {
-    campaign,
-    total_peserta: participants.length,
-    total_transaksi: (trx || []).length,
-    participants,
-  };
+async function lotteryEligibleParticipants(data, s) {
+  const c = await campaign(data.campaign_id, s), d = await participantData(c);
+  return { campaign: c, total_peserta: d.participants.length, total_transaksi: d.total_transaksi, participants: d.participants };
 }
-
-async function lotteryWinnerSave(data: any, s: any) {
-  const campaign_id = uuidOrThrow(data?.campaign_id, "campaign_id");
-  const customer_id = uuidOrThrow(data?.customer_id, "customer_id");
-  const prize_id = uuidOrThrow(data?.prize_id, "prize_id");
-  const coupon_expired_at = strOrThrow(data?.coupon_expired_at, "coupon_expired_at");
-  // pickup_status='sudah_diambil' harus disertai pickup_date
-  if (data?.pickup_status === "sudah_diambil" && !data?.pickup_date) {
-    throw new Error("Tanggal ambil wajib diisi jika status 'sudah_diambil'");
-  }
-
-  // Validasi cabang utk Apoteker
-  const [campaign] = await rest(`/lottery_campaigns?id=eq.${campaign_id}&limit=1&select=id,kode_cabang`);
-  if (!campaign) throw new Error("Campaign tidak ditemukan");
-  if (s.role === "Apoteker" && s.cabang_id !== campaign.kode_cabang) {
-    throw new Error("Apoteker hanya boleh mencatat pemenang di cabang sendiri");
-  }
-
-  // Validasi customer eligible (exclude Apotek Lain & tanpa nomor_wa)
-  const [customer] = await rest(
-    `/master_customer?id=eq.${customer_id}&limit=1&select=id,tipe_customer,nomor_wa`,
-  );
-  if (!customer) throw new Error("Customer tidak ditemukan");
-  if (customer.tipe_customer === "Apotek Lain") {
-    throw new Error("Customer tipe 'Apotek Lain' tidak eligible");
-  }
-  if (!customer.nomor_wa) {
-    throw new Error("Customer tanpa nomor WhatsApp tidak eligible");
-  }
-
-  const [prize] = await rest(`/lottery_prizes?id=eq.${prize_id}&limit=1&select=id,campaign_id`);
-  if (!prize) throw new Error("Hadiah tidak ditemukan");
-  if (prize.campaign_id !== campaign_id) {
-    throw new Error("Hadiah bukan milik campaign ini");
-  }
-
-  // Retry insert dengan coupon_code baru jika kena unique violation (race)
-  let lastErr: any;
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const coupon_code = data?.coupon_code || randomCouponCode();
-    try {
-      const insert = await rest(`/lottery_winners`, {
-        method: "POST",
-        prefer: "return=representation",
-        body: JSON.stringify({
-          campaign_id,
-          customer_id,
-          prize_id,
-          coupon_code,
-          coupon_expired_at,
-          pickup_date: data?.pickup_date || null,
-          pickup_status: data?.pickup_status || "belum_diambil",
-          recorded_by: s.username || null,
-        }),
-      });
-      return insert?.[0] || { coupon_code };
-    } catch (e: any) {
-      lastErr = e;
-      // 23505 = unique_violation → retry dengan kode baru
-      if (String(e?.message || "").includes("23505") || String(e?.message || "").includes("duplicate")) {
-        continue;
-      }
-      throw e;
-    }
-  }
-  throw new Error("Gagal generate kode kupon unik setelah beberapa percobaan: " + (lastErr?.message || ""));
+async function lotteryWinnerSave(data, s) {
+  await campaign(data.campaign_id, s);
+  uuid(data.customer_id, "Pelanggan"); uuid(data.prize_id, "Hadiah");
+  date(data.coupon_expired_at, "Masa berlaku");
+  if (data.pickup_date) date(data.pickup_date, "Tanggal ambil");
+  if (!["belum_diambil", "sudah_diambil"].includes(data.pickup_status || "belum_diambil")) fail("Status pengambilan tidak valid");
+  if (data.pickup_status === "sudah_diambil" && !data.pickup_date) fail("Tanggal ambil wajib diisi");
+  // RPC re-checks actual branch, prize and purchase eligibility under the same
+  // campaign lock used by editing. No single-coupon/customer restriction.
+  return rest("/rpc/lottery_record_winner", { method: "POST", body: JSON.stringify({ p_token: s.token, p_data: data }) });
 }
-
-async function lotteryReport(data: any, _s: any) {
-  const campaignId = uuidOrThrow(data?.campaign_id, "campaign_id");
-  const [campaign] = await rest(
-    `/lottery_campaigns?id=eq.${campaignId}&limit=1&select=id,kode_cabang,nama,periode_mulai,periode_selesai`,
-  );
-  if (!campaign) throw new Error("Campaign tidak ditemukan");
-
-  // Winners + prizes (untuk total nilai hadiah yang sudah diberikan)
-  const winners = await rest(
-    `/lottery_winners?campaign_id=eq.${campaignId}&select=id,prize_id,coupon_code,pickup_status&limit=5000`,
-  );
-  const prizeIds = (winners || []).map((w: any) => w.prize_id);
-  const prizeMap = new Map<string, number>();
-  if (prizeIds.length) {
-    const prizes = await rest(
-      `/lottery_prizes?id=in.(${prizeIds.join(",")})&select=id,nilai_hadiah_idr,nama_hadiah`,
-    );
-    for (const p of prizes || []) prizeMap.set(p.id, num(p.nilai_hadiah_idr, 0));
-  }
-
-  let cost = 0;
-  let hadiah_terambil = 0;
-  for (const w of winners || []) {
-    cost += prizeMap.get(w.prize_id) || 0;
-    if (w.pickup_status === "sudah_diambil") hadiah_terambil += 1;
-  }
-
-  // Revenue & profit dari trx_penjualan PESERTA ELIGIBLE saja
-  // (sesuai rule #9 & #11: hanya customer dgn nomor_wa terdaftar, tipe != 'Apotek Lain')
-  const eligible = await rest(
-    `/master_customer?select=nomor_wa&cabang_id=eq.${encodeURIComponent(campaign.kode_cabang)}&tipe_customer=neq.Apotek%20Lain&nomor_wa=not.is.null&limit=10000`,
-  );
-  const eligibleWA = (eligible || [])
-    .map((c: any) => String(c.nomor_wa || "").trim())
-    .filter((w: string) => w.length > 0);
-
-  let trx: any[] = [];
-  if (eligibleWA.length) {
-    // filter pakai OR (banyak nomor_wa). PostgREST: nomor_wa=in.(a,b,c) atau or=(...)
-    // Pakai 'or' dengan koma-escaped untuk safety
-    const orList = eligibleWA
-      .map((w: string) => `nomor_wa.eq.${encodeURIComponent(w)}`)
-      .join(",");
-    trx = await rest(
-      `/trx_penjualan?select=nomor_wa,harga_akhir&cabang_id=eq.${encodeURIComponent(campaign.kode_cabang)}&tanggal=gte.${campaign.periode_mulai}&tanggal=lte.${campaign.periode_selesai}&or=(${orList})&limit=100000`,
-    );
-  }
-
-  let revenue = 0;
-  for (const t of trx || []) {
-    revenue += num(t.harga_akhir, 0);
-  }
-  // profit=0 kalau kolom hpp tidak tersedia; query terpisah agar tidak crash jika hpp tidak ada
-  let profit = 0;
-  try {
-    const trxWithHpp = await rest(
-      `/trx_penjualan?select=nomor_wa,harga_akhir,hpp&cabang_id=eq.${encodeURIComponent(campaign.kode_cabang)}&tanggal=gte.${campaign.periode_mulai}&tanggal=lte.${campaign.periode_selesai}&or=(${orList})&limit=100000`,
-    );
-    for (const t of trxWithHpp || []) {
-      profit += num(t.harga_akhir, 0) - num(t.hpp, 0);
-    }
-  } catch (_e) {
-    // kolom hpp tidak ada → profit tetap 0
-    profit = 0;
-  }
-
-  const roas = cost > 0 ? revenue / cost : null;
-  const roi_direct = cost > 0 ? (profit / cost) * 100 : null;
-
-  return {
-    campaign,
-    ringkasan: {
-      total_pemenang: (winners || []).length,
-      hadiah_terambil,
-      total_biaya_hadiah_idr: cost,
-      total_peserta_eligible: eligibleWA.length,
-      total_transaksi_peserta: (trx || []).length,
-      total_revenue_idr: revenue,
-      total_profit_idr: profit,
-      roas,
-      roi_direct_percent: roi_direct,
-    },
-  };
+async function lotteryReport(data, s) {
+  const c = await campaign(data.campaign_id, s);
+  const [d, winners, prizes] = await Promise.all([
+    participantData(c, true),
+    allRows(`/lottery_winners?campaign_id=eq.${c.id}&select=id,prize_id,pickup_status&order=id.asc`),
+    allRows(`/lottery_prizes?campaign_id=eq.${c.id}&select=id,nilai_hadiah_idr&order=id.asc`)
+  ]);
+  const prizeMap = new Map(prizes.map(p => [p.id, p.nilai_hadiah_idr]));
+  const cost = total(winners.map(w => ({ cost: prizeMap.get(w.prize_id) })), "cost");
+  const revenue = total(d.trx, "harga_akhir"), hpp = d.hppAvailable ? total(d.trx, "total_hpp") : null;
+  const profit = hpp === null || revenue === null ? null : Math.round((revenue - hpp) * 100) / 100;
+  return { campaign: c, warning: profit === null ? "HPP tidak tersedia/lengkap; laba dan ROI tidak dapat dihitung." : null,
+    basis: "Transaksi peserta dalam periode (tanggal inklusif), sebelum koreksi retur; bukan uplift. Biaya seluruh hadiah tercatat, termasuk belum diambil. ROI proxy = laba kotor / biaya hadiah × 100.",
+    ringkasan: { total_pemenang: winners.length, hadiah_terambil: winners.filter(w => w.pickup_status === "sudah_diambil").length,
+      total_biaya_hadiah_idr: cost, total_peserta_eligible: d.participants.length, total_transaksi_peserta: d.trx.length,
+      total_revenue_idr: revenue, total_hpp_idr: hpp, total_profit_idr: profit,
+      roas: cost > 0 && revenue !== null ? revenue / cost : null,
+      roi_direct_percent: cost > 0 && profit !== null ? profit / cost * 100 : null } };
 }
-
-// -------------------- router --------------------
-
-const handlers: Record<string, (data: any, s: any) => Promise<any>> = {
-  lotteryList,
-  lotteryGet,
-  lotterySave,
-  lotteryStatus,
-  lotteryEligibleParticipants,
-  lotteryWinnerSave,
-  lotteryReport,
-};
-
-Deno.serve(async (req: Request) => {
+const handlers = { lotteryList, lotteryGet, lotterySave, lotteryStatus, lotteryEligibleParticipants, lotteryWinnerSave, lotteryReport };
+Deno.serve(async req => {
   if (req.method === "OPTIONS") return json({ ok: true });
   if (req.method !== "POST") return json({ ok: false, error: "Method not allowed" }, 405);
-
   try {
-    const body = await req.json();
-    const [name, data, token] = body.args || [];
+    let body; try { body = await req.json(); } catch { fail("JSON tidak valid"); }
+    // Canonical frontend contract: {fn: action, args: [data, token]}.
+    if (!body || !Object.prototype.hasOwnProperty.call(handlers, body.fn) || !Array.isArray(body.args) || body.args.length !== 2) fail("Permintaan lottery tidak valid");
+    const [data, token] = body.args;
+    if (!data || typeof data !== "object" || Array.isArray(data)) fail("Data lottery tidak valid");
     const s = await session(token);
     if (!s) return json({ ok: false, error: "Sesi berakhir. Silakan login ulang.", code: "NO_SESSION" }, 401);
-    if (!allowed(s.role, name)) {
-      return json({ ok: false, error: `Akses ditolak untuk ${s.role} pada aksi ${name}` }, 403);
-    }
-    const fn = handlers[name];
-    if (!fn) return json({ ok: false, error: `Aksi tidak dikenal: ${name}` }, 400);
-    const result = await fn(data || {}, s);
-    return json({ ok: true, data: result });
-  } catch (e: any) {
-    return json({ ok: false, error: e?.message || String(e) }, 500);
-  }
+    if (!allowed(s.role)) fail("Akses lottery ditolak", 403);
+    cabangSesi(s); // fail closed even for read-by-id actions
+    return json({ ok: true, data: await handlers[body.fn](data, s) });
+  } catch (e) { return json({ ok: false, error: e.message || "Permintaan lottery gagal" }, e.status || 500); }
 });
