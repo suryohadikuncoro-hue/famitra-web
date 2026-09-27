@@ -311,7 +311,7 @@
         ? '<span class="chip" style="background:#d1fae5;color:#065f46;">Aktif</span>'
         : '<span class="chip" style="background:#f1f5f9;color:#64748b;">Non-aktif</span>';
       return '<tr>' +
-        '<td><strong>' + esc(t.nama_target) + '</strong></td>' +
+        '<td><strong>' + esc(t.nama) + '</strong></td>' +
         '<td>' + esc(t.kode_cabang) + '</td>' +
         '<td>' + tglIndo(t.periode_mulai) + '<br/><span class="sub">s.d. ' + tglIndo(t.periode_selesai) + '</span></td>' +
         '<td class="r"><strong>' + rupiah(t.target_omset_idr) + '</strong></td>' +
@@ -355,7 +355,7 @@
           '</select>' +
         '</label>' +
         '<label class="field"><span>Nama target</span>' +
-          '<input id="mt-f-nama" class="inp" type="text" required placeholder="cth: Target Bulanan Oktober" value="' + esc(v.nama_target || "") + '">' +
+          '<input id="mt-f-nama" class="inp" type="text" required placeholder="cth: Target Bulanan Oktober" value="' + esc(v.nama || "") + '">' +
         '</label>' +
         '<div class="grid g2">' +
           '<label class="field"><span>Periode mulai</span>' +
@@ -411,7 +411,7 @@
       var payload = {
         id: editing ? editing.id : null,
         kode_cabang: kode_cabang,
-        nama_target: nama,
+        nama: nama,
         periode_mulai: mulai,
         periode_selesai: selesai,
         target_omset_idr: target,
