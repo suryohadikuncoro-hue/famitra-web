@@ -32,7 +32,10 @@ function backend(opts = {}) {
       calls.push({ table, q, init });
       if (opts.errorTable === table) return new Response(JSON.stringify({ code: 'XX000', message: 'internal-private-detail' }), { status: 500 });
       if (table === 'trx_penjualan' && opts.noHpp && q.get('select').includes('total_hpp')) return new Response(JSON.stringify({ code: '42703' }), { status: 400 });
-      if (parsed.pathname.includes('/rpc/')) return new Response(JSON.stringify({ id: C, coupon_code: 'LOT-TEST' }));
+      if (parsed.pathname.includes('/rpc/')) {
+        if (opts.rpcError) return new Response(JSON.stringify({ code: 'P0001', message: opts.rpcError }), { status: 400 });
+        return new Response(JSON.stringify({ id: C, coupon_code: 'LOT-TEST' }));
+      }
       let rows = (tables[table] || []).filter(row => {
         for (const [key, cond] of q.entries()) {
           if (['limit', 'offset', 'select', 'order'].includes(key)) continue;
@@ -131,7 +134,8 @@ test('campaign and winner writes use single RPC instead of partial table DELETE/
   assert.ok(writes.every(c => JSON.parse(c.init.body).p_token === 'test-session'));
   assert.equal((await b.request('lotteryWinnerSave', { campaign_id: C, customer_id: U, prize_id: P, coupon_expired_at: '2026-02-30' })).status, 400);
 });
-function frontend() {
+function frontend(opts = {}) {
+  const currentCampaign = { ...campaign, ...(opts.campaign || {}) };
   const elements = {}, requests = [], timers = [];
   const el = id => elements[id] || (elements[id] = { id, value: '', innerHTML: '', textContent: '', style: {}, children: [], disabled: false,
     addEventListener(name, fn) { this[name] = fn; }, querySelectorAll() { return []; }, appendChild(x) { this.children.push(x); x.parentNode = this; if (x.id) elements[x.id] = x; },
@@ -139,12 +143,12 @@ function frontend() {
   });
   const document = { getElementById: id => elements[id] || null, querySelectorAll: () => [], createElement: () => ({ style: {}, children: [], appendChild(x) { this.children.push(x); }, remove() { if (this.id) delete elements[this.id]; } }) };
   const ctx = vm.createContext({ document, window: {}, VIEWS: { marketing: { render() {} } }, console, setTimeout: fn => timers.push(fn), alert() {}, confirm: () => true,
-    fetch: async (url, init) => { const data = JSON.parse(init.body); requests.push(data); return new Response(JSON.stringify({ ok: true, data: data.fn === 'lotteryEligibleParticipants' ? { participants: [{ customer_id: U, nama: 'Ani', nomor_wa: '6281', tipe_customer: 'Umum' }] } : { campaign, prizes: [{ id: P }], winners: [] } })); },
+    fetch: async (url, init) => { const data = JSON.parse(init.body); requests.push(data); return new Response(JSON.stringify({ ok: true, data: data.fn === 'lotteryEligibleParticipants' ? { campaign: currentCampaign, participants: [{ customer_id: U, nama: 'Ani', nomor_wa: '6281', tipe_customer: 'Umum', total_belanja_periode: 300000 }] } : { campaign: currentCampaign, prizes: [{ id: P }], winners: [] } })); },
     api: async name => { requests.push({ name }); return [{ kode_cabang: 'KARLA', nama_cabang: 'Karla' }]; }, Response
   });
   // Lexical SESSION specifically tests no reliance on window.SESSION.
   vm.runInContext('let SESSION = {token: "lexical-token", user: {role:"Owner", cabang_id:"KARLA"}};', ctx);
-  const src = source('public/js_marketing_lottery.js').replace('  // expose entry', `  window.test = { lotteryApi, bindWinners, showCustSuggest, clearCampaign, openDetail, readForm, renderForm, saveWinner, rupiah, state: () => state, selected: () => _selectedCustomer, cache: () => _custCache, branches: () => _branches };\n  // expose entry`);
+  const src = source('public/js_marketing_lottery.js').replace('  // expose entry', `  window.test = { lotteryApi, bindWinners, showCustSuggest, clearCampaign, openDetail, readForm, renderForm, saveForm, saveWinner, rupiah, minimumHtml, validMinimum, tableParticipants, state: () => state, selected: () => _selectedCustomer, cache: () => _custCache, branches: () => _branches };\n  // expose entry`);
   vm.runInContext(src, ctx);
   return { ctx, t: ctx.window.test, el, elements, requests, timers };
 }
@@ -172,7 +176,7 @@ test('frontend stale participant response cannot populate changed campaign', asy
 test('frontend open/edit passes campaign ID and retained prize IDs; new campaign resets all', async () => {
   const f = frontend(); f.t.openDetail(C, true); await flush();
   assert.equal(f.t.state().editId, C); assert.equal(f.t.state().tab, 'form');
-  const fields = { 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '' };
+  const fields = { 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '', 'lot-f-min-belanja': '0' };
   for (const [id, value] of Object.entries(fields)) f.el(id).value = value;
   assert.equal(f.t.readForm().id, C);
   assert.match(f.t.renderForm(), /data-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"/);
@@ -198,4 +202,144 @@ test('SQL contract guards (static only): transactional history, authorization, e
   for (const fn of ['lottery_require_session', 'lottery_save_campaign', 'lottery_record_winner']) {
     assert.match(sql, new RegExp(`revoke all on function public.${fn}[^;]+from public, anon, authenticated`));
   }
+});
+
+// These tests execute JS against a PostgREST stub. They do NOT execute SQL RPCs;
+// database enforcement/atomicity belongs to the rollback-only lottery.sql suite.
+for (const [minimum, expected] of [[150.29, 1], [150.3, 1], [150.31, 0], [0, 1]]) {
+  test(`cumulative minimum ${minimum}: below/equal/above boundary, two purchases and dates/branch`, async () => {
+    const b = backend({ cap: 1, tables: { lottery_campaigns: [{ ...campaign, min_total_belanja_idr: minimum }] } });
+    const r = await b.request('lotteryEligibleParticipants', { campaign_id: C });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.data.total_peserta, expected);
+    assert.equal(r.body.data.total_transaksi, 2); // excludes other branch and after end
+    if (expected) {
+      assert.equal(r.body.data.participants[0].total_belanja_periode, 150.3);
+      assert.equal(r.body.data.participants[0].jumlah_transaksi_periode, 2);
+    }
+    assert.ok(b.calls.filter(c => c.table === 'trx_penjualan').every(c => c.q.get('select').includes('harga_akhir::text')));
+  });
+}
+test('zero default still requires a purchase; zero-value purchase eligible, lifetime totals ignored', async () => {
+  const customers = [
+    { id: U, nomor_wa: '6281', nama: 'Zero', tipe_customer: 'Umum', cabang_id: 'KARLA', total_belanja: 900000 },
+    { id: P, nomor_wa: '6282', nama: 'None', tipe_customer: 'Umum', cabang_id: 'KARLA', total_belanja: 900000 }
+  ];
+  const purchases = [{ no_nota: 'zero', nomor_wa: '6281', tanggal: '2026-09-01', cabang_id: 'KARLA', harga_akhir: 0 }];
+  for (const c of [campaign, { ...campaign, min_total_belanja_idr: 0 }]) {
+    const b = backend({ tables: { lottery_campaigns: [c], master_customer: customers, trx_penjualan: purchases } });
+    const r = await b.request('lotteryEligibleParticipants', { campaign_id: C });
+    assert.equal(r.body.data.total_peserta, 1);
+    assert.equal(r.body.data.participants[0].customer_id, U);
+  }
+});
+test('decimal sums compare authoritative unrounded amounts, no invoice rounding or float boundary drift', async () => {
+  const fixture = amount => ({ no_nota: amount, cabang_id: 'KARLA', tanggal: '2026-09-30', nomor_wa: '6281', harga_akhir: amount });
+  for (const [amounts, minimum, expected] of [
+    [['0.10','0.20'], '0.30', 1], [['149.994','150.005'], '300.00', 0],
+    [['149.996','150.004'], '300.00', 1], [['0.004','0.006'], '0.01', 1],
+    [['999999999999.98','0.009'], '999999999999.99', 0],
+    [['999999999999.98','0.01'], '999999999999.99', 1]
+  ]) {
+    const b = backend({ tables: { lottery_campaigns: [{ ...campaign, min_total_belanja_idr: minimum }], trx_penjualan: amounts.map(fixture) } });
+    const r = await b.request('lotteryEligibleParticipants', { campaign_id: C });
+    assert.equal(r.status, 200); assert.equal(r.body.data.total_peserta, expected, amounts.join('+'));
+  }
+});
+test('missing/non-finite transaction amount fails closed instead of qualifying', async () => {
+  for (const amount of [null, '', 'NaN', 'Infinity', true]) {
+    const b = backend({ tables: { trx_penjualan: [{ no_nota: 'bad', cabang_id: 'KARLA', tanggal: '2026-09-30', nomor_wa: '6281', harga_akhir: amount }] } });
+    assert.equal((await b.request('lotteryEligibleParticipants', { campaign_id: C })).status, 422);
+  }
+});
+test('report excludes subthreshold revenue/HPP but preserves historical winners and all prize costs', async () => {
+  const eligible = { no_nota: 'eligible', cabang_id: 'KARLA', tanggal: '2026-09-30', nomor_wa: '6282', harga_akhir: 300000, total_hpp: 200000 };
+  const b = backend({ tables: {
+    lottery_campaigns: [{ ...campaign, min_total_belanja_idr: 300000 }],
+    master_customer: [
+      { id: U, nomor_wa: '6281', nama: 'Below', tipe_customer: 'Umum', cabang_id: 'KARLA' },
+      { id: P, nomor_wa: '6282', nama: 'Meets', tipe_customer: 'Umum', cabang_id: 'KARLA' }
+    ],
+    trx_penjualan: [{ ...eligible, no_nota: 'below', nomor_wa: '6281', harga_akhir: 299999.99, total_hpp: 123 }, eligible]
+  } });
+  const r = await b.request('lotteryReport', { campaign_id: C });
+  const x = r.body.data.ringkasan;
+  assert.equal(x.total_peserta_eligible, 1); assert.equal(x.total_transaksi_peserta, 1);
+  assert.equal(x.total_revenue_idr, 300000); assert.equal(x.total_hpp_idr, 200000); assert.equal(x.total_profit_idr, 100000);
+  assert.equal(x.total_pemenang, 1); assert.equal(x.total_biaya_hadiah_idr, 25);
+  assert.match(r.body.data.basis, /minimum.*saat ini/); assert.match(r.body.data.basis, /pemenang historis/);
+  const none = await backend({ tables: { lottery_campaigns: [{ ...campaign, min_total_belanja_idr: 300000 }] } }).request('lotteryReport', { campaign_id: C });
+  assert.equal(none.body.data.ringkasan.total_revenue_idr, 0);
+  assert.equal(none.body.data.ringkasan.total_pemenang, 1);
+});
+test('campaign minimum validates before RPC, accepts 2 decimals and preserves omission on legacy edits', async () => {
+  const malformed = [-1, '-0.01', null, '', ' ', true, false, [], {}, 'NaN', 'Infinity', '-Infinity', '300.001', 0.001, '300,000', '300\n', '0x10', '1e3', 1000000000000];
+  for (const value of malformed) {
+    const b = backend();
+    const r = await b.request('lotterySave', { ...campaign, min_total_belanja_idr: value, prizes: [] });
+    assert.equal(r.status, 400, JSON.stringify(value));
+    assert.equal(b.calls.filter(c => c.table === 'lottery_save_campaign').length, 0);
+  }
+  for (const value of [0, 300000, 300000.25, '300000.00', '999999999999.99']) {
+    const b = backend();
+    assert.equal((await b.request('lotterySave', { ...campaign, min_total_belanja_idr: value, prizes: [] })).status, 200);
+    const payload = JSON.parse(b.calls.find(c => c.table === 'lottery_save_campaign').init.body).p_data;
+    assert.equal(payload.min_total_belanja_idr, value);
+  }
+  const b = backend(); await b.request('lotterySave', { ...campaign, prizes: [] });
+  assert.equal(Object.hasOwn(JSON.parse(b.calls.find(c => c.table === 'lottery_save_campaign').init.body).p_data, 'min_total_belanja_idr'), false);
+});
+test('campaign GET/list return configured minimum and winner save surfaces authoritative RPC rejection', async () => {
+  const b = backend({ tables: { lottery_campaigns: [{ ...campaign, min_total_belanja_idr: '300000.25' }] }, rpcError: 'Total belanja pelanggan selama campaign belum memenuhi minimum' });
+  assert.equal((await b.request('lotteryGet', { id: C })).body.data.campaign.min_total_belanja_idr, '300000.25');
+  assert.equal((await b.request('lotteryList')).body.data[0].min_total_belanja_idr, '300000.25');
+  const r = await b.request('lotteryWinnerSave', { campaign_id: C, customer_id: U, prize_id: P, coupon_expired_at: '2026-10-31', total_belanja_periode: 999999, min_total_belanja_idr: 0 });
+  assert.equal(r.status, 400); assert.match(r.body.error, /belum memenuhi minimum/);
+  assert.ok(b.calls.some(c => c.table === 'lottery_record_winner'));
+});
+test('UI uses explicit cumulative spending field, edit preserves value, new defaults 0, displays actual spend', async () => {
+  const f = frontend({ campaign: { min_total_belanja_idr: '300000.25' } });
+  f.t.openDetail(C, true); await flush();
+  assert.match(f.t.renderForm(), /id="lot-f-min-belanja"[^>]*step="0.01"[^>]*value="300000.25"/);
+  assert.match(f.t.renderForm(), /Minimum total belanja selama campaign/);
+  const fields = { 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '', 'lot-f-min-belanja': '300000.25' };
+  for (const [id, value] of Object.entries(fields)) f.el(id).value = value;
+  assert.equal(f.t.readForm().min_total_belanja_idr, '300000.25');
+  f.el('lot-save'); f.t.saveForm(); await flush();
+  assert.equal(f.requests.find(r => r.fn === 'lotterySave').args[0].min_total_belanja_idr, '300000.25');
+  assert.match(f.t.renderForm(), /id="lot-f-min-belanja"[^>]*value="0"/);
+  assert.match(f.t.minimumHtml({ min_total_belanja_idr: 300000 }), /300.000/);
+  assert.match(f.t.tableParticipants([{ nama: 'Ani', total_belanja_periode: 350000 }]), /350.000/);
+  const input = f.el('customer'); input.parentNode = f.el('parent');
+  f.t.showCustSuggest(input, [{ nama: 'Ani', nomor_wa: '6281', total_belanja_periode: 350000 }]);
+  const opt = f.elements['lot-w-suggest'].children[0]; assert.match(opt.textContent, /350.000/);
+  opt.onclick(); assert.match(input.value, /350.000/);
+});
+test('UI rejects malformed/negative/excess precision threshold before sending save', () => {
+  const f = frontend();
+  for (const [id, value] of Object.entries({ 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '' })) f.el(id).value = value;
+  f.el('lot-save');
+  for (const v of ['', '-1', '0.001', 'NaN', 'Infinity', '1000000000000', '1e3', '300,000', '300\n']) {
+    f.el('lot-f-min-belanja').value = v; f.t.saveForm();
+  }
+  assert.equal(f.requests.length, 0);
+});
+test('minimum migration static contracts: additive default, same private RPC signatures, locked DB SUM and history', () => {
+  const sql = source('supabase/migrations/20260927020000_lottery_min_total_belanja.sql');
+  assert.match(sql, /add column min_total_belanja_idr numeric\(14,2\) not null default 0/);
+  assert.match(sql, /check \(min_total_belanja_idr >= 0 and min_total_belanja_idr <= 999999999999.99\)/);
+  assert.match(sql, /min_total_belanja_idr = coalesce\(minimum, c.min_total_belanja_idr\)/);
+  assert.match(sql, /count\(\*\), count\(t.harga_akhir\), sum\(t.harga_akhir\)/);
+  assert.match(sql, /purchase_count = 0/); assert.match(sql, /purchase_total < c.min_total_belanja_idr/);
+  assert.match(sql, /where id = cid for update/);
+  assert.match(sql, /t.cabang_id = c.kode_cabang/);
+  assert.match(sql, /t.tanggal >= c.periode_mulai and t.tanggal <= c.periode_selesai/);
+  assert.doesNotMatch(sql, /\bDELETE\s+FROM\b|\bTRUNCATE\b|\bDROP\s+TABLE\b/i);
+  assert.doesNotMatch(sql, /update public.lottery_winners/i);
+  for (const fn of ['lottery_save_campaign', 'lottery_record_winner']) {
+    assert.match(sql, new RegExp(`create or replace function public.${fn}\\(p_token text, p_data jsonb\\)`));
+    assert.match(sql, new RegExp(`revoke all on function public.${fn}[^;]+from public, anon, authenticated`));
+    assert.match(sql, new RegExp(`grant execute on function public.${fn}[^;]+to service_role`));
+  }
+  assert.equal((sql.match(/security invoker set search_path = public, pg_temp/g) || []).length, 2);
 });

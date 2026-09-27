@@ -59,6 +59,32 @@ function date(v, label) {
   if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v) || !Number.isFinite(Date.parse(v)) || new Date(v).toISOString().slice(0, 10) !== v) fail(`${label} tidak valid`);
   return v;
 }
+// Same numeric(14,2) contract as the campaign column/RPC; never coerce blanks,
+// booleans, non-finite values or excess precision into a valid zero threshold.
+function minimumSpend(v) {
+  if (!["string", "number"].includes(typeof v) || String(v).trim() !== String(v) || !/^\d{1,12}(\.\d{1,2})?$/.test(String(v))) fail("Minimum total belanja harus 0–999999999999.99, maksimal 2 desimal");
+  return Number(v);
+}
+// Keep the authoritative NUMERIC amount as a decimal while aggregating. Do not
+// round each invoice before the eligibility comparison (or use float sums).
+function decimalAmount(v) {
+  if (!["string", "number"].includes(typeof v)) fail("Nilai transaksi tidak lengkap", 422);
+  const m = /^(-?)(\d+)(?:\.(\d+))?(?:e([+-]?\d+))?$/i.exec(String(v));
+  if (!m) fail("Nilai transaksi tidak valid", 422);
+  const scale = (m[3] || "").length - Number(m[4] || 0);
+  if (Math.abs(scale) > 1000) fail("Nilai transaksi di luar batas", 422);
+  let units = BigInt(m[2] + (m[3] || "")) * (m[1] ? -1n : 1n);
+  if (scale < 0) units *= 10n ** BigInt(-scale);
+  return { units, scale: Math.max(0, scale) };
+}
+function addDecimal(a, b) {
+  const scale = Math.max(a.scale, b.scale);
+  return { units: a.units * 10n ** BigInt(scale - a.scale) + b.units * 10n ** BigInt(scale - b.scale), scale };
+}
+function decimalAtLeast(a, b) {
+  return a.units * 10n ** BigInt(b.scale) >= b.units * 10n ** BigInt(a.scale);
+}
+function decimalNumber(a) { return Number(a.units) / 10 ** a.scale; }
 function money(v) { if (v === null || v === undefined || v === "" || !Number.isFinite(Number(v))) return null; return Math.round(Number(v) * 100); }
 function total(rows, key) { let cents = 0; for (const r of rows) { const n = money(r[key]); if (n === null) return null; cents += n; } return cents / 100; }
 async function campaign(id, s) {
@@ -76,7 +102,7 @@ async function participantData(c, withHpp = false) {
   const customers = await allRows(`/master_customer?cabang_id=eq.${encodeURIComponent(c.kode_cabang)}&tipe_customer=neq.Apotek%20Lain&nomor_wa=not.is.null&select=id,nomor_wa,nama,tipe_customer,segment_crm&order=id.asc`);
   const eligible = customers.filter(x => String(x.nomor_wa || "").trim() && x.tipe_customer !== "Apotek Lain");
   const wa = new Set(eligible.map(x => String(x.nomor_wa).trim()));
-  const base = `/trx_penjualan?${period(c)}&nomor_wa=not.is.null&order=no_nota.asc&select=no_nota,nomor_wa,harga_akhir`;
+  const base = `/trx_penjualan?${period(c)}&nomor_wa=not.is.null&order=no_nota.asc&select=no_nota,nomor_wa,harga_akhir::text`;
   let trx, hppAvailable = withHpp;
   try { trx = await allRows(base + (withHpp ? ",total_hpp" : "")); }
   catch (e) {
@@ -84,18 +110,23 @@ async function participantData(c, withHpp = false) {
     trx = await allRows(base); hppAvailable = false;
   }
   const matched = trx.filter(t => wa.has(String(t.nomor_wa || "").trim()));
+  const minimum = decimalAmount(minimumSpend(c.min_total_belanja_idr === undefined ? 0 : c.min_total_belanja_idr));
   const stats = new Map();
   for (const t of matched) {
-    const key = String(t.nomor_wa).trim(), cur = stats.get(key) || { count: 0, cents: 0 };
-    const amount = money(t.harga_akhir);
-    if (amount === null) fail("Nilai transaksi tidak lengkap", 422);
-    cur.count++; cur.cents += amount; stats.set(key, cur);
+    const key = String(t.nomor_wa).trim(), cur = stats.get(key) || { count: 0, spend: { units: 0n, scale: 0 } };
+    cur.count++; cur.spend = addDecimal(cur.spend, decimalAmount(t.harga_akhir)); stats.set(key, cur);
   }
-  const participants = eligible.filter(c => stats.has(String(c.nomor_wa).trim())).map(c => {
-    const st = stats.get(String(c.nomor_wa).trim());
-    return { customer_id: c.id, nomor_wa: c.nomor_wa, nama: c.nama, tipe_customer: c.tipe_customer, segment_crm: c.segment_crm, jumlah_transaksi_periode: st.count, total_belanja_periode: st.cents / 100 };
+  const participants = eligible.filter(customer => {
+    const st = stats.get(String(customer.nomor_wa).trim());
+    return st && st.count > 0 && decimalAtLeast(st.spend, minimum);
+  }).map(customer => {
+    const st = stats.get(String(customer.nomor_wa).trim());
+    return { customer_id: customer.id, nomor_wa: customer.nomor_wa, nama: customer.nama, tipe_customer: customer.tipe_customer, segment_crm: customer.segment_crm, jumlah_transaksi_periode: st.count, total_belanja_periode: decimalNumber(st.spend) };
   }).sort((a, b) => b.jumlah_transaksi_periode - a.jumlah_transaksi_periode || a.customer_id.localeCompare(b.customer_id));
-  return { participants, trx: matched, total_transaksi: trx.length, hppAvailable };
+  const participantWa = new Set(participants.map(p => String(p.nomor_wa).trim()));
+  // Reports count ONLY transactions of customers meeting the current threshold.
+  // Historical winners/costs remain independent of this current eligible set.
+  return { participants, trx: matched.filter(t => participantWa.has(String(t.nomor_wa).trim())), total_transaksi: trx.length, hppAvailable };
 }
 async function lotteryList(data, s) {
   const branch = cabangSesi(s, data.kode_cabang);
@@ -126,6 +157,8 @@ async function lotterySave(data, s) {
   date(data.periode_mulai, "Periode mulai"); date(data.periode_selesai, "Periode selesai");
   if (data.periode_selesai < data.periode_mulai) fail("Periode selesai sebelum periode mulai");
   if (!Array.isArray(data.prizes)) fail("Daftar hadiah wajib dikirim");
+  if (Object.prototype.hasOwnProperty.call(data, "min_total_belanja_idr")) minimumSpend(data.min_total_belanja_idr);
+  // Omission on edit preserves the stored threshold inside the locked RPC.
   // A single DB transaction validates, locks, updates, and retires prizes.
   return rest("/rpc/lottery_save_campaign", { method: "POST", body: JSON.stringify({ p_token: s.token, p_data: data }) });
 }
@@ -162,7 +195,7 @@ async function lotteryReport(data, s) {
   const revenue = total(d.trx, "harga_akhir"), hpp = d.hppAvailable ? total(d.trx, "total_hpp") : null;
   const profit = hpp === null || revenue === null ? null : Math.round((revenue - hpp) * 100) / 100;
   return { campaign: c, warning: profit === null ? "HPP tidak tersedia/lengkap; laba dan ROI tidak dapat dihitung." : null,
-    basis: "Transaksi peserta dalam periode (tanggal inklusif), sebelum koreksi retur; bukan uplift. Biaya seluruh hadiah tercatat, termasuk belum diambil. ROI proxy = laba kotor / biaya hadiah × 100.",
+    basis: "Transaksi hanya dari peserta yang memenuhi minimum akumulasi belanja campaign saat ini, di cabang campaign dan seluruh periode tanggal inklusif, sebelum koreksi retur; bukan uplift. Perubahan minimum dapat mengubah peserta/revenue laporan, tetapi tidak menghapus pemenang historis. Biaya seluruh hadiah tercatat, termasuk belum diambil dan pemenang yang kini tidak eligible. ROI proxy = laba kotor / biaya hadiah × 100.",
     ringkasan: { total_pemenang: winners.length, hadiah_terambil: winners.filter(w => w.pickup_status === "sudah_diambil").length,
       total_biaya_hadiah_idr: cost, total_peserta_eligible: d.participants.length, total_transaksi_peserta: d.trx.length,
       total_revenue_idr: revenue, total_hpp_idr: hpp, total_profit_idr: profit,

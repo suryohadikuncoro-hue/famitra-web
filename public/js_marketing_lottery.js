@@ -45,6 +45,16 @@
     return "Rp " + v.toLocaleString("id-ID");
   }
 
+  function minimumHtml(c) {
+    return '<div style="color:#475569;font-size:13px;margin:8px 0;">Minimum total belanja selama campaign: <b>' +
+      rupiah(c.min_total_belanja_idr === undefined ? 0 : c.min_total_belanja_idr) +
+      '</b>. Akumulasi harga akhir transaksi di cabang dan periode campaign (tanggal awal/akhir termasuk), sebelum koreksi retur. Tetap wajib minimal 1 transaksi; bukan jumlah kupon.</div>';
+  }
+
+  function validMinimum(v) {
+    return String(v).trim() === String(v) && /^\d{1,12}(\.\d{1,2})?$/.test(String(v));
+  }
+
   function todayISO() {
     var d = new Date();
     var m = String(d.getMonth() + 1).padStart(2, "0");
@@ -204,6 +214,7 @@
               rupiah(ps.total_nilai) +
               "</div>" +
               "</div></div>" +
+              minimumHtml(r) +
               '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;">' +
               '<button data-act="open" data-id="' +
               esc(r.id) +
@@ -308,6 +319,12 @@
         true,
       ) +
       formField(
+        "Minimum total belanja selama campaign (Rp)",
+        '<input id="lot-f-min-belanja" type="number" min="0" max="999999999999.99" step="0.01" required value="' + esc(c.min_total_belanja_idr === undefined ? 0 : c.min_total_belanja_idr) + '" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;"/>' +
+        '<small>Contoh 300000: total pembelian selama periode, boleh dari beberapa transaksi. Nilai 0 tetap mensyaratkan minimal 1 transaksi. Maksimal 2 desimal. Mengubah minimum menghitung ulang peserta/laporan, bukan menghapus pemenang terdahulu.</small>',
+        true,
+      ) +
+      formField(
         "Catatan",
         '<textarea id="lot-f-catatan" rows="2" style="width:100%;">' + esc(c.catatan || "") + "</textarea>",
       ) +
@@ -408,6 +425,7 @@
       periode_mulai: document.getElementById("lot-f-mulai").value,
       periode_selesai: document.getElementById("lot-f-selesai").value,
       catatan: document.getElementById("lot-f-catatan").value.trim(),
+      min_total_belanja_idr: document.getElementById("lot-f-min-belanja").value,
       prizes: prizes,
     };
   }
@@ -420,6 +438,9 @@
       return alert("Periode wajib diisi");
     if (fd.periode_selesai < fd.periode_mulai)
       return alert("Periode selesai tidak boleh sebelum periode mulai");
+
+    if (!validMinimum(fd.min_total_belanja_idr))
+      return alert("Minimum total belanja harus 0–999999999999.99, maksimal 2 desimal (tanpa pemisah ribuan)");
 
     var btn = document.getElementById("lot-save");
     if (btn.disabled) return;
@@ -481,12 +502,13 @@
       .then(function (d) {
         if (generation !== _generation || document.getElementById("lot-part-body") !== body) return;
         state.participants = d.participants || [];
-        body.innerHTML =
+        state.detailCampaign = d.campaign;
+        body.innerHTML = minimumHtml(d.campaign) +
           '<div style="color:#475569;font-size:13px;margin-bottom:6px;">Total peserta eligible: <b>' +
           d.total_peserta +
           "</b> (dari " +
           d.total_transaksi +
-          " transaksi di periode campaign)</div>" +
+          " transaksi ber-WhatsApp di cabang/periode campaign, termasuk yang tidak eligible)</div>" +
           tableParticipants(d.participants);
       })
       .catch(function (e) {
@@ -513,7 +535,7 @@
     return (
       '<div style="overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">' +
       "<thead><tr style='background:#f1f5f9;'>" +
-      "<th>Nama</th><th>WA</th><th>Tipe</th><th>Segment</th><th>Transaksi</th><th>Total Belanja</th>" +
+      "<th>Nama</th><th>WA</th><th>Tipe</th><th>Segment</th><th>Transaksi</th><th>Total Belanja Selama Campaign</th>" +
       "</tr></thead><tbody>" +
       trs +
       "</tbody></table></div>"
@@ -531,6 +553,7 @@
     var html =
       '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">' +
       "<b>" + esc(c.nama) + "</b> · " + esc(c.kode_cabang) +
+      '<div id="lot-w-minimum">' + minimumHtml(c) + "</div>" +
       '<h4 style="margin-top:14px;">Catat Pemenang (offline)</h4>' +
       '<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr auto;gap:6px;align-items:end;">' +
       '<label style="font-size:12px;color:#475569;">Pelanggan (cari nama/ WA)<input id="lot-w-cust" placeholder="ketik min 2 huruf" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:6px;"/></label>' +
@@ -576,6 +599,9 @@
       .then(function (d) {
         if (generation !== _generation || document.getElementById("lot-w-cust") !== cust) return;
         _custCache = d.participants || [];
+        state.detailCampaign = d.campaign;
+        var minimum = document.getElementById("lot-w-minimum");
+        if (minimum) minimum.innerHTML = minimumHtml(d.campaign);
         cust.disabled = false;
         cust.placeholder = _custCache.length ? "ketik min 2 huruf" : "Belum ada peserta eligible";
       }).catch(function (e) {
@@ -596,11 +622,11 @@
     div.style.cssText = "position:absolute;background:#fff;border:1px solid #cbd5e1;border-radius:6px;max-height:200px;overflow:auto;z-index:10;font-size:13px;";
     list.forEach(function (x) {
       var opt = document.createElement("div");
-      opt.textContent = x.nama + " (" + x.nomor_wa + ") · " + x.tipe_customer;
+      opt.textContent = x.nama + " (" + x.nomor_wa + ") · " + x.tipe_customer + " · Total selama campaign: " + rupiah(x.total_belanja_periode);
       opt.style.cssText = "padding:6px 10px;cursor:pointer;";
       opt.onclick = function () {
         _selectedCustomer = x;
-        input.value = x.nama + " (" + x.nomor_wa + ")";
+        input.value = x.nama + " (" + x.nomor_wa + ") · " + rupiah(x.total_belanja_periode);
         div.remove();
       };
       div.appendChild(opt);
@@ -703,17 +729,20 @@
     var body = document.getElementById("lot-rpt-body");
     if (!body) return;
     body.innerHTML = "Memuat...";
+    var generation = _generation;
     lotteryApi("lotteryReport", { campaign_id: state.detailCampaign.id })
       .then(function (d) {
+        if (generation !== _generation || document.getElementById("lot-rpt-body") !== body) return;
         var r = d.ringkasan || {};
-        body.innerHTML =
+        body.innerHTML = minimumHtml(d.campaign) +
           '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">' +
           kpi("Total Pemenang", r.total_pemenang) +
           kpi("Hadiah Diambil", r.hadiah_terambil) +
           kpi("Total Biaya Hadiah", rupiah(r.total_biaya_hadiah_idr)) +
-          kpi("Total Transaksi Peserta", r.total_transaksi_peserta) +
-          kpi("Revenue", rupiah(r.total_revenue_idr)) +
-          kpi("Laba kotor peserta", rupiah(r.total_profit_idr)) +
+          kpi("Peserta Eligible Saat Ini", r.total_peserta_eligible) +
+          kpi("Transaksi Peserta Eligible", r.total_transaksi_peserta) +
+          kpi("Revenue Peserta Eligible", rupiah(r.total_revenue_idr)) +
+          kpi("Laba Kotor Peserta Eligible", rupiah(r.total_profit_idr)) +
           kpi("ROAS", r.roas === null ? "-" : (Math.round(r.roas * 100) / 100).toFixed(2)) +
           kpi("ROI proxy (%)", r.roi_direct_percent === null ? "-" : (Math.round(r.roi_direct_percent * 100) / 100).toFixed(2) + " %") +
           "</div><p>" + esc(d.basis || "") + "</p>" + (d.warning ? "<p>" + esc(d.warning) + "</p>" : "");
