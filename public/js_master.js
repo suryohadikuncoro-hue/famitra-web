@@ -338,9 +338,15 @@ VIEWS.marketing = {
   render: function (el) {
     el.innerHTML =
       '<div class="crm-shell">' +
-      '<div class="crm-head"><div><div class="eyebrow">MARKETING PERFORMANCE</div><h2>Marketing</h2><p class="sub">Kelola kampanye, kupon, fixed bundle, dan ukur efektivitas promosi per cabang.</p></div></div>' +
+      '<div class="crm-head"><div><div class="eyebrow">MARKETING PERFORMANCE</div><h2>Marketing</h2><p class="sub">Kelola kampanye, kupon, fixed bundle, dan ukur efektivitas promosi per cabang.</p></div>' +
+      '<button id="lotOpen" class="btn btn-primary">Kupon Undian</button></div>' +
       '<div id="crmPromoCard" class="card crm-refill" style="display:none"><div class="card-head"><div><h3>Manajemen Promo</h3><p class="sub">Buat kupon berdasarkan segmen pelanggan.</p></div><button id="crmBundleTambah" class="btn btn-sm">+ Bundle</button><button id="crmPromoTambah" class="btn btn-primary">+ Kampanye</button></div><div id="crmPromoForm" class="crm-refill-form" hidden></div><div id="crmPromoList" class="crm-refill-list"></div><div id="crmBundleList" class="crm-refill-list"></div></div>'  + '<div id=\"crmPromoReportCard\" class=\"card crm-directory\" style=\"display:none\"><div class=\"card-head\"><div><h3>Efektivitas kampanye</h3><p class=\"sub\">Pantau penggunaan kupon, pelanggan unik, dan total subsidi promo.</p></div><button id=\"crmPromoReportRefresh\" class=\"btn btn-sm\">Muat ulang</button></div><div id=\"crmPromoReportKpi\" class=\"crm-kpi-grid\"></div><div id=\"crmPromoCampaignSummary\" style=\"margin:14px 0\"></div><div class=\"table-wrap\"><table><thead><tr><th>Tanggal</th><th>Kampanye</th><th>Kupon</th><th>Pelanggan</th><th>Invoice</th><th class=\"r\">Diskon</th><th>Status</th></tr></thead><tbody id=\"crmPromoReportBody\"></tbody></table></div></div>' +
       '</div>';
+    var lotBtn = document.getElementById('lotOpen');
+    if (lotBtn) lotBtn.onclick = function () {
+      el.innerHTML = '<div id="lottery-root" style="padding:16px;"></div>';
+      if (window.MarketingLottery) window.MarketingLottery.mount('lottery-root');
+    };
     muatPromo();
     muatPromoReport();
   }

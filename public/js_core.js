@@ -284,7 +284,7 @@ function masukAplikasi() {
     MENU = Array.isArray(res.data.menu) ? res.data.menu.slice() : [];
     // Backward-compatible guard: older api deployments may omit the newly
     // introduced Marketing item even though the frontend view is available.
-    if (res.data.user && res.data.user.role === 'Owner' &&
+    if (res.data.user && ['Owner', 'Apoteker'].indexOf(res.data.user.role) >= 0 &&
         !MENU.some(function (m) { return m.id === 'marketing'; })) {
       var crmIndex = MENU.findIndex(function (m) { return m.id === 'crm'; });
       MENU.splice(crmIndex < 0 ? MENU.length : crmIndex + 1, 0,
