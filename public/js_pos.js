@@ -22,9 +22,11 @@ VIEWS.pos = {
   render: function (el) {
     el.innerHTML = tataLetakPOS();
     pasangEventPOS();
+    pasangEventPromoPOS();
     gambarKeranjang();
     muatNotaTerakhir();
     gambarHeaderShift();
+    muatPromoPOS();
     // Fokus otomatis ke pencarian begitu layar siap.
     var s = document.getElementById('posCari');
     if (s) s.focus();
@@ -58,6 +60,7 @@ function tataLetakPOS() {
           '<span id="posSegmen"></span>' +
         '</div>' +
         '<div id="posInfoCust" class="pos-customer-info" aria-live="polite"></div>' +
+        '<div id="posPromoKupon" aria-live="polite"></div>' +
       '</div>' +
 
       /* Pencarian dan keranjang */
@@ -71,6 +74,7 @@ function tataLetakPOS() {
           '<h3>Keranjang</h3><span id="posJumlah" class="chip">0 item</span>' +
           '<button id="posKosong" class="btn btn-sm">Kosongkan</button>' +
         '</div>' +
+        '<div id="posPromoRail" aria-live="polite"></div>' +
         '<div id="posCart" class="cart"></div>' +
       '</div>' +
 
@@ -93,11 +97,8 @@ function tataLetakPOS() {
       '</button>' +
       '<div class="pos-pay-body">' +
         '<div class="pay-row"><span>Subtotal item</span><span id="paySub" class="money">Rp0</span></div>' +
-        '<div class="pos-promo-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">' +
-          '<button type="button" class="btn btn-sm" id="posDiskonOpen">Diskon</button>' +
-          '<button type="button" class="btn btn-sm" id="posCouponOpen">Kupon diskon</button>' +
-          '<button type="button" class="btn btn-sm" id="posBundleOpen">Fixed bundle</button>' +
-        '</div>' +
+        // Kupon & bundle kini muncul otomatis sebagai tiket; tombol manualnya diganti tautan kecil.
+
         '<input id="posDiskon" type="hidden" value="0"><select id="posDiskonMode" hidden><option value="nominal">Nominal (Rp)</option><option value="persen">Persentase (%)</option></select>' +
         '<input id="posCoupon" type="hidden"><input id="posBundle" type="hidden">' +
         '<div id="posCouponRow" class="pos-reward-row" hidden><span>Kupon: <strong id="posCouponName"></strong></span><span class="num" id="posCouponValue"></span><button type="button" class="btn btn-sm" id="posCouponClear">Batalkan</button></div>' +
@@ -105,6 +106,12 @@ function tataLetakPOS() {
         '<div id="posRewardRow" class="pos-reward-row" hidden><span>Reward: <strong id="posRewardName"></strong></span><span class="num" id="posRewardValue"></span><button type="button" class="btn btn-sm" id="posRewardClear">Batalkan</button></div>' +
         '<div class="pay-row total"><span>Total bayar</span>' +
           '<span id="payTotal" class="pay-total">Rp0</span></div>' +
+        '<div id="posHemat" class="pay-hemat" hidden></div>' +
+        '<div id="posUndian"></div>' +
+        '<div class="pay-link">' +
+          '<button type="button" class="link-btn" id="posDiskonOpen">+ Diskon manual</button>' +
+          '<button type="button" class="link-btn" id="posKodeOpen">Punya kode promo?</button>' +
+        '</div>' +
         '<label class="field" style="margin-top:12px"><span>Uang tunai diterima</span>' +
           '<input id="posBayar" class="inp num" type="number" min="0" step="100" placeholder="0"></label>' +
         '<div class="cash-quick" id="posCashQuick"></div>' +
@@ -193,7 +200,7 @@ function pasangEventPOS() {
       var kelasStok = b.stok <= 0 ? 'chip-bad' : (hampirHabis ? 'chip-warn' : 'chip-ok');
       var labelStok = b.stok <= 0 ? 'habis' : ('stok ' + angka(b.stok));
       return '<button type="button" data-i="' + i + '">' +
-        '<div class="s-name">' + esc(b.Nama_Obat) + '</div>' +
+        '<div class="s-name">' + esc(b.Nama_Obat) + (kodePaketSet()[b.Kode_Obat] ? '<span class="pp-badge">🏷 Paket</span>' : '') + '</div>' +
         '<div class="s-meta">' + esc(b.Kode_Obat) + ' · ' + rupiah(b.harga) + ' ' +
           '<span class="chip ' + kelasStok + '">' + labelStok + '</span>' +
         (b.expired ? ' ' + chipExpired(b.sisa_hari, b.expired) : '') + '</div></button>';
@@ -251,7 +258,7 @@ function pasangEventPOS() {
     if (b) pilih(Number(b.dataset.i));
   });
 
-  document.addEventListener('click', function (e) {
+  if (!window.__posKlikLuar) window.__posKlikLuar = true, document.addEventListener('click', function (e) {
     if (!e.target.closest('.pos-search')) {
       var s = document.getElementById('posSuggest');
       if (s) s.hidden = true;
@@ -265,14 +272,14 @@ function pasangEventPOS() {
   document.getElementById('posTipe').addEventListener('change', function () {
     POS.customer.tipe = this.value;
     if (POS.items.length) hitungUlangHarga();
+    muatPromoPOS();
   });
   document.getElementById('posNama').addEventListener('input', function () {
     POS.customer.nama = this.value.trim();
   });
   document.getElementById('posRewardClear').onclick = function () { POS.reward = null; POS.rewardDiscount = 0; gambarRingkasan(); };
   document.getElementById('posDiskonOpen').onclick = bukaDiskonPOS;
-  document.getElementById('posCouponOpen').onclick = bukaKuponPOS;
-  document.getElementById('posBundleOpen').onclick = bukaBundlePOS;
+  document.getElementById('posKodeOpen').onclick = bukaKodePromoPOS;
   document.getElementById('posCouponClear').onclick = function () { POS.coupon = null; document.getElementById('posCoupon').value = ''; gambarRingkasan(); };
   document.getElementById('posBundleClear').onclick = function () { POS.bundle = null; document.getElementById('posBundle').value = ''; gambarRingkasan(); };
   document.getElementById('posBayar').addEventListener('input', function () {
@@ -312,8 +319,9 @@ function pasangEventPOS() {
     salin();
   }
 
-  // Pintasan keyboard level layar POS.
-  document.addEventListener('keydown', function (e) {
+  // Pintasan keyboard level layar POS (dipasang SEKALI; sebelumnya bertambah tiap kali halaman Kasir dibuka).
+  if (!window.__posPintasan) window.__posPintasan = true, document.addEventListener('keydown', function (e) {
+    if (!document.getElementById('posCari')) return;
     var tag = (e.target && e.target.tagName) || '';
     var diInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
     if (e.key === 'F2') {
@@ -379,12 +387,14 @@ function cariPelanggan() {
         esc(c.Tier || 'reguler') + '</span><button type="button" class="btn btn-sm pos-redeem-btn" id="posRedeemBtn">Tukar poin</button></div>';
       document.getElementById('posRedeemBtn').onclick = function () { bukaRewardPOS(c); };
       if (POS.items.length) hitungUlangHarga();
+      muatPromoPOS();
     } else {
       POS.customer = { wa: c.Nomor_WA || wa, nama: '', tipe: document.getElementById('posTipe').value, terdaftar: false };
       seg.innerHTML = '<span class="chip chip-warn">Belum terdaftar</span>';
       info.innerHTML = 'Nomor ini belum ada di database. ' +
         '<button class="btn btn-sm" id="btnDaftarInline" style="margin-left:6px">Daftarkan</button>';
       document.getElementById('btnDaftarInline').onclick = formDaftarInline;
+      muatPromoPOS();
     }
   }).catch(function (e) { toast(e.message, true); });
 }
@@ -506,6 +516,7 @@ function gambarKeranjang() {
   if (POS.bundle) { POS.bundle = null; var bi = document.getElementById('posBundle'); if (bi) bi.value = ''; }
   var box = document.getElementById('posCart');
   if (!box) return;
+  var paketSet = kodePaketSet();
 
   if (!POS.items.length) {
     box.innerHTML = '<div class="empty">Keranjang kosong. Scan barcode atau ketik nama obat di atas.</div>';
@@ -513,7 +524,7 @@ function gambarKeranjang() {
     box.innerHTML = POS.items.map(function (it, i) {
       return '<div class="cart-item">' +
         '<div>' +
-          '<div class="cart-nama">' + esc(it.nama) + '</div>' +
+          '<div class="cart-nama">' + esc(it.nama) + (paketSet[it.kode] ? '<span class="pp-badge">🏷 Paket</span>' : '') + '</div>' +
           '<div class="cart-meta">' +
             '<span>' + esc(it.kode) + '</span>' +
             (it.batch ? '<span>batch ' + esc(it.batch) + '</span>' : '') +
@@ -612,6 +623,7 @@ function gambarRingkasan() {
       gambarRingkasan();
     };
   }
+  gambarPromoPOS();
 }
 
 function contohNotaPreview_() {
@@ -688,6 +700,7 @@ function cetakStruk(nota) {
       '<tr><td>Kembali</td><td class="r">' + angka(nota.Kembalian) + '</td></tr>' +
     '</table>' +
     '<hr>' +
+    (Number(nota.Diskon) > 0 ? '<div class="ctr"><strong>Anda hemat Rp' + angka(nota.Diskon) + '</strong></div><hr>' : '') +
     '<div class="ctr">Terima kasih atas kunjungan Anda<br>Semoga lekas sembuh</div>';
 
   setTimeout(function () { window.print(); }, 120);
@@ -703,4 +716,221 @@ function muatNotaTerakhir() {
         '<td class="r num">' + rupiah(r.Harga_Akhir) + '</td></tr>';
     }).join('') : tabelKosong('Belum ada transaksi hari ini.', 4);
   }).catch(function () {});
+}
+
+/* ======================================================= Promo interaktif
+   Kupon (otomatis untuk pelanggan terdaftar), paket/bundle (hanya SARAN,
+   kasir ketuk Pakai), saran tambah item, progres undian, badge paket, dan
+   ringkasan hemat. Data dari promo action `posPromo`; validasi akhir tetap
+   di server (validate / bundleValidate / checkout). Satu promo per transaksi. */
+POS.promo = { bundles: [], kupon: [], undian: [] };
+
+function muatPromoPOS() {
+  var wa = POS.customer && POS.customer.terdaftar ? POS.customer.wa : '';
+  var tipe = (document.getElementById('posTipe') || {}).value || 'Umum';
+  promoApi('posPromo', { nomor_wa: wa, tipe_customer: tipe }).then(function (d) {
+    POS.promo = { bundles: d.bundles || [], kupon: d.kupon || [], undian: d.undian || [] };
+    gambarPromoPOS();
+  }).catch(function () { POS.promo = { bundles: [], kupon: [], undian: [] }; gambarPromoPOS(); });
+}
+
+function kodePaketSet() {
+  var set = {};
+  (POS.promo.bundles || []).forEach(function (b) { b.items.forEach(function (i) { set[i.kode] = true; }); });
+  return set;
+}
+
+function totalBayarPOS() {
+  return Math.max(0, subtotalPOS() - (POS.diskon || 0) - (POS.rewardDiscount || 0) -
+    (POS.coupon ? Number(POS.coupon.discount || 0) : 0) - (POS.bundle ? Number(POS.bundle.discount || 0) : 0));
+}
+
+function singkatRpPOS(n) {
+  n = Math.round(Number(n) || 0);
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace('.', ',') + 'jt';
+  if (n >= 1e3) return (n / 1e3).toFixed(n % 1000 && n < 1e4 ? 1 : 0).replace('.', ',') + 'rb';
+  return String(n);
+}
+
+function evaluasiPaket() {
+  var tipe = (document.getElementById('posTipe') || {}).value || 'Umum';
+  var diKeranjang = {};
+  POS.items.forEach(function (it) { diKeranjang[it.kode] = (diKeranjang[it.kode] || 0) + it.qty; });
+  return (POS.promo.bundles || []).map(function (b) {
+    var dasar = 0, terpenuhi = 0, kurang = [], relevan = false;
+    b.items.forEach(function (i) {
+      dasar += (i.harga[tipe] || 0) * i.qty;
+      var ada = diKeranjang[i.kode] || 0;
+      if (ada > 0) relevan = true;
+      if (ada >= i.qty) terpenuhi++; else kurang.push({ kode: i.kode, nama: i.nama, qty: i.qty - ada });
+    });
+    return { b: b, hemat: dasar - b.bundle_price, terpenuhi: terpenuhi, total: b.items.length, kurang: kurang, relevan: relevan };
+  }).filter(function (x) {
+    // tampil jika cocok, atau hampir (ada isinya di keranjang & kurang 1 jenis produk)
+    return x.hemat > 0 && x.relevan && (x.kurang.length === 0 || x.kurang.length === 1);
+  }).sort(function (a, b) { return (a.kurang.length - b.kurang.length) || (b.hemat - a.hemat); }).slice(0, 4);
+}
+
+function potonganKupon(k, sub) {
+  if (k.discount_type === 'PERCENT') return Math.min(sub * k.discount_value / 100, k.max_discount == null ? sub : k.max_discount);
+  return Math.min(k.discount_value, sub);
+}
+
+function tiketHtml(o) {
+  return '<div class="tk' + (o.kelas ? ' ' + o.kelas : '') + '">' +
+    (o.terbaik ? '<span class="tk-terbaik">Paling hemat</span>' : '') +
+    '<div class="tk-stub"><small>' + esc(o.stubKecil) + '</small><b>' + esc(o.stubBesar) + '</b></div>' +
+    '<div class="tk-isi"><div class="tk-nama" title="' + esc(o.nama) + '">' + esc(o.nama) + '</div>' +
+      '<div class="tk-syarat">' + o.syarat + '</div>' +
+      '<button type="button" class="tk-btn" ' + o.aksi + (o.nonaktif ? ' disabled' : '') + '>' + esc(o.tombol) + '</button></div></div>';
+}
+
+var _revalidasiKupon = null;
+function gambarPromoPOS() {
+  var rail = document.getElementById('posPromoRail');
+  var kup = document.getElementById('posPromoKupon');
+  if (!rail || !kup) return;
+  var sub = subtotalPOS();
+
+  // Kupon lama dihitung pada subtotal lama → validasi ulang saat keranjang berubah.
+  if (POS.coupon && POS.coupon._sub !== sub && POS.items.length) {
+    clearTimeout(_revalidasiKupon);
+    var kode = POS.coupon.code;
+    _revalidasiKupon = setTimeout(function () { terapkanKodeKupon(kode, true); }, 400);
+  }
+
+  var paket = POS.items.length ? evaluasiPaket() : [];
+  var kupon = POS.customer && POS.customer.terdaftar ? (POS.promo.kupon || []) : [];
+  var hematKupon = kupon.map(function (k) { return sub >= k.min_purchase && sub > 0 ? potonganKupon(k, sub) : 0; });
+  var terbaik = Math.max.apply(null, [0].concat(paket.filter(function (p) { return !p.kurang.length; }).map(function (p) { return p.hemat; }), hematKupon));
+
+  // Tiket paket di keranjang
+  rail.innerHTML = paket.length ? '<div class="tk-head"><span>Promo untuk keranjang ini</span><span>🏷 ' + paket.length + '</span></div>' +
+    '<div class="tk-rail">' + paket.map(function (p, i) {
+      var dots = '<span class="tk-dots">' + p.b.items.map(function (_, j) { return '<i' + (j < p.terpenuhi ? ' class="on"' : '') + '></i>'; }).join('') + '</span>';
+      var dipakai = POS.bundle && POS.bundle.code === p.b.code;
+      if (!p.kurang.length) {
+        return tiketHtml({ stubKecil: 'HEMAT', stubBesar: singkatRpPOS(p.hemat), nama: p.b.name,
+          syarat: dots + ' ' + p.total + '/' + p.total + ' produk', tombol: dipakai ? 'Terpasang ✓' : 'Pakai paket',
+          aksi: 'data-paket="' + esc(p.b.code) + '"', nonaktif: dipakai, kelas: dipakai ? 'terpasang' : '', terbaik: !dipakai && p.hemat === terbaik });
+      }
+      var k = p.kurang[0];
+      return tiketHtml({ kelas: 'hampir', stubKecil: 'HEMAT', stubBesar: singkatRpPOS(p.hemat), nama: p.b.name,
+        syarat: dots + ' kurang ' + k.qty + '× ' + esc(k.nama), tombol: '+ ' + k.nama.split(' ')[0] + ' & pakai',
+        aksi: 'data-lengkapi="' + esc(p.b.code) + '"' });
+    }).join('') + '</div>' : '';
+
+  // Tiket kupon di kartu pelanggan
+  kup.innerHTML = kupon.length ? '<div class="tk-head"><span>Kupon untuk pelanggan ini</span><span>' + kupon.length + ' kupon</span></div>' +
+    '<div class="tk-rail">' + kupon.map(function (k, i) {
+      var dipakai = POS.coupon && POS.coupon.code === k.code;
+      var syaratDasar = (k.discount_type === 'PERCENT' ? k.discount_value + '%' + (k.max_discount ? ' · maks ' + singkatRpPOS(k.max_discount) : '') : 'potongan ' + singkatRpPOS(k.discount_value));
+      if (sub < k.min_purchase || sub <= 0) {
+        var pct = k.min_purchase ? Math.min(100, sub / k.min_purchase * 100) : 0;
+        return tiketHtml({ kelas: 'kecil hampir', stubKecil: 'KURANG', stubBesar: singkatRpPOS(k.min_purchase - sub), nama: k.name,
+          syarat: '<span class="tk-kurang"><i style="width:' + pct.toFixed(0) + '%"></i></span> ' + syaratDasar,
+          tombol: 'Tambah belanja', aksi: 'data-fokus-cari="1"' });
+      }
+      return tiketHtml({ kelas: 'kecil' + (dipakai ? ' terpasang' : ''), stubKecil: 'HEMAT', stubBesar: singkatRpPOS(hematKupon[i]), nama: k.name,
+        syarat: syaratDasar, tombol: dipakai ? 'Terpasang ✓' : 'Pakai', aksi: 'data-kupon="' + esc(k.code) + '"', nonaktif: dipakai,
+        terbaik: !dipakai && hematKupon[i] === terbaik && terbaik > 0 });
+    }).join('') + '</div>' : '';
+
+  // Hemat & undian di panel bayar
+  var hemat = (POS.diskon || 0) + (POS.rewardDiscount || 0) + (POS.coupon ? Number(POS.coupon.discount || 0) : 0) + (POS.bundle ? Number(POS.bundle.discount || 0) : 0);
+  var elHemat = document.getElementById('posHemat');
+  if (elHemat) { elHemat.hidden = !(hemat > 0 && POS.items.length); elHemat.textContent = '🎉 Pembeli hemat ' + rupiah(hemat); }
+  var elUndian = document.getElementById('posUndian');
+  if (elUndian) {
+    var u = (POS.promo.undian || [])[0];
+    if (!u || !POS.items.length) { elUndian.innerHTML = ''; }
+    else {
+      var total = totalBayarPOS(), min = u.min_belanja || 0;
+      var pct = min ? Math.min(1, total / min) : 1, r = 15, kel = 2 * Math.PI * r;
+      elUndian.innerHTML = '<div class="pay-undian' + (pct >= 1 ? ' lolos' : '') + '">' +
+        '<svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="' + r + '" class="u-dasar"/>' +
+        '<circle cx="18" cy="18" r="' + r + '" class="u-isi" stroke-dasharray="' + kel.toFixed(1) + '" stroke-dashoffset="' + (kel * (1 - pct)).toFixed(1) + '" transform="rotate(-90 18 18)"/>' +
+        '<text x="18" y="22" text-anchor="middle" font-size="11">🎁</text></svg>' +
+        '<div>' + (pct >= 1 ? '✓ Ikut <b>' + esc(u.nama) + '</b>' : rupiah(min - total) + ' lagi ikut <b>' + esc(u.nama) + '</b>') + '</div></div>';
+    }
+  }
+}
+
+function terapkanKodePaket(code) {
+  promoApi('bundleValidate', { code: code, tipe_customer: document.getElementById('posTipe').value,
+    items: POS.items.map(function (it) { return { kode: it.kode, qty: it.qty }; }) }).then(function (r) {
+    if (POS.coupon) { POS.coupon = null; document.getElementById('posCoupon').value = ''; }
+    POS.bundle = r; document.getElementById('posBundle').value = code;
+    gambarRingkasan(); toast('"' + r.name + '" terpasang: hemat ' + rupiah(r.discount) + '.');
+  }).catch(function (e) { toast(e.message, true); });
+}
+
+function terapkanKodeKupon(code, diam) {
+  if (!POS.customer.terdaftar) { toast('Kupon hanya untuk pelanggan terdaftar. Masukkan nomor WA dulu.', true); return; }
+  promoApi('validate', { code: code, nomor_wa: POS.customer.wa, tipe_customer: document.getElementById('posTipe').value, subtotal: subtotalPOS() }).then(function (r) {
+    if (POS.bundle) { POS.bundle = null; document.getElementById('posBundle').value = ''; }
+    r._sub = subtotalPOS();
+    POS.coupon = r; document.getElementById('posCoupon').value = code;
+    gambarRingkasan();
+    if (!diam) toast('Kupon ' + r.code + ' terpasang: potongan ' + rupiah(r.discount) + '.');
+  }).catch(function (e) {
+    if (diam) { POS.coupon = null; document.getElementById('posCoupon').value = ''; gambarRingkasan(); }
+    toast(diam ? 'Kupon dilepas: ' + e.message : e.message, true);
+  });
+}
+
+/* Lengkapi paket: tambah produk yang kurang ke keranjang lalu pasang paketnya. */
+function lengkapiPaket(code) {
+  var p = evaluasiPaket().filter(function (x) { return x.b.code === code; })[0];
+  if (!p) return;
+  var tipe = document.getElementById('posTipe').value;
+  Promise.all(p.kurang.map(function (k) {
+    return api('pos.cariBarang', { q: k.kode, tipe: tipe }).then(function (list) {
+      var m = list.filter(function (x) { return x.Kode_Obat === k.kode; })[0];
+      if (!m) throw new Error(k.nama + ' tidak ditemukan.');
+      if (m.stok < k.qty) throw new Error('Stok ' + k.nama + ' tidak cukup.');
+      return { m: m, qty: k.qty };
+    });
+  })).then(function (hasil) {
+    hasil.forEach(function (h) {
+      var idx = -1;
+      POS.items.forEach(function (it, i) { if (it.kode === h.m.Kode_Obat) idx = i; });
+      if (idx >= 0) POS.items[idx].qty += h.qty;
+      else POS.items.push({ kode: h.m.Kode_Obat, nama: h.m.Nama_Obat, satuan: h.m.Satuan, harga: h.m.harga,
+        qty: h.qty, stok: h.m.stok, batch: h.m.batch_terdekat, expired: h.m.expired, sisa_hari: h.m.sisa_hari });
+    });
+    gambarKeranjang();
+    terapkanKodePaket(code);
+  }).catch(function (e) { toast(e.message, true); });
+}
+
+/* Cadangan: pembeli membawa kode yang tidak muncul otomatis. */
+function bukaKodePromoPOS() {
+  modalBuka('Kode promo', '<label class="field"><span>Kode kupon atau kode paket</span>' +
+    '<input id="posModalKode" class="inp" placeholder="Contoh: VIPOKT atau BUNDLE-LUKA"></label>' +
+    '<p class="sub">Kupon hanya untuk pelanggan terdaftar. Paket perlu isi keranjang yang sesuai.</p>',
+    [{ label: 'Batal', aksi: modalTutup }, { label: 'Pakai', kelas: 'btn-primary', aksi: function () {
+      var code = (val('posModalKode') || '').trim().toUpperCase();
+      if (!code) { toast('Masukkan kode promo.', true); return; }
+      modalTutup();
+      var paket = (POS.promo.bundles || []).some(function (b) { return String(b.code).toUpperCase() === code; });
+      if (paket || !POS.customer.terdaftar) terapkanKodePaket(code); else terapkanKodeKupon(code);
+    } }]);
+  setTimeout(function () { var i = document.getElementById('posModalKode'); if (i) i.focus(); }, 50);
+}
+
+// Klik tiket (satu pendengar per wadah; wadah dibuat ulang tiap render halaman).
+function pasangEventPromoPOS() {
+  ['posPromoRail', 'posPromoKupon'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.onclick = function (e) {
+      var b = e.target.closest('button');
+      if (!b || b.disabled) return;
+      if (b.dataset.paket) terapkanKodePaket(b.dataset.paket);
+      else if (b.dataset.lengkapi) lengkapiPaket(b.dataset.lengkapi);
+      else if (b.dataset.kupon) terapkanKodeKupon(b.dataset.kupon);
+      else if (b.dataset.fokusCari) { var c = document.getElementById('posCari'); if (c) c.focus(); }
+    };
+  });
 }

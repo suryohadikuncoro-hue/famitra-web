@@ -1182,3 +1182,51 @@ body{background:var(--shell)}
 .db-stok-legenda{display:flex;gap:12px;margin-top:10px;font-size:11.5px;font-weight:700;color:var(--muted)}
 .db-stok-legenda i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
 .db-stok.kritis{border-color:var(--brand-line)}
+
+/* ================================================= Kasir: promo interaktif (tiket)
+   Tiket merah = siap dipakai, abu = hampir memenuhi syarat. Satu promo per
+   transaksi; yang terpasang tampil sebagai tiket kecil di panel bayar. */
+.tk-head{display:flex;align-items:center;justify-content:space-between;margin:12px 0 8px;font-size:12px;font-weight:700;color:#C9CBD0}
+.tk-rail{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding:10px 2px 12px;margin:-6px 0 4px}
+.tk-rail::-webkit-scrollbar{display:none}
+.tk{position:relative;flex:none;display:flex;min-width:290px;max-width:340px;border-radius:16px;background:#2A2C31;box-shadow:0 8px 20px rgba(0,0,0,.25)}
+.tk::before,.tk::after{content:"";position:absolute;left:88px;width:16px;height:16px;border-radius:50%;background:#211E21;transform:translateX(-50%);z-index:1}
+.tk::before{top:-8px}.tk::after{bottom:-8px}
+.tk-stub{width:88px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:16px 0 0 16px;background:linear-gradient(160deg,#E8563F,#9E1F24);color:#fff;border-right:2px dashed rgba(255,255,255,.35)}
+.tk-stub small{font-size:10px;font-weight:800;opacity:.85;letter-spacing:.06em}
+.tk-stub b{font-size:20px;letter-spacing:-.03em;line-height:1.1}
+.tk-isi{flex:1;padding:10px 12px 10px 16px;display:flex;flex-direction:column;justify-content:center;gap:6px;min-width:0}
+.tk-nama{font-weight:800;font-size:13.5px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tk-syarat{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#A1A4AB;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tk-dots{display:inline-flex;gap:3px;flex:none}.tk-dots i{width:14px;height:5px;border-radius:99px;background:#44464D}.tk-dots i.on{background:#34D399}
+.tk-kurang{display:inline-block;flex:none;height:5px;border-radius:99px;background:#44464D;overflow:hidden;width:70px}.tk-kurang i{display:block;height:100%;background:#E8563F;border-radius:99px}
+.tk-btn{align-self:flex-start;border:0;border-radius:99px;background:#fff;color:#141517;font:800 12px 'Plus Jakarta Sans',system-ui,sans-serif;padding:6px 14px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-btn:hover{transform:translateY(-1px)}
+.tk-btn:focus-visible{outline:2px solid #EE6A4F;outline-offset:2px}
+.tk-btn[disabled]{background:rgba(52,211,153,.18);color:#6EE7B7;cursor:default;transform:none}
+.tk.hampir .tk-stub{background:linear-gradient(160deg,#4A4C53,#2A2C31);color:#C9CBD0}
+.tk.hampir .tk-btn{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.35)}
+.tk.terpasang{box-shadow:0 0 0 2px #34D399,0 8px 20px rgba(0,0,0,.25)}
+.tk-terbaik{position:absolute;top:-9px;right:12px;z-index:2;font-size:10px;font-weight:800;letter-spacing:.03em;background:#34D399;color:#062E1F;border-radius:99px;padding:2px 8px}
+.tk.kecil{min-width:250px}.tk.kecil .tk-stub{width:76px}.tk.kecil::before,.tk.kecil::after{left:76px}
+.pp-badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:800;color:#fff;background:#CE2C2B;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+/* panel bayar */
+.pay-link{display:flex;justify-content:space-between;gap:8px;margin:10px 0 2px}
+.link-btn{border:0;background:transparent;padding:4px 0;font:700 12.5px 'Plus Jakarta Sans',system-ui,sans-serif;color:#FFB4A6;cursor:pointer}
+.link-btn:hover{color:#fff;text-decoration:underline}
+.pay-hemat{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px;padding:8px;border-radius:99px;background:rgba(52,211,153,.12);color:#6EE7B7;font-weight:800;font-size:13px}
+.pay-hemat[hidden]{display:none}
+.pay-undian{display:flex;align-items:center;gap:10px;margin-top:10px;font-size:12px;color:#C9CBD0}
+.pay-undian svg{width:34px;height:34px;flex:none}
+.pay-undian b{color:#fff}
+.pay-undian .u-dasar{fill:none;stroke:rgba(255,255,255,.1);stroke-width:4}
+.pay-undian .u-isi{fill:none;stroke:#34D399;stroke-width:4;stroke-linecap:round;transition:stroke-dashoffset .3s}
+.pay-undian.lolos{color:#6EE7B7}
+/* promo terpasang: tiket kecil */
+.pos-dark .pos-pay .pos-reward-row{margin-top:10px;display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.06);border:1px dashed rgba(238,106,79,.6);color:#fff}
+.pos-dark .pos-pay .pos-reward-row::before{content:"🏷";width:30px;height:30px;flex:none;border-radius:9px;background:linear-gradient(160deg,#E8563F,#9E1F24);display:grid;place-items:center;font-size:14px}
+.pos-dark .pos-pay .pos-reward-row>span:first-child{flex:1;min-width:0;font-size:12.5px;color:#C9CBD0}
+.pos-dark .pos-pay .pos-reward-row strong{color:#fff}
+.pos-dark .pos-pay .pos-reward-row .num{font-weight:800;color:#6EE7B7}
+.pos-dark .pos-pay .pos-reward-row .btn{padding:3px 10px;font-size:11.5px}
+@media (max-width:560px){.tk{min-width:260px}.tk.kecil{min-width:230px}}
