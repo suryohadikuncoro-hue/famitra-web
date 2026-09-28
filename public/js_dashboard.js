@@ -217,7 +217,9 @@ function gambarDashboard(d) {
         '</div>' +
         '<div class="hero-satelit">' +
           satelit('Laba kotor', rupiah(k.laba_kotor), k.laba_kotor < 0) +
-          satelit('Laba bersih', rupiah(k.laba_bersih), k.laba_bersih < 0) +
+          (k.laba_bersih_terbuka
+            ? satelit('Laba bersih', rupiah(k.laba_bersih), k.laba_bersih < 0)
+            : satelitTerkunci('Laba bersih', k.laba_bersih_alasan)) +
           satelit('Nota terjual', angka(k.nota), false, k.delta_nota) +
           satelit('Rata-rata nota', rupiah(k.rata_nota), false, k.delta_rata) +
         '</div>' +
@@ -415,6 +417,14 @@ function gambarDashboard(d) {
     '</div>';
 }
 
+/* Satelit hero untuk angka yang disembunyikan (mis. laba bersih sebelum
+   target omset tercapai). */
+function satelitTerkunci(label, alasan) {
+  return '<div title="' + esc(alasan || 'Terkunci') + '"><div class="sat-label">' + esc(label) + '</div>' +
+    '<div class="sat-nilai">🔒</div>' +
+    '<div class="sub" style="font-weight:400;font-size:11px">' + esc(alasan || 'Terkunci') + '</div></div>';
+}
+
 function satelit(label, nilai, minus, delta) {
   return '<div><div class="sat-label">' + esc(label) + '</div>' +
     '<div class="sat-nilai' + (minus ? ' minus' : '') + '">' + esc(nilai) + '</div>' +
@@ -568,7 +578,9 @@ function cetakRingkasanOwner(d) {
     '<table style="width:100%">' +
       '<tr><td><strong>Omzet</strong></td><td class="r num">' + rupiah(k.omzet) + '</td></tr>' +
       '<tr><td>Laba kotor</td><td class="r num">' + rupiah(k.laba_kotor) + '</td></tr>' +
-      '<tr><td>Laba bersih</td><td class="r num">' + rupiah(k.laba_bersih) + '</td></tr>' +
+      '<tr><td>Laba bersih</td><td class="r num">' + (k.laba_bersih_terbuka
+        ? rupiah(k.laba_bersih)
+        : '🔒 ' + esc(k.laba_bersih_alasan || 'Terkunci')) + '</td></tr>' +
       '<tr><td>Nota terjual</td><td class="r num">' + angka(k.nota) + '</td></tr>' +
       '<tr><td>Rata-rata nota</td><td class="r num">' + rupiah(k.rata_nota) + '</td></tr>' +
     '</table>' +
