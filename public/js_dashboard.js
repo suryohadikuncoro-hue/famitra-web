@@ -82,6 +82,7 @@ function muatDashboard() {
   api('dashboard.ringkasan', { filter: bacaFilter('db') }).then(function (d) {
     isi.innerHTML = gambarDashboard(d);
     pasangEventDashboard(d);
+    pasangGrafikOmzet(d);
     // Widget target omset bersifat independen (Edge Function marketing),
     // tidak bergantung pada payload dashboard utama, jadi diload paralel.
     muatTargetOmsetWidget();
@@ -118,93 +119,261 @@ function muatTargetOmsetWidget() {
   if (!box) return;
   box.innerHTML = kerangka(2);
   widgetMarketingApi('dashboardProgressPerCabang', {}).then(function (rows) {
-    box.innerHTML = renderTargetOmsetRows(rows || []);
+    box.innerHTML = renderTargetGauge(rows || []);
+    animasiGauge(box);
   }).catch(function (e) {
-    box.innerHTML = '<div class="empty" style="color:#dc2626">Gagal memuat target omset: ' +
+    box.innerHTML = '<div class="empty" style="color:var(--bad)">Gagal memuat target omset: ' +
       esc(e.message) + '</div>';
   });
 }
 
-function renderTargetOmsetRows(rows) {
-  if (!rows.length) {
-    return '<div class="empty">Belum ada cabang terdaftar.</div>';
+/* Gauge target omset (di posisi kanan hero). Busur 30 segmen; segmen terisi
+   sesuai progres, warnanya bergradasi mengikuti posisi di busur. Setelah
+   target tercapai seluruh busur hijau dan laba setelah target ditampilkan. */
+var GAUGE_N = 30;
+
+function svgGauge(persen, tercapai, teksTengah, teksBawah) {
+  var cx = 120, cy = 120, r1 = 80, r2 = 106;
+  var isi = Math.round(Math.max(0, Math.min(100, persen)) / 100 * GAUGE_N);
+  var dari = tercapai ? [14, 159, 110] : [143, 29, 34];   // ok / brand-dark
+  var ke   = tercapai ? [74, 200, 150] : [238, 138, 60];  // ok-muda / amber
+  var seg = '';
+  for (var i = 0; i < GAUGE_N; i++) {
+    var sudut = Math.PI * (1 - (i + 0.5) / GAUGE_N);
+    var cos = Math.cos(sudut), sin = Math.sin(sudut);
+    var t = i / (GAUGE_N - 1);
+    var warna = i < isi
+      ? 'rgb(' + dari.map(function (c, k) { return Math.round(c + (ke[k] - c) * t); }).join(',') + ')'
+      : '#ECEDF0';
+    seg += '<line class="gauge-seg' + (i < isi ? ' isi' : '') + '" style="--i:' + i + '" ' +
+      'x1="' + (cx + r1 * cos).toFixed(1) + '" y1="' + (cy - r1 * sin).toFixed(1) + '" ' +
+      'x2="' + (cx + r2 * cos).toFixed(1) + '" y2="' + (cy - r2 * sin).toFixed(1) + '" ' +
+      'stroke="' + warna + '"/>';
   }
-  var ada = rows.some(function (r) { return r.target; });
-  if (!ada) {
-    var link = (SESSION && SESSION.user && SESSION.user.role === 'Owner')
-      ? '<div style="margin-top:10px"><a class="btn btn-primary" href="javascript:gantiHalaman(\'targetOmset\')">' +
-        '+ Buat target omset</a></div>'
-      : '';
-    return '<div class="empty">Owner belum menetapkan target omset untuk periode ini.' +
-      link + '</div>';
-  }
-  return rows.map(function (r) {
-    if (!r.target) {
-      return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f1f5f9;">' +
-        '<div style="flex:1"><strong>' + esc(r.nama_cabang || r.kode_cabang) + '</strong>' +
-          '<div class="sub" style="font-weight:400">Belum ada target aktif</div></div>' +
-        '<span class="chip" style="background:#f1f5f9;color:#64748b">—</span>' +
+  return '<svg class="gauge" viewBox="0 0 240 132" role="img" aria-label="Progres target ' +
+      esc(teksTengah) + '">' + seg +
+    '<text class="gauge-angka" x="120" y="104" text-anchor="middle">' + esc(teksTengah) + '</text>' +
+    '<text class="gauge-label" x="120" y="124" text-anchor="middle">' + esc(teksBawah) + '</text>' +
+  '</svg>';
+}
+
+function animasiGauge(box) {
+  var svg = box.querySelector('.gauge');
+  if (!svg) return;
+  // Satu momen gerak saat data tiba: segmen menyala berurutan.
+  requestAnimationFrame(function () { svg.classList.add('siap'); });
+}
+
+function renderTargetGauge(rows) {
+  var isOwner = SESSION && SESSION.user && SESSION.user.role === 'Owner';
+  var r = rows[0];
+  var judul = '<div class="sat-label">Target omset</div>';
+  if (!r || !r.target) {
+    return judul + svgGauge(0, false, '—', 'belum ada target') +
+      '<div class="gauge-info"><span class="sub">Belum ada target aktif untuk cabang ini.</span>' +
+      (isOwner ? '<a class="btn btn-sm" href="javascript:gantiHalaman(\'targetOmset\')">Buat target</a>' : '') +
       '</div>';
-    }
-    var s = r.ringkasan || {};
-    var tercapai = !!s.tercapai;
-    var pct = Math.max(0, Math.min(100, Number(s.progress_persen) || 0));
-    var barColor = tercapai ? '#16a34a' : '#0ea5e9';
-    var badge = tercapai
-      ? '<span class="chip" style="background:#d1fae5;color:#065f46">✓ Tercapai</span>'
-      : '<span class="chip" style="background:#fef3c7;color:#92400e">Belum tercapai</span>';
-
-    var financial = '';
-    if (tercapai && s.laba_setelah_target_idr !== null && s.laba_setelah_target_idr !== undefined) {
-      var warnaLaba = Number(s.laba_setelah_target_idr) >= 0 ? '#16a34a' : '#dc2626';
-      financial =
-        '<div style="margin-top:8px;display:flex;gap:18px;flex-wrap:wrap;font-size:13px">' +
-          '<div><span class="sub">Omset di atas target</span> <strong>' + rupiah(s.omset_setelah_target_idr) + '</strong></div>' +
-          '<div><span class="sub">Laba setelah target</span> ' +
-            '<strong style="color:' + warnaLaba + '">' + rupiah(s.laba_setelah_target_idr) + '</strong></div>' +
-        '</div>' +
-        (s.nota_tercapai ? '<div class="sub" style="font-weight:400;font-size:12px;margin-top:2px">Tercapai di nota ' +
-          esc(s.nota_tercapai) + '</div>' : '') +
-        (s.hpp_kosong_count ? '<div style="margin-top:4px;font-size:12px;color:#991b1b">⚠ ' +
-          angka(s.hpp_kosong_count) + ' nota tanpa HPP — laba bisa terlalu besar</div>' : '');
-    } else {
-      financial =
-        '<div style="margin-top:8px;font-size:12px;color:#475569">🔒 Laba disembunyikan — target belum tercapai</div>';
-    }
-
-    return '<div style="padding:10px 0;border-bottom:1px solid #f1f5f9;">' +
-      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
-        '<div style="flex:1;min-width:140px"><strong>' + esc(r.nama_cabang || r.kode_cabang) + '</strong>' +
-          '<div class="sub" style="font-weight:400">' + esc(r.target.nama) + ' · ' +
-            tglIndo(r.target.periode_mulai) + ' s.d. ' + tglIndo(r.target.periode_selesai) + '</div></div>' +
-        '<div style="text-align:right"><div><strong>' + rupiah(s.omset_idr) + '</strong></div>' +
-          '<div class="sub" style="font-weight:400">dari target ' + rupiah(s.target_omset_idr) + '</div></div>' +
-        badge +
-      '</div>' +
-      '<div style="margin-top:6px;background:#e2e8f0;height:8px;border-radius:4px;overflow:hidden;">' +
-        '<div style="background:' + barColor + ';width:' + pct.toFixed(1) + '%;height:100%;transition:width .3s ease;"></div>' +
-      '</div>' +
-      '<div class="sub" style="margin-top:4px;font-weight:400">' + pct.toFixed(1) + '% · ' +
-        angka(s.transaksi_count) + ' transaksi</div>' +
-      financial +
+  }
+  var s = r.ringkasan || {};
+  var tercapai = !!s.tercapai;
+  var pct = Number(s.progress_persen) || 0;
+  var kurang = Math.max(0, Number(s.target_omset_idr || 0) - Number(s.omset_idr || 0));
+  var info;
+  if (tercapai) {
+    info =
+      '<div class="gauge-baris"><span class="chip gauge-chip ok">✓ Tercapai</span>' +
+        '<span class="sub">' + rupiahPendek(s.omset_idr) + ' dari ' + rupiahPendek(s.target_omset_idr) + '</span></div>' +
+      (s.laba_setelah_target_idr !== null && s.laba_setelah_target_idr !== undefined
+        ? '<div class="gauge-laba"><span class="sub">Laba setelah target</span>' +
+            '<strong class="' + (Number(s.laba_setelah_target_idr) < 0 ? 'minus' : '') + '">' +
+            rupiah(s.laba_setelah_target_idr) + '</strong></div>'
+        : '');
+  } else {
+    info =
+      '<div class="gauge-baris"><span class="sub">' + rupiahPendek(s.omset_idr) + ' dari ' +
+        rupiahPendek(s.target_omset_idr) + '</span>' +
+        '<span class="chip gauge-chip kurang">kurang ' + rupiahPendek(kurang) + '</span></div>' +
+      '<div class="gauge-kunci">🔒 Laba setelah target terbuka saat target tercapai</div>';
+  }
+  return judul +
+    svgGauge(pct, tercapai, (tercapai ? Math.round(pct) : pct.toFixed(pct < 10 ? 1 : 0)) + '%', 'dari target') +
+    '<div class="gauge-info">' + info +
+      '<div class="sub gauge-periode">' + esc(r.target.nama) + ' · ' + tglIndo(r.target.periode_mulai) +
+        ' s.d. ' + tglIndo(r.target.periode_selesai) +
+        (isOwner ? ' · <a href="javascript:gantiHalaman(\'targetOmset\')">Detail</a>' : '') + '</div>' +
     '</div>';
-  }).join('') +
-  '<div style="margin-top:10px;text-align:right">' +
-    '<a class="btn btn-sm" href="javascript:gantiHalaman(\'targetOmset\')">Buka halaman Target Omset ›</a>' +
+}
+
+/* Grafik omzet harian (di bawah hero): garis halus bergradasi, area pudar,
+   tooltip + garis putus-putus saat disentuh/diarahkan. 7 atau 30 hari,
+   tidak ikut filter rentang. Digambar sesuai lebar kartu, ulang saat resize. */
+var GRAFIK = { hari: 7, data: [] };
+
+function grafikOmzetHtml() {
+  return '<div class="card grafik-card" id="dbGrafik">' +
+    '<div class="grafik-head">' +
+      '<div><div class="sat-label">Omzet harian</div>' +
+        '<div class="grafik-total" id="dbGrafikTotal"></div>' +
+        '<div class="sub" id="dbGrafikSub"></div></div>' +
+      '<div class="seg-toggle" role="group" aria-label="Rentang grafik">' +
+        '<button type="button" data-grafik="7" aria-pressed="true">7 hari</button>' +
+        '<button type="button" data-grafik="30" aria-pressed="false">30 hari</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="grafik-area" id="dbGrafikArea"></div>' +
   '</div>';
 }
+
+function pasangGrafikOmzet(d) {
+  var src = d.tren_harian || (d.sparkline || []).map(function (x) { return { tanggal: x.tanggal, omzet: x.omzet, nota: x.nota }; });
+  GRAFIK.data = src;
+  var card = document.getElementById('dbGrafik');
+  if (!card) return;
+  card.querySelector('.seg-toggle').onclick = function (e) {
+    var b = e.target.closest('[data-grafik]');
+    if (!b) return;
+    GRAFIK.hari = Number(b.dataset.grafik);
+    gambarGrafikOmzet();
+  };
+  gambarGrafikOmzet();
+}
+
+function singkatRp(n) {
+  var a = Math.abs(n);
+  if (a >= 1e9) return (n / 1e9).toFixed(1).replace('.', ',') + ' M';
+  if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace('.', ',') + ' jt';
+  if (a >= 1e3) return Math.round(n / 1e3) + ' rb';
+  return String(Math.round(n));
+}
+
+function gambarGrafikOmzet() {
+  var area = document.getElementById('dbGrafikArea');
+  if (!area) return;
+  var n = GRAFIK.hari;
+  var semuaData = GRAFIK.data;
+  var data = semuaData.slice(-n);
+  var sebelum = semuaData.length >= n * 2 ? semuaData.slice(-n * 2, -n) : null;
+
+  document.querySelectorAll('#dbGrafik [data-grafik]').forEach(function (b) {
+    b.setAttribute('aria-pressed', Number(b.dataset.grafik) === n ? 'true' : 'false');
+  });
+  var total = data.reduce(function (t, x) { return t + Number(x.omzet || 0); }, 0);
+  var totalSebelum = sebelum ? sebelum.reduce(function (t, x) { return t + Number(x.omzet || 0); }, 0) : 0;
+  var delta = sebelum && totalSebelum > 0 ? (total - totalSebelum) / totalSebelum * 100 : null;
+  document.getElementById('dbGrafikTotal').innerHTML = esc(rupiah(total)) + ' ' + chipDelta(delta);
+  document.getElementById('dbGrafikSub').textContent =
+    n + ' hari terakhir · rata-rata ' + rupiahPendek(data.length ? total / data.length : 0) + '/hari' +
+    (delta !== null ? ' · dibanding ' + n + ' hari sebelumnya' : '');
+
+  if (!data.length) { area.innerHTML = '<div class="empty">Belum ada data penjualan.</div>'; return; }
+
+  var W = Math.max(280, area.clientWidth || 600), H = 230;
+  var pl = 50, pr = 14, pt = 14, pb = 30;
+  var cw = W - pl - pr, ch = H - pt - pb;
+  var nilai = data.map(function (x) { return Number(x.omzet || 0); });
+  var maks = Math.max.apply(null, nilai), min = Math.min(0, Math.min.apply(null, nilai));
+  // Batas atas "rapi" supaya garis bantu jatuh di angka bulat.
+  var kasar = (maks - min) / 4 || 1;
+  var pangkat = Math.pow(10, Math.floor(Math.log10(kasar)));
+  var langkah = [1, 2, 2.5, 5, 10].map(function (m) { return m * pangkat; }).filter(function (v) { return v >= kasar; })[0];
+  var atas = Math.ceil(maks / langkah) * langkah || langkah * 4;
+  var bawah = Math.floor(min / langkah) * langkah;
+  var X = function (i) { return pl + (data.length === 1 ? cw / 2 : i * cw / (data.length - 1)); };
+  var Y = function (v) { return pt + (atas - v) / (atas - bawah) * ch; };
+
+  var grid = '';
+  for (var g = bawah; g <= atas + 1e-6; g += langkah) {
+    grid += '<line class="grafik-grid" x1="' + pl + '" x2="' + (W - pr) + '" y1="' + Y(g).toFixed(1) + '" y2="' + Y(g).toFixed(1) + '"/>' +
+      '<text class="grafik-y" x="' + (pl - 8) + '" y="' + (Y(g) + 4).toFixed(1) + '" text-anchor="end">' + singkatRp(g) + '</text>';
+  }
+  var tiap = n <= 7 ? 1 : Math.ceil(data.length / Math.max(3, Math.floor(cw / 70)));
+  var sumbuX = data.map(function (x, i) {
+    if ((data.length - 1 - i) % tiap !== 0) return '';
+    var t = String(x.tanggal);
+    var jangkar = i === 0 ? 'start' : (i === data.length - 1 ? 'end' : 'middle');
+    return '<text class="grafik-x" x="' + X(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="' + jangkar + '">' +
+      t.slice(8, 10) + '/' + t.slice(5, 7) + '</text>';
+  }).join('');
+
+  // Kurva halus (Catmull-Rom → Bezier), titik kontrol dijepit di area grafik.
+  var titik = data.map(function (x, i) { return [X(i), Y(Number(x.omzet || 0))]; });
+  var jepit = function (y) { return Math.max(pt, Math.min(pt + ch, y)); };
+  var garis = 'M' + titik[0][0].toFixed(1) + ',' + titik[0][1].toFixed(1);
+  for (var k = 0; k < titik.length - 1; k++) {
+    var p0 = titik[k - 1] || titik[k], p1 = titik[k], p2 = titik[k + 1], p3 = titik[k + 2] || p2;
+    var c1 = [p1[0] + (p2[0] - p0[0]) / 6, jepit(p1[1] + (p2[1] - p0[1]) / 6)];
+    var c2 = [p2[0] - (p3[0] - p1[0]) / 6, jepit(p2[1] - (p3[1] - p1[1]) / 6)];
+    garis += ' C' + c1[0].toFixed(1) + ',' + c1[1].toFixed(1) + ' ' + c2[0].toFixed(1) + ',' + c2[1].toFixed(1) +
+      ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+  }
+  var isiArea = garis + ' L' + titik[titik.length - 1][0].toFixed(1) + ',' + (pt + ch) + ' L' + titik[0][0].toFixed(1) + ',' + (pt + ch) + ' Z';
+
+  area.innerHTML =
+    '<svg class="grafik" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Grafik omzet ' + n + ' hari terakhir">' +
+      '<defs>' +
+        '<linearGradient id="gOmzetGaris" x1="0" x2="1" y1="0" y2="0">' +
+          '<stop offset="0" stop-color="#8F1D22"/><stop offset=".55" stop-color="#CE2C2B"/><stop offset="1" stop-color="#EE8A3C"/></linearGradient>' +
+        '<linearGradient id="gOmzetArea" x1="0" x2="0" y1="0" y2="1">' +
+          '<stop offset="0" stop-color="#CE2C2B" stop-opacity=".16"/><stop offset="1" stop-color="#CE2C2B" stop-opacity="0"/></linearGradient>' +
+      '</defs>' +
+      grid + sumbuX +
+      '<path d="' + isiArea + '" fill="url(#gOmzetArea)"/>' +
+      '<path d="' + garis + '" fill="none" stroke="url(#gOmzetGaris)" stroke-width="3" stroke-linecap="round"/>' +
+      '<line class="grafik-kursor" id="dbGrafikKursor" y1="' + pt + '" y2="' + (pt + ch) + '" x1="-10" x2="-10"/>' +
+      '<circle class="grafik-titik" id="dbGrafikTitik" r="6" cx="-10" cy="-10"/>' +
+      '<rect x="' + pl + '" y="0" width="' + cw + '" height="' + H + '" fill="transparent" id="dbGrafikSentuh"/>' +
+    '</svg>' +
+    '<div class="grafik-tip" id="dbGrafikTip" hidden></div>';
+
+  var hariNama = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  var bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  var sentuh = document.getElementById('dbGrafikSentuh');
+  var kursor = document.getElementById('dbGrafikKursor');
+  var bulat = document.getElementById('dbGrafikTitik');
+  var tip = document.getElementById('dbGrafikTip');
+  function tunjuk(ev) {
+    var box = sentuh.ownerSVGElement.getBoundingClientRect();
+    var x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - box.left;
+    var i = data.length === 1 ? 0 : Math.round((x - pl) / cw * (data.length - 1));
+    i = Math.max(0, Math.min(data.length - 1, i));
+    var px = titik[i][0], py = titik[i][1];
+    kursor.setAttribute('x1', px); kursor.setAttribute('x2', px);
+    bulat.setAttribute('cx', px); bulat.setAttribute('cy', py);
+    var tg = new Date(data[i].tanggal + 'T00:00:00');
+    tip.innerHTML = '<div class="grafik-tip-tgl">' + hariNama[tg.getDay()] + ', ' + tg.getDate() + ' ' + bulan[tg.getMonth()] + '</div>' +
+      '<div>Omzet: <strong>' + esc(rupiah(data[i].omzet)) + '</strong></div>' +
+      (data[i].nota !== undefined ? '<div class="grafik-tip-tgl">' + angka(data[i].nota) + ' nota</div>' : '');
+    tip.hidden = false;
+    var tw = tip.offsetWidth;
+    tip.style.left = Math.max(0, Math.min(W - tw, px - tw / 2)) + 'px';
+    // Di atas titik; kalau tidak muat, pindah ke bawah titik supaya titik tetap terlihat.
+    var atasTip = py - tip.offsetHeight - 14;
+    tip.style.top = (atasTip >= 0 ? atasTip : py + 14) + 'px';
+  }
+  function sembunyi() {
+    tip.hidden = true;
+    kursor.setAttribute('x1', -10); kursor.setAttribute('x2', -10);
+    bulat.setAttribute('cx', -10);
+  }
+  sentuh.addEventListener('mousemove', tunjuk);
+  sentuh.addEventListener('mouseleave', sembunyi);
+  sentuh.addEventListener('touchstart', tunjuk, { passive: true });
+  sentuh.addEventListener('touchmove', tunjuk, { passive: true });
+}
+
+// Gambar ulang grafik saat lebar layar berubah (dipasang sekali).
+(function () {
+  var t = null;
+  window.addEventListener('resize', function () {
+    clearTimeout(t);
+    t = setTimeout(function () { if (document.getElementById('dbGrafikArea')) gambarGrafikOmzet(); }, 150);
+  });
+})();
 
 function gambarDashboard(d) {
   var k = d.kpi;
 
-  /* 1. Hero omzet — angka besar di kiri, tren tujuh hari di kanan. */
-  var hari = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
-  var tren7 = d.sparkline.map(function (x) {
-    return {
-      label: x.tanggal, nilai: x.omzet,
-      pendek: hari[new Date(x.tanggal + 'T00:00:00').getDay()]
-    };
-  });
+  /* 1. Hero omzet — angka besar di kiri, gauge target omset di kanan. */
   // Tentukan rentang label yang sedang aktif untuk header cetak.
   var rentangLabel = d.rentang.label || 'periode ini';
   var hero =
@@ -226,10 +395,8 @@ function gambarDashboard(d) {
           satelit('Rata-rata nota', rupiah(k.rata_nota), false, k.delta_rata) +
         '</div>' +
       '</div>' +
-      '<div class="hero-chart">' +
-        '<div class="sat-label">Tujuh hari terakhir</div>' +
-        svgBar(tren7) +
-      '</div>' +
+      // Posisi kanan hero: gauge target omset (dimuat terpisah dari Edge Function marketing).
+      '<div class="hero-chart hero-target" id="dbTargetOmsetBody">' + kerangka(2) + '</div>' +
     '</div>';
 
   /* 2. Strip peringatan — klik untuk membuka rincian. */
@@ -291,14 +458,6 @@ function gambarDashboard(d) {
       seg('rutin', s['Active Routine'] || 0, 'Rutin belanja') +
       seg('risk', s['At-Risk'] || 0, 'Perlu ditindak') +
       seg('', s.Baru || 0, 'Baru terdaftar') +
-    '</div>';
-
-  /* 4b. Target Omset per Cabang — widget marketing */
-  var widgetTargetOmset =
-    '<div class="card" id="dbTargetOmsetCard">' +
-      '<div class="card-head"><h3>Target omset cabang</h3>' +
-        '<span class="sub" style="font-weight:400">Laba setelah target terbuka saat target tercapai</span></div>' +
-      '<div id="dbTargetOmsetBody">' + kerangka(2) + '</div>' +
     '</div>';
 
   /* 5. Feed transaksi + panel kanan */
@@ -405,7 +564,7 @@ function gambarDashboard(d) {
       '<div class="fold-body" id="aiInsights">' + kerangka(3) + '</div>' +
     '</details>' : '';
 
-  return hero + strip + segStrip + widgetTargetOmset +
+  return hero + grafikOmzetHtml() + strip + segStrip +
     '<div class="split">' +
       '<div>' + kartuShift + feedJual + '</div>' +
       '<div>' + kartuShiftBar + kartuProduk + kartuPelanggan + '</div>' +
@@ -446,7 +605,9 @@ function pasangEventDashboard(d) {
   if (hero) {
     hero.style.cursor = 'pointer';
     hero.title = 'Buka halaman Laporan dengan filter yang sama';
-    hero.onclick = function () {
+    hero.onclick = function (e) {
+      // Klik di area gauge target tidak membuka laporan.
+      if (e.target.closest('.hero-target')) return;
       if (typeof VIEWS !== 'undefined' && VIEWS.laporan && typeof gantiHalaman === 'function') {
         // Simpan filter ke session agar halaman Laporan bisa langsung memakainya.
         try { sessionStorage.setItem('db_filter', JSON.stringify(bacaFilter('db'))); } catch (e) {}
