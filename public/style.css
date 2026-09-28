@@ -754,3 +754,79 @@ html,body{max-width:100%;overflow-x:hidden}
   #dbIsi .hero-target .gauge-baris .sub,#dbIsi .hero-target .gauge-kunci,#dbIsi .hero-target .gauge-periode{font-size:12.5px}
   #dbIsi .hero-target .gauge-laba strong{font-size:20px}
 }
+
+
+/* ================================================= Tema v12: kerangka & sidebar
+   Latar gelap penuh, sidebar gelap berikon, konten di panel terang melengkung
+   (radius 28px desktop / 24px HP) seperti referensi, layar penuh. Warna brand
+   tetap merah. Ringkasan AI & chat AI tidak disentuh. */
+:root{--shell:#141517;--shell-2:#1D1F23;--shell-line:rgba(255,255,255,.08);--shell-teks:#A1A4AB;--panel:#F5F6F8}
+body{background:var(--shell)}
+#appScreen.app{background:var(--shell)}
+
+/* ---- Sidebar ---- */
+.sidebar{background:var(--shell)!important;box-shadow:none!important;padding:22px 16px;gap:0}
+.sidebar-brand{border-bottom:0!important;margin-bottom:18px;padding:0 6px}
+.sidebar-brand .logo{width:36px;height:36px;flex:0 0 36px;border-radius:9px}
+.sidebar-brand-text strong{font-size:16px}
+.sidebar-brand-text span{color:var(--shell-teks)}
+.sidebar-cabang{display:flex;align-items:center;gap:10px;background:var(--shell-2);border:1px solid var(--shell-line);border-radius:14px;padding:10px 12px;margin-bottom:18px;min-width:0}
+.sidebar-cabang-ikon{width:30px;height:30px;flex:0 0 30px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.06);color:#E8563F}
+.sidebar-cabang-ikon svg,.menu-ikon{width:18px;height:18px;flex:0 0 18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.sidebar-cabang-teks{min-width:0}
+.sidebar-cabang-teks small{display:block;font-size:11px;color:var(--shell-teks)}
+.sidebar-cabang-teks strong{display:block;font-size:13.5px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-judul{font-size:11.5px;font-weight:600;color:#6E727A;padding:0 10px;margin-bottom:6px}
+#navMenu{gap:2px}
+#navMenu button{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:11px;color:var(--shell-teks);font-size:13.5px;font-weight:500;position:relative;overflow:visible;transform:none!important;box-shadow:none!important;background:transparent;transition:background .15s,color .15s}
+#navMenu button:hover{background:rgba(255,255,255,.05);color:#fff}
+#navMenu button.is-active{background:linear-gradient(90deg,rgba(255,255,255,.09),rgba(255,255,255,.02));color:#fff;font-weight:600}
+#navMenu button.is-active::before{content:"";position:absolute;left:-16px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--brand)}
+#navMenu button.is-active .menu-ikon{color:#E8563F}
+#navMenu button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.menu-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-foot{border-top:1px solid var(--shell-line)!important;padding:12px 4px 0;justify-content:flex-start;gap:10px}
+.sidebar-avatar{width:34px;height:34px;flex:0 0 34px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--brand),var(--brand-dark));color:#fff;font-weight:700;font-size:12.5px}
+.sidebar-foot .whoami{flex:1}
+.sidebar-foot .whoami span{color:var(--shell-teks)}
+.sidebar-foot .btn{border-radius:99px;border-color:rgba(255,255,255,.14)!important;color:var(--shell-teks)!important;padding:6px 12px}
+.sidebar-foot .btn:hover{background:rgba(255,255,255,.08)!important;color:#fff!important}
+
+/* ---- Topbar: judul halaman (terang di panel desktop, gelap di HP) ---- */
+.topbar::before{display:none!important}
+.topbar h2::after{animation:none!important;box-shadow:none!important}
+
+/* ---- Desktop: panel melengkung, yang di-scroll hanya isi panel ---- */
+@media (min-width:881px){
+  #appScreen.app{grid-template-columns:248px minmax(0,1fr);height:100dvh;min-height:0}
+  .sidebar{height:100dvh}
+  .main{margin:10px 10px 10px 0;height:calc(100dvh - 20px);background:var(--panel);border-radius:28px;overflow:hidden;box-shadow:-10px 0 30px rgba(0,0,0,.25);display:flex;flex-direction:column}
+  .topbar{position:relative!important;background:transparent!important;color:var(--ink-deep)!important;box-shadow:none!important;min-height:0!important;padding:20px 28px 4px!important;border:0}
+  .topbar h2{color:var(--ink-deep)!important;font-size:22px!important;letter-spacing:-.025em}
+  .topbar-meta .chip,.topbar-meta .chip:first-child{background:#fff!important;border:1px solid var(--line)!important;color:var(--muted)!important;border-radius:99px;font-weight:600}
+  .view{flex:1;min-height:0;overflow-y:auto!important;overflow-x:hidden;background:transparent!important;padding:14px 28px 32px!important;scrollbar-width:thin;scrollbar-color:#D5D8DE transparent}
+  .view::-webkit-scrollbar{width:8px}.view::-webkit-scrollbar-thumb{background:#D5D8DE;border-radius:99px;border:2px solid var(--panel)}
+  .pos-pay{top:12px}
+}
+@media (min-width:881px) and (max-width:1180px){
+  #appScreen.app{grid-template-columns:220px minmax(0,1fr)}
+  .sidebar{padding:18px 12px}
+  #navMenu button.is-active::before{left:-12px}
+  .view{padding:12px 20px 28px!important}.topbar{padding:18px 20px 4px!important}
+}
+
+/* ---- HP & tablet: header gelap, panel melengkung, navigasi bawah gelap ---- */
+@media (max-width:880px){
+  .main{background:transparent}
+  .topbar{background:var(--shell)!important;box-shadow:none!important;border:0}
+  .view{background:var(--panel)!important;border-radius:24px;margin:0 6px 84px;padding:14px 12px 20px!important;min-height:calc(100dvh - 150px)}
+  .sidebar{box-shadow:none!important}
+  .sidebar.is-open{box-shadow:12px 0 40px rgba(0,0,0,.45)!important}
+  #navMenu button.is-active::before{left:-16px}
+  .tabbar{background:var(--shell)!important;border-top:0!important;padding:8px 6px calc(10px + env(safe-area-inset-bottom))}
+  .tabbar button{display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--shell-teks);font-size:10.5px;background:transparent!important;min-width:0}
+  .tabbar button .menu-ikon{width:20px;height:20px}
+  .tabbar button.is-active{color:#fff}
+  .tabbar button.is-active .menu-ikon{color:#E8563F}
+  .tabbar .menu-label{max-width:100%}
+}

@@ -235,6 +235,8 @@ function gantiHalaman(id) {
   });
   document.querySelector('.sidebar').classList.remove('is-open');
   var el = document.getElementById('view');
+  // Konten di-scroll di dalam panel (#view), jadi kembalikan ke atas saat pindah halaman.
+  el.scrollTop = 0; window.scrollTo(0, 0);
   memuat(el);
   try { v.render(el); } catch (e) { el.innerHTML = '<div class="card"><p>' + esc(e.message) + '</p></div>'; }
 }
@@ -256,6 +258,44 @@ function bangunNav() {
     tab.appendChild(b);
   });
 }
+
+/* Ikon menu sidebar & tabbar. Dipasang otomatis ke setiap tombol di #navMenu
+   dan #tabbar (termasuk tombol yang ditambah modul lain, mis. Target Omset),
+   lewat MutationObserver — bangunNav sendiri tidak diubah. */
+var IKON_MENU = {
+  dashboard: '<rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/>',
+  pos: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  barang: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+  stok: '<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>',
+  beli: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M3 4h2l2.4 11h11.2L21 8H6.2"/>',
+  crm: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0113 0"/><path d="M16 4.5a3.5 3.5 0 010 7M18 14.5a6.5 6.5 0 013.5 5.5"/>',
+  marketing: '<path d="M3 11v2a1 1 0 001 1h2l5 4V6L6 10H4a1 1 0 00-1 1z"/><path d="M15.5 8.5a5 5 0 010 7M18.5 5.5a9 9 0 010 13"/>',
+  targetOmset: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>',
+  biaya: '<path d="M3 7a2 2 0 012-2h13v4"/><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 13.5h2"/>',
+  opname: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/>',
+  laporan: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  retur: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/>'
+};
+
+function hiasiTombolMenu(wadah) {
+  if (!wadah) return;
+  wadah.querySelectorAll('button[data-id]').forEach(function (b) {
+    if (b.querySelector('.menu-ikon')) return;
+    var label = b.textContent;
+    var ikon = IKON_MENU[b.dataset.id] || '<circle cx="12" cy="12" r="3"/>';
+    b.innerHTML = '<svg class="menu-ikon" viewBox="0 0 24 24" aria-hidden="true">' + ikon + '</svg>' +
+      '<span class="menu-label"></span>';
+    b.querySelector('.menu-label').textContent = label;
+    b.title = label;
+  });
+}
+
+['navMenu', 'tabbar'].forEach(function (id) {
+  var el = document.getElementById(id);
+  if (!el || typeof MutationObserver === 'undefined') return;
+  new MutationObserver(function () { hiasiTombolMenu(el); }).observe(el, { childList: true });
+});
 
 /* ------------------------------------------------------------------ Sesi */
 
@@ -295,13 +335,17 @@ function masukAplikasi() {
     document.getElementById('appScreen').hidden = false;
     document.getElementById('sbNama').textContent = res.data.user.nama;
     document.getElementById('sbRole').textContent = labelRole_(res.data.user.role);
+    document.getElementById('sbAvatar').textContent = String(res.data.user.nama || '?')
+      .trim().split(/\s+/).slice(0, 2).map(function (x) { return x.charAt(0); }).join('').toUpperCase() || '?';
     var namaCabang = {
       KARLA: 'Apotek Fa-Mitra Karla',
       PUCUK: 'Apotek Fa-Mitra Pucuk',
       KENDAL: 'Apotek Fa-Mitra Kendal',
       PULE: 'Apotek Fa-Mitra Pule'
     }[res.data.user.cabang_id] || res.data.apotek;
-    document.getElementById('sbApotek').textContent = namaCabang;
+    document.getElementById('sbApotek').textContent = namaCabang;   // nama lengkap (dipakai kop cetak)
+    document.getElementById('sbCabang').textContent =
+      String(namaCabang).replace(/^Apotek Fa-Mitra\s*/, '') || namaCabang;
 
     var chip = document.getElementById('shiftChip');
     perbaruhiShift_();   // langsung perbarui saat login
