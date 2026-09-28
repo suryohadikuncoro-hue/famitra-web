@@ -27,9 +27,9 @@ VIEWS.pos = {
     muatNotaTerakhir();
     gambarHeaderShift();
     muatPromoPOS();
-    // Fokus otomatis ke pencarian begitu layar siap.
+    // Fokus otomatis ke pencarian begitu layar siap (tidak di HP: keyboard akan menutupi layar).
     var s = document.getElementById('posCari');
-    if (s) s.focus();
+    if (s && !layarSentuh()) s.focus();
   }
 };
 
@@ -66,8 +66,10 @@ function tataLetakPOS() {
       /* Pencarian dan keranjang */
       '<div class="card">' +
         '<div class="pos-search">' +
-          '<input id="posCari" class="inp" type="text" autocomplete="off" ' +
+          '<input id="posCari" class="inp" type="text" autocomplete="off" enterkeyhint="search" ' +
             'placeholder="Scan barcode atau ketik nama obat, lalu Enter">' +
+          '<button type="button" id="posScan" class="pos-scan" aria-label="Pindai barcode dengan kamera">' +
+            '<svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v2M20 16v2a2 2 0 01-2 2h-2M8 20H6a2 2 0 01-2-2v-2"/><path d="M7 12h10"/></svg></button>' +
           '<div id="posSuggest" class="suggest" hidden></div>' +
         '</div>' +
         '<div class="card-head" style="margin-bottom:10px">' +
@@ -176,8 +178,14 @@ function formatHM_(d) {
 
 /* -------------------------------------------------------------- Peristiwa */
 
+function layarSentuh() {
+  return !!(window.matchMedia && window.matchMedia('(pointer:coarse)').matches);
+}
+
 function pasangEventPOS() {
   var cari = document.getElementById('posCari');
+  var scan = document.getElementById('posScan');
+  if (scan) scan.onclick = function () { if (window.bukaScanner) window.bukaScanner(); };
   var timer = null, cursor = -1, hasil = [];
 
   function tutupSuggest() {
@@ -404,7 +412,7 @@ function formDaftarInline() {
   modalBuka('Daftarkan pelanggan baru',
     '<label class="field"><span>Nomor WhatsApp</span><input id="dfWA" class="inp" value="' + esc(wa) + '"></label>' +
     '<label class="field"><span>Nama</span><input id="dfNama" class="inp" placeholder="Nama pasien, dokter, atau apotek"></label>' +
-    '<label class="field"><span>Tipe customer</span><select id="dfTipe" class="inp">' +
+    '<label class="field"><span>Tipe customer</span><select id="dfTipe" class="inp" data-seg="1">' +
       '<option>Umum</option><option>Tenaga Kesehatan</option><option>Apotek Lain</option></select></label>' +
     '<label class="field"><span>Alamat</span><input id="dfAlamat" class="inp"></label>' +
     '<label class="field"><span>Nomor izin (SIP/SIA), bila ada</span><input id="dfIzin" class="inp"></label>',
@@ -522,7 +530,9 @@ function gambarKeranjang() {
     box.innerHTML = '<div class="empty">Keranjang kosong. Scan barcode atau ketik nama obat di atas.</div>';
   } else {
     box.innerHTML = POS.items.map(function (it, i) {
-      return '<div class="cart-item">' +
+      return '<div class="ci-wrap"><button type="button" class="ci-del" data-aksi="hapus" data-i="' + i + '" aria-label="Hapus ' + esc(it.nama) + '">' +
+        '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>Hapus</button>' +
+        '<div class="cart-item">' +
         '<div>' +
           '<div class="cart-nama">' + esc(it.nama) + (paketSet[it.kode] ? '<span class="pp-badge">🏷 Paket</span>' : '') + '</div>' +
           '<div class="cart-meta">' +
@@ -542,7 +552,7 @@ function gambarKeranjang() {
           '<button class="icon-btn" data-aksi="hapus" data-i="' + i + '" aria-label="Hapus">' +
             '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>' +
         '</div>' +
-      '</div>';
+      '</div></div>';
     }).join('');
   }
 
@@ -665,7 +675,8 @@ function simpanTransaksi() {
     cetakStruk(nota);
     kosongkanKeranjang();
     muatNotaTerakhir();
-    document.getElementById('posCari').focus();
+    if (!layarSentuh()) document.getElementById('posCari').focus();
+    if (window.haptik) window.haptik([20, 40, 20]);
   }).catch(function (e) {
     toast(e.message, true);
   }).then(function () {
