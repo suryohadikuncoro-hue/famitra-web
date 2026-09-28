@@ -141,7 +141,28 @@ async function targetOmsetList(data: any, s: any) {
   if (filterCabang) path += `&kode_cabang=eq.${encodeURIComponent(filterCabang)}`;
   if (onlyAktif) path += `&aktif=eq.true`;
 
-  return await rest(path);
+  const rows = await rest(path);
+
+  // Halaman "Kelola Target Omset" hanya bisa diakses Owner (dienforce juga di sini,
+  // bukan cuma di frontend). Untuk Owner, laba bersih SELALU ditampilkan di sini,
+  // terlepas dari status tercapai — beda dengan dashboard "Progress per Cabang"
+  // (dashboardProgressPerCabang) yang tetap menyembunyikan laba sebelum target tercapai.
+  if (s.role === "Owner" && Array.isArray(rows) && rows.length) {
+    for (const t of rows) {
+      const agg = await aggregateTarget(t);
+      const omset = num(agg.omset_idr, 0);
+      const hpp = agg.hpp_available ? num(agg.total_hpp_idr, 0) : null;
+      const biaya = num(agg.biaya_operasional_idr, 0);
+      t.omset_idr = omset;
+      t.total_hpp_idr = hpp;
+      t.biaya_operasional_idr = biaya;
+      t.laba_bersih_idr = hpp !== null ? omset - hpp - biaya : null;
+      t.hpp_available = agg.hpp_available;
+      t.transaksi_count = agg.transaksi_count;
+    }
+  }
+
+  return rows;
 }
 
 async function targetOmsetSave(data: any, s: any) {

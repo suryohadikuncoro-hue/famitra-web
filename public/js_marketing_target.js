@@ -10,11 +10,11 @@
 //   https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/marketing
 //
 // Aturan visibilitas (sesuai permintaan Owner):
-//   - Sebelum target tercapai: laba TIDAK ditampilkan ke user manapun.
-//     Hanya tampil progress omset + badge "🔒 Laba disembunyikan".
-//   - Setelah target tercapai: seluruh angka (HPP, biaya_op, laba) tampil.
-//   - HPP tidak pernah diekspos ke user biasa (tetap disembunyikan walaupun tercapai);
-//     Owner diizinkan melihat karena dialah yang set target.
+//   - Dashboard "Progress per Cabang" (semua role): sebelum target tercapai, laba
+//     TIDAK ditampilkan ke user manapun — hanya progress omset + badge
+//     "🔒 Laba disembunyikan". Setelah tercapai, seluruh angka tampil.
+//   - Halaman "Kelola Target Omset" (Owner only): laba bersih SELALU tampil,
+//     terlepas dari status tercapai, karena Owner-lah yang menetapkan target.
 //
 // Pola: vanilla JS, mengikuti gaya js_marketing_lottery.js / js_dashboard.js
 
@@ -313,11 +313,24 @@
       var status = t.aktif
         ? '<span class="chip" style="background:#d1fae5;color:#065f46;">Aktif</span>'
         : '<span class="chip" style="background:#f1f5f9;color:#64748b;">Non-aktif</span>';
+
+      var labaCell;
+      if (t.laba_bersih_idr !== null && t.laba_bersih_idr !== undefined) {
+        labaCell = '<strong style="color:' + (Number(t.laba_bersih_idr) >= 0 ? '#16a34a' : '#dc2626') + ';">' +
+          rupiah(t.laba_bersih_idr) + '</strong>';
+      } else if (t.hpp_available === false) {
+        labaCell = '<span class="sub" style="color:#991b1b;">HPP tidak lengkap</span>';
+      } else {
+        labaCell = '<span class="sub">—</span>';
+      }
+
       return '<tr>' +
         '<td><strong>' + esc(t.nama_target) + '</strong></td>' +
         '<td>' + esc(t.kode_cabang) + '</td>' +
         '<td>' + tglIndo(t.periode_mulai) + '<br/><span class="sub">s.d. ' + tglIndo(t.periode_selesai) + '</span></td>' +
         '<td class="r"><strong>' + rupiah(t.target_omset_idr) + '</strong></td>' +
+        '<td class="r">' + rupiah(t.omset_idr) + '</td>' +
+        '<td class="r">' + labaCell + '</td>' +
         '<td class="c">' + status + '</td>' +
         '<td class="c" style="white-space:nowrap;">' +
           '<button class="btn btn-sm" data-mt-edit="' + esc(t.id) + '">Ubah</button> ' +
@@ -329,7 +342,7 @@
     }).join("");
 
     return '<div class="card"><div class="table-wrap"><table>' +
-      '<thead><tr><th>Nama Target</th><th>Cabang</th><th>Periode</th><th class="r">Target</th><th class="c">Status</th><th class="c">Aksi</th></tr></thead>' +
+      '<thead><tr><th>Nama Target</th><th>Cabang</th><th>Periode</th><th class="r">Target</th><th class="r">Omset</th><th class="r">Laba Bersih</th><th class="c">Status</th><th class="c">Aksi</th></tr></thead>' +
       '<tbody>' + trs + '</tbody>' +
       '</table></div></div>';
   }
