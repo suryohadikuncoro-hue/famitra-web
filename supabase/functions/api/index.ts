@@ -474,7 +474,20 @@ async function action(name, data, s) {
     });
     // Laba bersih di dashboard baru terbuka setelah target omset cabang tercapai
     // (berlaku untuk semua role). Halaman Kelola Target Omset (Owner) tidak terpengaruh.
-    return { rentang: { label: r0.label }, shift_filter: f.shift || "Semua", kpi: { omzet: omzet2, laba_kotor: omzet2 - hpp2, retur_total: rr.reduce((n, x) => n + x.refund, 0), retur_count: rr.length, hpp_kosong: hppKosong, nota: ss.length, rata_nota: ss.length ? omzet2 / ss.length : 0, delta_omzet: null, delta_nota: null, delta_rata: null }, sparkline, ...await stokDashboard(cabangSesi(s)), pj_shift: { role: s.role, petugas: s.nama, shift: shift(), jam: clock(), login_at: s.login_at, di_luar_jam: shift() === "Luar Jam", petugas_jaga: null }, segmen_pelanggan: segmen, live_sales: liveSales, live_expense: liveExpense, shift_chart: shiftChart, top_produk: topProduk, top_pelanggan: topPelanggan, at_risk: [], ai_enabled: false };
+    // Tren omzet harian 60 hari terakhir (tidak ikut filter rentang/shift) untuk
+    // grafik "Omzet harian" 7/30 hari + pembanding periode sebelumnya.
+    // Omzet bersih retur (retur dihitung pada tanggal retur), hari kosong = 0.
+    const [ty, tm, td] = today().split("-").map(Number);
+    const hariKe = (mundur) => new Date(Date.UTC(ty, tm - 1, td - mundur)).toISOString().slice(0, 10);
+    const r60 = { from: hariKe(59), to: hariKe(0) };
+    const jual60 = await semua("trx_penjualan", `${qsRange(r60, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=tanggal,harga_akhir&order=no_nota`);
+    const retur60 = await semua("trx_retur_jual", `${qsRange(r60, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=tanggal,total_refund&order=no_retur`);
+    const perHari = {};
+    for (let i = 59; i >= 0; i--) perHari[hariKe(i)] = { tanggal: hariKe(i), omzet: 0, nota: 0 };
+    jual60.forEach((x) => { const h = perHari[String(x.tanggal)]; if (h) { h.omzet += Number(x.harga_akhir || 0); h.nota++; } });
+    retur60.forEach((x) => { const h = perHari[String(x.tanggal)]; if (h) h.omzet -= Number(x.total_refund || 0); });
+    const trenHarian = Object.values(perHari);
+    return { rentang: { label: r0.label }, shift_filter: f.shift || "Semua", tren_harian: trenHarian, kpi: { omzet: omzet2, laba_kotor: omzet2 - hpp2, retur_total: rr.reduce((n, x) => n + x.refund, 0), retur_count: rr.length, hpp_kosong: hppKosong, nota: ss.length, rata_nota: ss.length ? omzet2 / ss.length : 0, delta_omzet: null, delta_nota: null, delta_rata: null }, sparkline, ...await stokDashboard(cabangSesi(s)), pj_shift: { role: s.role, petugas: s.nama, shift: shift(), jam: clock(), login_at: s.login_at, di_luar_jam: shift() === "Luar Jam", petugas_jaga: null }, segmen_pelanggan: segmen, live_sales: liveSales, live_expense: liveExpense, shift_chart: shiftChart, top_produk: topProduk, top_pelanggan: topPelanggan, at_risk: [], ai_enabled: false };
   }
   if (name === "laporan.labaRugi") {
     const r0 = rangeOf(data.filter || {});

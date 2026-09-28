@@ -704,3 +704,41 @@ html,body{max-width:100%;overflow-x:hidden}
 .pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
 .pager-tombol { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .pager-tombol .btn[disabled] { opacity: .45; cursor: default; }
+
+/* ============================ Dashboard: gauge target & grafik omzet harian */
+.hero-target{display:flex; flex-direction:column; align-items:center; text-align:center; cursor:default}
+.hero-target > .sat-label{align-self:stretch; text-align:left}
+.gauge{width:100%; max-width:250px; display:block; margin:4px auto 0}
+.gauge-seg{stroke-width:9; stroke-linecap:round}
+.gauge-angka{font-size:34px; font-weight:800; letter-spacing:-.03em; fill:var(--ink-deep)}
+.gauge-label{font-size:12px; font-weight:600; fill:var(--muted)}
+.gauge .gauge-seg.isi{opacity:.001; transition:opacity .25s ease; transition-delay:calc(var(--i) * 22ms)}
+.gauge.siap .gauge-seg.isi{opacity:1}
+.gauge-info{display:grid; gap:6px; justify-items:center; margin-top:2px}
+.gauge-baris{display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; justify-content:center}
+.gauge-chip{font-size:11.5px; font-weight:700}
+.hero .gauge-chip.kurang{background:var(--warn-soft); color:var(--warn); border-color:transparent}
+.hero .gauge-chip.ok{background:var(--ok-soft); color:var(--ok); border-color:transparent}
+.gauge-laba{display:flex; flex-direction:column; align-items:center}
+.gauge-laba strong{font-size:17px; color:var(--ok)}
+.gauge-laba strong.minus{color:var(--bad)}
+.gauge-kunci{font-size:11.5px; color:var(--muted)}
+.gauge-periode{font-size:11.5px}
+@media (prefers-reduced-motion: reduce){ .gauge .gauge-seg.isi{opacity:1; transition:none} }
+
+.grafik-card{margin-bottom:14px}
+.grafik-head{display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; margin-bottom:6px}
+.grafik-total{font-size:24px; font-weight:800; letter-spacing:-.03em; color:var(--ink-deep); display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.grafik-total .delta{margin-bottom:0}
+.seg-toggle{display:inline-flex; background:var(--paper); border:1px solid var(--line); border-radius:99px; padding:3px}
+.seg-toggle button{border:0; background:transparent; font:inherit; font-size:12.5px; font-weight:600; color:var(--muted); padding:6px 14px; border-radius:99px; cursor:pointer; min-height:32px}
+.seg-toggle button[aria-pressed="true"]{background:var(--surface); color:var(--ink-deep); box-shadow:var(--sh-1)}
+.seg-toggle button:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+.grafik-area{position:relative; width:100%}
+.grafik{display:block; max-width:100%; touch-action:pan-y}
+.grafik-grid{stroke:var(--line); stroke-width:1}
+.grafik-y,.grafik-x{font-size:11px; fill:var(--muted)}
+.grafik-kursor{stroke:var(--ink); stroke-width:1.5; stroke-dasharray:4 4}
+.grafik-titik{fill:var(--surface); stroke:var(--brand); stroke-width:3}
+.grafik-tip{position:absolute; pointer-events:none; background:var(--ink-deep); color:#fff; border-radius:8px; padding:8px 11px; font-size:12.5px; line-height:1.45; white-space:nowrap; box-shadow:var(--sh-2)}
+.grafik-tip-tgl{font-size:11px; color:rgba(255,255,255,.65)}
