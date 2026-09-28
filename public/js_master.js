@@ -14,35 +14,35 @@ VIEWS.barang = {
         '<th>Kode</th><th>Nama obat</th><th>Kategori</th><th class="c">Stok</th>' +
         '<th class="r">Modal</th><th class="r">Umum</th><th class="r">Nakes</th>' +
         '<th class="r">Apotek lain</th><th class="c">PPN</th><th></th>' +
-      '</tr></thead><tbody id="bgBody"></tbody></table></div></div>';
+      '</tr></thead><tbody id="bgBody"></tbody></table></div>' +
+      '<div id="bgPager" class="pager"></div></div>';
 
     document.getElementById('bgTambah').onclick = function () { formBarang(null); };
     var t = null;
     document.getElementById('bgCari').addEventListener('input', function () {
-      clearTimeout(t); t = setTimeout(muatBarang, 250);
+      clearTimeout(t); t = setTimeout(function () { muatBarang(1); }, 250);
     });
-    muatBarang();
+    muatBarang(1);
   }
 };
 
-function muatBarang() {
+/* Master Barang dibagi per halaman (100 barang/halaman) supaya tetap ringan.
+   BARANG_HAL menyimpan halaman aktif; simpan/nonaktifkan memuat ulang halaman
+   yang sama, pencarian kembali ke halaman 1. */
+var BARANG_HAL = 1;
+
+function muatBarang(hal) {
+  if (hal) BARANG_HAL = hal;
   var tb = document.getElementById('bgBody');
   if (!tb) return;
   tb.innerHTML = '<tr><td colspan="10" class="empty">Memuat…</td></tr>';
-  Promise.all([
-    api('barang.list', { q: val('bgCari') }),
-    api('stok.list', { q: '', kritis: false })
-  ]).then(function (result) {
-    var rows = result[0];
-    var batchRows = result[1];
-    var stokPerKode = {};
-    batchRows.forEach(function (batch) {
-      var kode = String(batch.Kode_Obat || '');
-      stokPerKode[kode] = (stokPerKode[kode] || 0) + (Number(batch.Stok_Real) || 0);
-    });
-    rows = rows.map(function (barang) {
-      return Object.assign({}, barang, { stok: stokPerKode[String(barang.Kode_Obat || '')] || 0 });
-    });
+  api('barang.list', { q: val('bgCari'), halaman: BARANG_HAL, per_halaman: 100 }).then(function (res) {
+    // Halaman di luar jangkauan (mis. setelah pencarian) → kembali ke halaman terakhir.
+    if (!res.rows.length && res.total > 0 && BARANG_HAL > res.jumlah_halaman) {
+      muatBarang(res.jumlah_halaman); return;
+    }
+    var rows = res.rows;
+    gambarPagerBarang(res);
     if (!rows.length) { tb.innerHTML = tabelKosong('Belum ada barang. Tambahkan lewat tombol di atas.', 10); return; }
     tb.innerHTML = rows.map(function (b) {
       var stokKelas = b.stok <= b.Stok_Min ? 'chip-bad' : 'chip-ok';
@@ -72,6 +72,39 @@ function muatBarang() {
   }).catch(function (e) {
     tb.innerHTML = '<tr><td colspan="10" class="empty">' + esc(e.message) + '</td></tr>';
   });
+}
+
+function gambarPagerBarang(res) {
+  var el = document.getElementById('bgPager');
+  if (!el) return;
+  if (!res.total) { el.innerHTML = ''; return; }
+  var hal = res.halaman, n = res.jumlah_halaman;
+  var awal = (hal - 1) * res.per_halaman + 1;
+  var akhir = Math.min(hal * res.per_halaman, res.total);
+  // Nomor halaman: 1, …, sekitar halaman aktif, …, terakhir
+  var nomor = [];
+  for (var i = 1; i <= n; i++) {
+    if (i === 1 || i === n || Math.abs(i - hal) <= 1) nomor.push(i);
+    else if (nomor[nomor.length - 1] !== '…') nomor.push('…');
+  }
+  el.innerHTML =
+    '<span class="sub">' + angka(awal) + '–' + angka(akhir) + ' dari ' + angka(res.total) + ' barang</span>' +
+    '<span class="pager-tombol">' +
+      '<button class="btn btn-sm" data-hal="' + (hal - 1) + '"' + (hal <= 1 ? ' disabled' : '') + '>‹ Sebelumnya</button>' +
+      nomor.map(function (x) {
+        return x === '…'
+          ? '<span class="sub">…</span>'
+          : '<button class="btn btn-sm' + (x === hal ? ' btn-primary' : '') + '" data-hal="' + x + '">' + x + '</button>';
+      }).join('') +
+      '<button class="btn btn-sm" data-hal="' + (hal + 1) + '"' + (hal >= n ? ' disabled' : '') + '>Berikutnya ›</button>' +
+    '</span>';
+  el.onclick = function (e) {
+    var b = e.target.closest('[data-hal]');
+    if (!b || b.disabled) return;
+    muatBarang(Number(b.dataset.hal));
+    var tabel = document.getElementById('bgBody');
+    if (tabel && tabel.closest('.card')) tabel.closest('.card').scrollIntoView({ block: 'start' });
+  };
 }
 
 function formBarang(b) {
