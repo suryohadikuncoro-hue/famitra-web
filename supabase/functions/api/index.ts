@@ -121,6 +121,25 @@ var menus = {
 function menuSaya(s) {
   return { menu: menus[s.role] || [], user: { username: s.username, nama: s.nama, role: s.role, cabang_id: cabangSesi(s), login_at: s.login_at, shift: s.shift }, apotek: "Apotek Fa-Mitra", halamanAwal: s.role === "Kasir" ? "pos" : "dashboard" };
 }
+// Status target omset aktif untuk 1 cabang (tabel marketing_target_omsets).
+// Dipakai dashboard untuk menentukan apakah laba bersih boleh ditampilkan:
+// laba bersih baru terbuka setelah omset periode target >= target_omset_idr.
+// Tanpa target aktif = belum ada yang tercapai = laba tetap disembunyikan.
+async function statusTargetCabang(cabangId) {
+  const tr = await db("marketing_target_omsets", `?kode_cabang=eq.${encodeURIComponent(cabangId)}&aktif=eq.true&select=periode_mulai,periode_selesai,target_omset_idr&limit=1`);
+  if (!tr.ok) return { ada_target: false, tercapai: false };
+  const t = (await tr.json())[0];
+  if (!t) return { ada_target: false, tercapai: false };
+  let omset = 0;
+  for (let offset = 0; ; offset += 1000) {
+    const r = await db("trx_penjualan", `?cabang_id=eq.${encodeURIComponent(cabangId)}&tanggal=gte.${t.periode_mulai}&tanggal=lte.${t.periode_selesai}&select=harga_akhir&order=no_nota&limit=1000&offset=${offset}`);
+    if (!r.ok) return { ada_target: true, tercapai: false };
+    const page = await r.json();
+    omset += page.reduce((n, x) => n + Number(x.harga_akhir || 0), 0);
+    if (page.length < 1000) break;
+  }
+  return { ada_target: true, tercapai: omset >= Number(t.target_omset_idr || 0) };
+}
 async function stokDashboard(cabangId) {
   const [br, sb] = await Promise.all([
     db("master_barang", `?cabang_id=eq.${encodeURIComponent(cabangId)}&aktif=eq.YA&select=kode_obat,nama_obat,stok_min&limit=5000`),
@@ -428,7 +447,10 @@ async function action(name, data, s) {
       const k = x.shift || "Luar Jam";
       shiftChart[k] = (shiftChart[k] || 0) + Number(x.harga_akhir || 0);
     });
-    return { rentang: { label: r0.label }, shift_filter: f.shift || "Semua", kpi: { omzet: omzet2, laba_kotor: omzet2 - hpp2, laba_bersih: omzet2 - hpp2 - biaya2, nota: ss.length, rata_nota: ss.length ? omzet2 / ss.length : 0, delta_omzet: null, delta_nota: null, delta_rata: null }, sparkline, ...await stokDashboard(cabangSesi(s)), pj_shift: { role: s.role, petugas: s.nama, shift: shift(), jam: clock(), login_at: s.login_at, di_luar_jam: shift() === "Luar Jam", petugas_jaga: null }, segmen_pelanggan: segmen, live_sales: liveSales, live_expense: liveExpense, shift_chart: shiftChart, top_produk: topProduk, top_pelanggan: topPelanggan, at_risk: [], ai_enabled: false };
+    // Laba bersih di dashboard baru terbuka setelah target omset cabang tercapai
+    // (berlaku untuk semua role). Halaman Kelola Target Omset (Owner) tidak terpengaruh.
+    const target = await statusTargetCabang(cabangSesi(s));
+    return { rentang: { label: r0.label }, shift_filter: f.shift || "Semua", kpi: { omzet: omzet2, laba_kotor: omzet2 - hpp2, laba_bersih: target.tercapai ? omzet2 - hpp2 - biaya2 : null, laba_bersih_terbuka: target.tercapai, laba_bersih_alasan: target.tercapai ? "" : target.ada_target ? "Target omset belum tercapai" : "Belum ada target omset aktif", nota: ss.length, rata_nota: ss.length ? omzet2 / ss.length : 0, delta_omzet: null, delta_nota: null, delta_rata: null }, sparkline, ...await stokDashboard(cabangSesi(s)), pj_shift: { role: s.role, petugas: s.nama, shift: shift(), jam: clock(), login_at: s.login_at, di_luar_jam: shift() === "Luar Jam", petugas_jaga: null }, segmen_pelanggan: segmen, live_sales: liveSales, live_expense: liveExpense, shift_chart: shiftChart, top_produk: topProduk, top_pelanggan: topPelanggan, at_risk: [], ai_enabled: false };
   }
   if (name === "laporan.labaRugi") {
     const r0 = rangeOf(data.filter || {});
