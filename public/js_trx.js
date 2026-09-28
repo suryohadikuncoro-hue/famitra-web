@@ -498,6 +498,8 @@ function gambarItemReturJual() {
   var ref = nota.sudah_retur || 0;
   var sudah = nota.sudah_retur || 0;
   var proporsi = nota.subtotal > 0 ? sudah / nota.subtotal : 0;
+  // Refund mengikuti harga yang dibayar (diskon nota dibagi proporsional).
+  var faktor = nota.subtotal > 0 ? Number(nota.harga_akhir || 0) / nota.subtotal : 1;
   area.innerHTML =
     '<div class="kpi-sub">Nota <strong>' + esc(nota.No_Nota) + '</strong> · ' +
       esc(nota.Tanggal) + ' ' + esc(nota.Jam) + ' · ' + esc(nota.Nama_Pelanggan) +
@@ -516,7 +518,9 @@ function gambarItemReturJual() {
     '<button id="rjSimpan" class="btn btn-primary btn-block">Simpan retur</button>';
 
   document.getElementById('rjBody').innerHTML = nota.items.map(function (it, i) {
-    var sisa = Math.round(it.Qty * (1 - proporsi));
+    var sisa = (it.Sudah_Retur_Qty !== undefined)
+      ? Math.max(0, it.Qty - it.Sudah_Retur_Qty)
+      : Math.round(it.Qty * (1 - proporsi));
     return '<tr>' +
       '<td>' + esc(it.Kode_Obat) + '</td>' +
       '<td>' + esc(it.Nama_Obat) + '</td>' +
@@ -548,7 +552,7 @@ function gambarItemReturJual() {
     var ref = nota.items[Number(f.dataset.i)];
     var sub = row.children[7];
     if (sub && f.dataset.f === 'Qty') {
-      sub.textContent = rupiah(ref.Harga_Satuan * (Number(f.value) || 0));
+      sub.textContent = rupiah(Math.round(ref.Harga_Satuan * faktor * (Number(f.value) || 0)));
     }
   };
 
@@ -564,7 +568,7 @@ function ringkasReturJual() {
     var ref = nota.items[i];
     var q = Number(it.Qty) || 0;
     totalQty += q;
-    totalRefund += ref.Harga_Satuan * q;
+    totalRefund += Math.round(ref.Harga_Satuan * (nota.subtotal > 0 ? Number(nota.harga_akhir || 0) / nota.subtotal : 1) * q);
   });
   document.getElementById('rjTotalItem').textContent = angka(totalQty) + ' item diretur';
   document.getElementById('rjTotalRefund').textContent = rupiah(totalRefund);
@@ -850,7 +854,8 @@ function muatLaporan() {
         '<div class="table-wrap"><table>' +
           barisLap('Omzet kotor (gross sales)', d.omzet_kotor) +
           barisLap('Total diskon diberikan', -d.total_diskon) +
-          barisLap('Total HPP / modal terjual', -d.total_hpp) +
+          barisLap('Retur penjualan (' + angka(d.jumlah_retur || 0) + ' retur)', -(d.total_retur || 0)) +
+          barisLap('Total HPP / modal terjual (bersih retur)', -d.total_hpp) +
           barisLap('<strong>Laba kotor</strong>', d.laba_kotor) +
           barisLap('Total biaya operasional', -d.total_biaya) +
           barisLap('<strong>Laba bersih</strong>', d.laba_bersih) +
@@ -911,7 +916,8 @@ function cetakLaporan(d) {
     '<table style="width:100%; margin-top:12px">' +
       barisLap('Omzet kotor', d.omzet_kotor) +
       barisLap('Total diskon diberikan', -d.total_diskon) +
-      barisLap('Total HPP / modal terjual', -d.total_hpp) +
+      barisLap('Retur penjualan', -(d.total_retur || 0)) +
+      barisLap('Total HPP / modal terjual (bersih retur)', -d.total_hpp) +
       barisLap('<strong>Laba kotor</strong>', d.laba_kotor) +
       barisLap('Total biaya operasional', -d.total_biaya) +
       barisLap('<strong>Laba bersih</strong>', d.laba_bersih) +

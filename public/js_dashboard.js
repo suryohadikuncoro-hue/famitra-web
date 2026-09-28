@@ -155,16 +155,18 @@ function renderTargetOmsetRows(rows) {
       : '<span class="chip" style="background:#fef3c7;color:#92400e">Belum tercapai</span>';
 
     var financial = '';
-    if (tercapai && s.laba_bersih_idr !== null && s.laba_bersih_idr !== undefined) {
-      var warnaLaba = Number(s.laba_bersih_idr) >= 0 ? '#16a34a' : '#dc2626';
+    if (tercapai && s.laba_setelah_target_idr !== null && s.laba_setelah_target_idr !== undefined) {
+      var warnaLaba = Number(s.laba_setelah_target_idr) >= 0 ? '#16a34a' : '#dc2626';
       financial =
         '<div style="margin-top:8px;display:flex;gap:18px;flex-wrap:wrap;font-size:13px">' +
-          '<div><span class="sub">Laba bersih</span> ' +
-            '<strong style="color:' + warnaLaba + '">' + rupiah(s.laba_bersih_idr) + '</strong></div>' +
-        '</div>';
-    } else if (tercapai) {
-      financial =
-        '<div style="margin-top:8px;font-size:12px;color:#991b1b">⚠ HPP tidak tersedia/lengkap</div>';
+          '<div><span class="sub">Omset di atas target</span> <strong>' + rupiah(s.omset_setelah_target_idr) + '</strong></div>' +
+          '<div><span class="sub">Laba setelah target</span> ' +
+            '<strong style="color:' + warnaLaba + '">' + rupiah(s.laba_setelah_target_idr) + '</strong></div>' +
+        '</div>' +
+        (s.nota_tercapai ? '<div class="sub" style="font-weight:400;font-size:12px;margin-top:2px">Tercapai di nota ' +
+          esc(s.nota_tercapai) + '</div>' : '') +
+        (s.hpp_kosong_count ? '<div style="margin-top:4px;font-size:12px;color:#991b1b">⚠ ' +
+          angka(s.hpp_kosong_count) + ' nota tanpa HPP — laba bisa terlalu besar</div>' : '');
     } else {
       financial =
         '<div style="margin-top:8px;font-size:12px;color:#475569">🔒 Laba disembunyikan — target belum tercapai</div>';
@@ -218,8 +220,8 @@ function gambarDashboard(d) {
         '<div class="hero-satelit">' +
           satelit('Laba kotor', rupiah(k.laba_kotor), k.laba_kotor < 0) +
           (k.laba_bersih_terbuka
-            ? satelit('Laba bersih', rupiah(k.laba_bersih), k.laba_bersih < 0)
-            : satelitTerkunci('Laba bersih', k.laba_bersih_alasan)) +
+            ? satelitLabaTarget(k)
+            : satelitTerkunci('Laba setelah target', k.laba_bersih_alasan)) +
           satelit('Nota terjual', angka(k.nota), false, k.delta_nota) +
           satelit('Rata-rata nota', rupiah(k.rata_nota), false, k.delta_rata) +
         '</div>' +
@@ -295,7 +297,7 @@ function gambarDashboard(d) {
   var widgetTargetOmset =
     '<div class="card" id="dbTargetOmsetCard">' +
       '<div class="card-head"><h3>Target omset cabang</h3>' +
-        '<span class="sub" style="font-weight:400">Laba tampil setelah target tercapai</span></div>' +
+        '<span class="sub" style="font-weight:400">Laba setelah target terbuka saat target tercapai</span></div>' +
       '<div id="dbTargetOmsetBody">' + kerangka(2) + '</div>' +
     '</div>';
 
@@ -415,6 +417,17 @@ function gambarDashboard(d) {
         'top 5 produk, top 5 pelanggan, dan 5 transaksi terakhir — siap print untuk arsip.</p>' +
       '<button class="btn btn-primary" id="dbCetak">' + '\u{1F5B6}️' + ' Cetak ringkasan</button>' +
     '</div>';
+}
+
+/* Laba bersih SETELAH target (laba bonus tim) — dihitung untuk periode target,
+   bukan rentang filter dashboard, jadi periodenya ditulis jelas. */
+function satelitLabaTarget(k) {
+  var t = k.target_info || {};
+  return '<div><div class="sat-label">Laba setelah target</div>' +
+    '<div class="sat-nilai' + (k.laba_setelah_target < 0 ? ' minus' : '') + '">' + esc(rupiah(k.laba_setelah_target)) + '</div>' +
+    '<div class="sub" style="font-weight:400;font-size:11px">' +
+      (t.periode_mulai ? 'Periode ' + esc(tglIndo(t.periode_mulai)) + ' s.d. ' + esc(tglIndo(t.periode_selesai)) : 'Periode target') +
+    '</div></div>';
 }
 
 /* Satelit hero untuk angka yang disembunyikan (mis. laba bersih sebelum
@@ -578,8 +591,8 @@ function cetakRingkasanOwner(d) {
     '<table style="width:100%">' +
       '<tr><td><strong>Omzet</strong></td><td class="r num">' + rupiah(k.omzet) + '</td></tr>' +
       '<tr><td>Laba kotor</td><td class="r num">' + rupiah(k.laba_kotor) + '</td></tr>' +
-      '<tr><td>Laba bersih</td><td class="r num">' + (k.laba_bersih_terbuka
-        ? rupiah(k.laba_bersih)
+      '<tr><td>Laba setelah target (periode target)</td><td class="r num">' + (k.laba_bersih_terbuka
+        ? rupiah(k.laba_setelah_target)
         : '🔒 ' + esc(k.laba_bersih_alasan || 'Terkunci')) + '</td></tr>' +
       '<tr><td>Nota terjual</td><td class="r num">' + angka(k.nota) + '</td></tr>' +
       '<tr><td>Rata-rata nota</td><td class="r num">' + rupiah(k.rata_nota) + '</td></tr>' +

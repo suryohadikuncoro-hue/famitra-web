@@ -16,15 +16,18 @@
 //   targetOmsetSave            - buat/update target (Owner only)
 //   targetOmsetDelete          - hapus target (Owner only)
 //   targetOmsetStatus          - aktif/non-aktif target (Owner only)
-//   dashboardLaba              - ringkasan 1 target: progress omset, HPP, biaya_op, laba
+//   targetOmsetRincian         - rincian laba setelah target per nota (Owner only)
+//   dashboardLaba              - ringkasan 1 target: progress omset + laba setelah target
 //   dashboardProgressPerCabang - ringkasan semua cabang (semua role, tanpa raw transaksi)
 //
 // Perhitungan laba bersih = omset (harga_akhir) - total_hpp - SUM(biaya_operasional.nominal)
 // Biaya operasional dibaca dari tabel biaya_operasional yang sudah ada di sistem.
 //
-// Aturan visibilitas laba (sesuai permintaan Owner):
+// Aturan visibilitas laba (sesuai keputusan Owner):
 //   - Sebelum target tercapai: laba TIDAK ditampilkan ke user (null)
-//   - Setelah target tercapai: laba ditampilkan
+//   - Setelah target tercapai: yang ditampilkan adalah laba bersih SETELAH
+//     target (laba bonus tim), bukan laba bersih total
+//   - Laba bersih total hanya di halaman Kelola Target Omset (Owner)
 //   - Progress omset selalu ditampilkan (semua role, semua kondisi)
 //   - HPP tetap disembunyikan dari semua role (Owner tidak minta ekspos)
 
@@ -153,16 +156,17 @@ async function targetOmsetList(data: any, s: any) {
   // (dashboardProgressPerCabang) yang tetap menyembunyikan laba sebelum target tercapai.
   if (s.role === "Owner" && Array.isArray(rows) && rows.length) {
     for (const t of rows) {
-      const agg = await aggregateTarget(t);
-      const omset = num(agg.omset_idr, 0);
-      const hpp = agg.hpp_available ? num(agg.total_hpp_idr, 0) : null;
-      const biaya = num(agg.biaya_operasional_idr, 0);
-      t.omset_idr = omset;
-      t.total_hpp_idr = hpp;
-      t.biaya_operasional_idr = biaya;
-      t.laba_bersih_idr = hpp !== null ? omset - hpp - biaya : null;
-      t.hpp_available = agg.hpp_available;
-      t.transaksi_count = agg.transaksi_count;
+      const h = await hitungTarget(t);
+      t.omset_idr = num(h?.omset_idr, 0);
+      t.total_hpp_idr = num(h?.total_hpp_idr, 0);
+      t.biaya_operasional_idr = num(h?.biaya_operasional_idr, 0);
+      t.laba_bersih_idr = num(h?.laba_bersih_total_idr, 0);
+      t.tercapai = !!h?.tercapai;
+      t.tercapai_pada = h?.tercapai_pada ?? null;
+      t.nota_tercapai = h?.nota_tercapai ?? null;
+      t.laba_setelah_target_idr = h?.tercapai ? num(h.laba_setelah_target_idr, 0) : null;
+      t.hpp_kosong_count = num(h?.hpp_kosong_count, 0);
+      t.transaksi_count = num(h?.transaksi_count, 0);
     }
   }
 
@@ -221,92 +225,44 @@ async function targetOmsetStatus(data: any, s: any) {
   return { id, aktif };
 }
 
-// Ambil data agregat: omset & total_hpp (dari trx_penjualan), biaya_op (dari biaya_operasional)
-// untuk 1 target di cabang & periode-nya.
-async function aggregateTarget(t: any) {
-  const kode_cabang = String(t.kode_cabang || "").trim();
-  const periode_mulai = String(t.periode_mulai);
-  const periode_selesai = String(t.periode_selesai);
-
-  const trxPath =
-    `/trx_penjualan?select=harga_akhir,total_hpp&cabang_id=eq.${encodeURIComponent(kode_cabang)}` +
-    `&tanggal=gte.${periode_mulai}&tanggal=lte.${periode_selesai}&limit=100000`;
-
-  const trx = await allRows(trxPath);
-
-  let omsetDec = { units: 0n, scale: 0 };
-  let hppDec = { units: 0n, scale: 0 };
-  let hppAvailable = true;
-  let hppMissing = 0;
-
-  for (const r of trx) {
-    omsetDec = addDecimal(omsetDec, decimalAmount(r.harga_akhir));
-    if (r.total_hpp === null || r.total_hpp === undefined || r.total_hpp === "") {
-      hppMissing += 1;
-      continue;
-    }
-    hppDec = addDecimal(hppDec, decimalAmount(r.total_hpp));
-  }
-  if (hppMissing > 0 && hppMissing === trx.length) hppAvailable = false;
-
-  const biayaPath =
-    `/biaya_operasional?select=nominal&cabang_id=eq.${encodeURIComponent(kode_cabang)}` +
-    `&tanggal=gte.${periode_mulai}&tanggal=lte.${periode_selesai}&limit=100000`;
-  const biaya = await allRows(biayaPath);
-
-  let biayaDec = { units: 0n, scale: 0 };
-  for (const b of biaya) biayaDec = addDecimal(biayaDec, decimalAmount(b.nominal));
-
-  const omset = decimalNumber(omsetDec);
-  const hpp = hppAvailable ? decimalNumber(hppDec) : null;
-  const biayaOp = decimalNumber(biayaDec);
-
-  return {
-    omset_idr: omset,
-    total_hpp_idr: hpp,
-    biaya_operasional_idr: biayaOp,
-    hpp_available: hppAvailable,
-    transaksi_count: trx.length,
-    biaya_count: biaya.length,
-  };
+// Semua angka target dihitung di database oleh RPC marketing_hitung_target
+// (migrasi 20260928040000_laba_setelah_target.sql): omset & HPP bersih retur,
+// titik tercapai, dan laba bersih SETELAH target (laba bonus tim).
+async function hitungTarget(t: any, rincian = false) {
+  return await rest(`/rpc/marketing_hitung_target`, {
+    method: "POST",
+    body: JSON.stringify({ p_target_id: t.id, p_rincian: rincian }),
+  });
 }
 
-// Hitung laba dengan aturan visibilitas:
-//   - progress & omset selalu tampil
-//   - laba tampil HANYA jika omset >= target_omset_idr
-function withVisibility(agg: any, t: any) {
-  const target = num(t.target_omset_idr, 0);
-  const omset = num(agg.omset_idr, 0);
-  const tercapai = omset >= target;
-
+// Aturan visibilitas untuk dashboard & tab progress (semua role):
+//   - progress omset selalu tampil
+//   - sebelum tercapai: semua angka laba disembunyikan
+//   - setelah tercapai: yang dibuka HANYA laba bersih setelah target (laba bonus),
+//     bukan laba bersih total. HPP tidak diekspos ke non-Owner.
+function withVisibility(h: any, s: any) {
   const result: any = {
-    target_omset_idr: target,
-    omset_idr: omset,
-    tercapai,
-    progress_persen: target > 0 ? Math.min(100, (omset / target) * 100) : 0,
-    transaksi_count: agg.transaksi_count,
-    biaya_operasional_count: agg.biaya_count,
+    target_omset_idr: num(h?.target_omset_idr, 0),
+    omset_idr: num(h?.omset_idr, 0),
+    tercapai: !!h?.tercapai,
+    progress_persen: num(h?.progress_persen, 0),
+    transaksi_count: num(h?.transaksi_count, 0),
+    omset_setelah_target_idr: null,
+    biaya_setelah_target_idr: null,
+    laba_setelah_target_idr: null,
+    tercapai_pada: null,
+    nota_tercapai: null,
+    hpp_kosong_count: num(h?.hpp_kosong_count, 0),
   };
-
-  if (tercapai && agg.hpp_available) {
-    const hpp = num(agg.total_hpp_idr, 0);
-    const biaya = num(agg.biaya_operasional_idr, 0);
-    const laba = omset - hpp - biaya;
-    result.total_hpp_idr = hpp;
-    result.biaya_operasional_idr = biaya;
-    result.laba_bersih_idr = laba;
-  } else if (tercapai && !agg.hpp_available) {
-    result.total_hpp_idr = null;
-    result.biaya_operasional_idr = num(agg.biaya_operasional_idr, 0);
-    result.laba_bersih_idr = null;
-    result.catatan = "HPP tidak tersedia/lengkap; laba tidak dapat dihitung.";
-  } else {
-    // sebelum tercapai: HPP & biaya_op & laba disembunyikan
-    result.total_hpp_idr = null;
-    result.biaya_operasional_idr = null;
-    result.laba_bersih_idr = null;
+  if (result.tercapai) {
+    result.omset_setelah_target_idr = num(h.omset_setelah_target_idr, 0);
+    result.biaya_setelah_target_idr = num(h.biaya_setelah_target_idr, 0);
+    result.laba_setelah_target_idr = num(h.laba_setelah_target_idr, 0);
+    result.tercapai_pada = h.tercapai_pada;
+    result.nota_tercapai = h.nota_tercapai;
+    result.nota_setelah_target_count = num(h.nota_setelah_target_count, 0);
+    if (s.role === "Owner") result.hpp_setelah_target_idr = num(h.hpp_setelah_target_idr, 0);
   }
-
   return result;
 }
 
@@ -317,8 +273,18 @@ async function dashboardLaba(data: any, s: any) {
   if (!t) throw new Error("Target tidak ditemukan");
   cabangSesi(s, t.kode_cabang);
 
-  const agg = await aggregateTarget(t);
-  return { target: t, ringkasan: withVisibility(agg, t) };
+  return { target: t, ringkasan: withVisibility(await hitungTarget(t), s) };
+}
+
+// Rincian laba setelah target per nota (Owner only) — dasar pembagian ke tim.
+async function targetOmsetRincian(data: any, s: any) {
+  if (s.role !== "Owner") throw new Error("Hanya Owner yang boleh melihat rincian laba");
+  const id = uuidOrThrow(data?.id, "id target");
+  const rows = await rest(`/marketing_target_omsets?id=eq.${id}&limit=1`);
+  const t = rows?.[0];
+  if (!t) throw new Error("Target tidak ditemukan");
+  cabangSesi(s, t.kode_cabang);
+  return { target: t, hasil: await hitungTarget(t, true) };
 }
 
 async function dashboardProgressPerCabang(_data: any, s: any) {
@@ -345,12 +311,12 @@ async function dashboardProgressPerCabang(_data: any, s: any) {
       });
       continue;
     }
-    const agg = await aggregateTarget(t);
+    const h = await hitungTarget(t);
     out.push({
       kode_cabang: kode,
       nama_cabang: c.nama_cabang,
       target: { id: t.id, nama: t.nama_target, periode_mulai: t.periode_mulai, periode_selesai: t.periode_selesai, target_omset_idr: num(t.target_omset_idr, 0) },
-      ringkasan: withVisibility(agg, t),
+      ringkasan: withVisibility(h, s),
     });
   }
   return out;
@@ -361,6 +327,7 @@ const handlers: Record<string, (data: any, s: any) => Promise<any>> = {
   targetOmsetSave,
   targetOmsetDelete,
   targetOmsetStatus,
+  targetOmsetRincian,
   dashboardLaba,
   dashboardProgressPerCabang,
 };

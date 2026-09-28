@@ -121,24 +121,59 @@ var menus = {
 function menuSaya(s) {
   return { menu: menus[s.role] || [], user: { username: s.username, nama: s.nama, role: s.role, cabang_id: cabangSesi(s), login_at: s.login_at, shift: s.shift }, apotek: "Apotek Fa-Mitra", halamanAwal: s.role === "Kasir" ? "pos" : "dashboard" };
 }
-// Status target omset aktif untuk 1 cabang (tabel marketing_target_omsets).
-// Dipakai dashboard untuk menentukan apakah laba bersih boleh ditampilkan:
-// laba bersih baru terbuka setelah omset periode target >= target_omset_idr.
-// Tanpa target aktif = belum ada yang tercapai = laba tetap disembunyikan.
+// Ambil SEMUA baris (PostgREST membatasi jumlah baris per request), 1000 per halaman.
+async function semua(table, query) {
+  const rows = [];
+  for (let offset = 0; ; offset += 1000) {
+    const r = await db(table, `${query}&limit=1000&offset=${offset}`);
+    if (!r.ok) throw new Error(await r.text());
+    const page = await r.json();
+    rows.push(...page);
+    if (page.length < 1000) return rows;
+    if (rows.length > 200000) throw new Error("Data terlalu besar. Gunakan rentang lebih pendek.");
+  }
+}
+// Retur penjualan dalam rentang (dihitung pada TANGGAL RETUR) beserta HPP barang
+// yang kembali (qty retur x harga_modal batch asal di trx_penjualan_detail).
+async function returDalamRentang(cabangId, r0) {
+  const cab = encodeURIComponent(cabangId);
+  const returs = await semua("trx_retur_jual", `${qsRange(r0, "tanggal")}&cabang_id=eq.${cab}&select=no_retur,no_nota_asal,total_refund,shift&order=no_retur`);
+  if (!returs.length) return [];
+  const hppPer = {};
+  for (let i = 0; i < returs.length; i += 100) {
+    const potong = returs.slice(i, i + 100);
+    const det = await semua("trx_retur_jual_detail", `?cabang_id=eq.${cab}&no_retur=in.(${potong.map((x) => encodeURIComponent(x.no_retur)).join(",")})&select=no_retur,kode_obat,kode_batch,qty&order=id`);
+    const asal = await semua("trx_penjualan_detail", `?cabang_id=eq.${cab}&no_nota=in.(${[...new Set(potong.map((x) => encodeURIComponent(x.no_nota_asal)))].join(",")})&select=no_nota,kode_obat,kode_batch,harga_modal&order=id`);
+    for (const d of det) {
+      const nota = potong.find((x) => x.no_retur === d.no_retur).no_nota_asal;
+      const ref = asal.find((x) => x.no_nota === nota && x.kode_obat === d.kode_obat && x.kode_batch === d.kode_batch);
+      hppPer[d.no_retur] = (hppPer[d.no_retur] || 0) + Number(d.qty || 0) * Number(ref ? ref.harga_modal : 0);
+    }
+  }
+  return returs.map((x) => ({ ...x, refund: Number(x.total_refund || 0), hpp: hppPer[x.no_retur] || 0 }));
+}
+// Jumlah yang sudah diretur untuk 1 nota: total refund + qty per obat|batch.
+async function sudahDiretur(cabangId, noNota) {
+  const cab = encodeURIComponent(cabangId);
+  const rs = await semua("trx_retur_jual", `?cabang_id=eq.${cab}&no_nota_asal=eq.${encodeURIComponent(noNota)}&select=no_retur,total_refund&order=no_retur`);
+  const qty = {};
+  if (rs.length) {
+    const det = await semua("trx_retur_jual_detail", `?cabang_id=eq.${cab}&no_retur=in.(${rs.map((x) => encodeURIComponent(x.no_retur)).join(",")})&select=kode_obat,kode_batch,qty&order=id`);
+    for (const d of det) qty[`${d.kode_obat}|${d.kode_batch}`] = (qty[`${d.kode_obat}|${d.kode_batch}`] || 0) + Number(d.qty || 0);
+  }
+  return { refund: rs.reduce((n, x) => n + Number(x.total_refund || 0), 0), qty };
+}
+// Status target omset aktif cabang + laba bersih SETELAH target (RPC
+// marketing_hitung_target). Tanpa target aktif = laba tetap terkunci.
 async function statusTargetCabang(cabangId) {
-  const tr = await db("marketing_target_omsets", `?kode_cabang=eq.${encodeURIComponent(cabangId)}&aktif=eq.true&select=periode_mulai,periode_selesai,target_omset_idr&limit=1`);
+  const tr = await db("marketing_target_omsets", `?kode_cabang=eq.${encodeURIComponent(cabangId)}&aktif=eq.true&select=id,nama_target,periode_mulai,periode_selesai&limit=1`);
   if (!tr.ok) return { ada_target: false, tercapai: false };
   const t = (await tr.json())[0];
   if (!t) return { ada_target: false, tercapai: false };
-  let omset = 0;
-  for (let offset = 0; ; offset += 1000) {
-    const r = await db("trx_penjualan", `?cabang_id=eq.${encodeURIComponent(cabangId)}&tanggal=gte.${t.periode_mulai}&tanggal=lte.${t.periode_selesai}&select=harga_akhir&order=no_nota&limit=1000&offset=${offset}`);
-    if (!r.ok) return { ada_target: true, tercapai: false };
-    const page = await r.json();
-    omset += page.reduce((n, x) => n + Number(x.harga_akhir || 0), 0);
-    if (page.length < 1000) break;
-  }
-  return { ada_target: true, tercapai: omset >= Number(t.target_omset_idr || 0) };
+  const r = await db("rpc/marketing_hitung_target", "", { method: "POST", body: JSON.stringify({ p_target_id: t.id, p_rincian: false }) });
+  if (!r.ok) return { ada_target: true, tercapai: false };
+  const h = await r.json();
+  return { ada_target: true, tercapai: !!(h && h.tercapai), laba: h && h.tercapai ? Number(h.laba_setelah_target_idr || 0) : null, target: { nama: t.nama_target, periode_mulai: t.periode_mulai, periode_selesai: t.periode_selesai } };
 }
 async function stokDashboard(cabangId) {
   const [br, sb] = await Promise.all([
@@ -367,21 +402,23 @@ async function action(name, data, s) {
   if (name === "dashboard.ringkasan") {
     const f = data.filter || {};
     const r0 = rangeOf(f);
-    const sales = await (await db("trx_penjualan", `${qsRange(r0, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_nota,tanggal,jam,nama_pelanggan,nomor_wa,tipe_customer,petugas_transaksi,shift,subtotal,diskon,harga_akhir,total_hpp&order=timestamp.desc&limit=500`)).json();
-    const expenses = await (await db("biaya_operasional", `${qsRange(r0, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=id,tanggal,keterangan,nominal,shift,petugas&order=timestamp.desc&limit=500`)).json();
+    const sales = await semua("trx_penjualan", `${qsRange(r0, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_nota,tanggal,jam,nama_pelanggan,nomor_wa,tipe_customer,petugas_transaksi,shift,subtotal,diskon,harga_akhir,total_hpp&order=timestamp.desc,no_nota`);
+    const expenses = await semua("biaya_operasional", `${qsRange(r0, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=id,tanggal,keterangan,nominal,shift,petugas&order=timestamp.desc,id`);
+    const returs = await returDalamRentang(cabangSesi(s), r0);
     const omzet = sales.reduce((n, x) => n + Number(x.harga_akhir || 0), 0), hpp = sales.reduce((n, x) => n + Number(x.total_hpp || 0), 0), biaya = expenses.reduce((n, x) => n + Number(x.nominal || 0), 0);
     const shiftOk = (x) => !f.shift || f.shift === "Semua" || x.shift === f.shift;
     const ss = sales.filter(shiftOk);
     const ee = expenses.filter(shiftOk);
-    const omzet2 = ss.reduce((n, x) => n + Number(x.harga_akhir || 0), 0), hpp2 = ss.reduce((n, x) => n + Number(x.total_hpp || 0), 0), biaya2 = ee.reduce((n, x) => n + Number(x.nominal || 0), 0);
+    const rr = returs.filter(shiftOk);
+    // Omzet & HPP bersih retur (retur dihitung pada tanggal retur).
+    const omzet2 = ss.reduce((n, x) => n + Number(x.harga_akhir || 0), 0) - rr.reduce((n, x) => n + x.refund, 0), hpp2 = ss.reduce((n, x) => n + Number(x.total_hpp || 0), 0) - rr.reduce((n, x) => n + x.hpp, 0), biaya2 = ee.reduce((n, x) => n + Number(x.nominal || 0), 0);
+    const hppKosong = ss.filter((x) => x.total_hpp === null || x.total_hpp === undefined).length;
     const liveSales = ss.slice(0, 10).map((x) => ({ No_Nota: x.no_nota, Nama_Pelanggan: x.nama_pelanggan, Harga_Akhir: x.harga_akhir, Jam: x.jam, Shift: x.shift }));
     const liveExpense = ee.slice(0, 10).map((x) => ({ Keterangan: x.keterangan, Nominal: x.nominal, Tanggal: x.tanggal }));
-    const ids = ss.map((x) => x.no_nota).filter(Boolean);
-    let details = [];
-    if (ids.length) {
-      const dr = await db("trx_penjualan_detail", `?no_nota=in.(${ids.map((x) => encodeURIComponent(x)).join(",")})&select=no_nota,kode_obat,nama_obat,qty,subtotal&limit=5000`);
-      if (dr.ok) details = await dr.json();
-    }
+    // Detail diambil per rentang tanggal (bukan daftar no_nota) supaya URL tidak
+    // kepanjangan, lalu disaring ke nota yang lolos filter shift.
+    const idSet = new Set(ss.map((x) => x.no_nota));
+    const details = (await semua("trx_penjualan_detail", `${qsRange(r0, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_nota,kode_obat,nama_obat,qty,subtotal&order=id`)).filter((x) => idSet.has(x.no_nota));
     const prod = {};
     details.forEach((x) => {
       const k = x.kode_obat || x.nama_obat || "Tanpa kode";
@@ -421,16 +458,22 @@ async function action(name, data, s) {
     });
     // Laba bersih di dashboard baru terbuka setelah target omset cabang tercapai
     // (berlaku untuk semua role). Halaman Kelola Target Omset (Owner) tidak terpengaruh.
+    // Yang dibuka setelah target tercapai adalah laba bersih SETELAH target
+    // (laba bonus tim, periode target), bukan laba bersih total rentang ini.
     const target = await statusTargetCabang(cabangSesi(s));
-    return { rentang: { label: r0.label }, shift_filter: f.shift || "Semua", kpi: { omzet: omzet2, laba_kotor: omzet2 - hpp2, laba_bersih: target.tercapai ? omzet2 - hpp2 - biaya2 : null, laba_bersih_terbuka: target.tercapai, laba_bersih_alasan: target.tercapai ? "" : target.ada_target ? "Target omset belum tercapai" : "Belum ada target omset aktif", nota: ss.length, rata_nota: ss.length ? omzet2 / ss.length : 0, delta_omzet: null, delta_nota: null, delta_rata: null }, sparkline, ...await stokDashboard(cabangSesi(s)), pj_shift: { role: s.role, petugas: s.nama, shift: shift(), jam: clock(), login_at: s.login_at, di_luar_jam: shift() === "Luar Jam", petugas_jaga: null }, segmen_pelanggan: segmen, live_sales: liveSales, live_expense: liveExpense, shift_chart: shiftChart, top_produk: topProduk, top_pelanggan: topPelanggan, at_risk: [], ai_enabled: false };
+    return { rentang: { label: r0.label }, shift_filter: f.shift || "Semua", kpi: { omzet: omzet2, laba_kotor: omzet2 - hpp2, laba_bersih: null, laba_setelah_target: target.tercapai ? target.laba : null, laba_bersih_terbuka: target.tercapai, laba_bersih_alasan: target.tercapai ? "" : target.ada_target ? "Target omset belum tercapai" : "Belum ada target omset aktif", target_info: target.target || null, retur_total: rr.reduce((n, x) => n + x.refund, 0), hpp_kosong: hppKosong, nota: ss.length, rata_nota: ss.length ? omzet2 / ss.length : 0, delta_omzet: null, delta_nota: null, delta_rata: null }, sparkline, ...await stokDashboard(cabangSesi(s)), pj_shift: { role: s.role, petugas: s.nama, shift: shift(), jam: clock(), login_at: s.login_at, di_luar_jam: shift() === "Luar Jam", petugas_jaga: null }, segmen_pelanggan: segmen, live_sales: liveSales, live_expense: liveExpense, shift_chart: shiftChart, top_produk: topProduk, top_pelanggan: topPelanggan, at_risk: [], ai_enabled: false };
   }
   if (name === "laporan.labaRugi") {
     const r0 = rangeOf(data.filter || {});
-    const sales = await (await db("trx_penjualan", `${qsRange(r0, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_nota,tipe_customer,harga_akhir,diskon,total_hpp&limit=5000`)).json();
-    const expenses = await (await db("biaya_operasional", `${qsRange(r0, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=keterangan,nominal&limit=5000`)).json();
+    const sales = await semua("trx_penjualan", `${qsRange(r0, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_nota,tipe_customer,harga_akhir,diskon,total_hpp&order=no_nota`);
+    const expenses = await semua("biaya_operasional", `${qsRange(r0, "tanggal")}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=keterangan,nominal&order=id`);
+    // Retur dihitung pada tanggal retur: mengurangi omzet (refund) dan HPP (barang kembali).
+    const returs = await returDalamRentang(cabangSesi(s), r0);
+    const retur = returs.reduce((n, x) => n + x.refund, 0);
+    const hppRetur = returs.reduce((n, x) => n + x.hpp, 0);
     const omzet = sales.reduce((n, x) => n + Number(x.harga_akhir || 0) + Number(x.diskon || 0), 0);
     const diskon = sales.reduce((n, x) => n + Number(x.diskon || 0), 0);
-    const hpp = sales.reduce((n, x) => n + Number(x.total_hpp || 0), 0);
+    const hpp = sales.reduce((n, x) => n + Number(x.total_hpp || 0), 0) - hppRetur;
     const biaya = expenses.reduce((n, x) => n + Number(x.nominal || 0), 0);
     const tipe = {};
     sales.forEach((x) => {
@@ -440,7 +483,7 @@ async function action(name, data, s) {
       tipe[k].omzet += Number(x.harga_akhir || 0);
       tipe[k].laba += Number(x.harga_akhir || 0) - Number(x.total_hpp || 0);
     });
-    return { rentang: { label: r0.label }, omzet_kotor: omzet, total_diskon: diskon, total_hpp: hpp, laba_kotor: omzet - diskon - hpp, total_biaya: biaya, laba_bersih: omzet - diskon - hpp - biaya, jumlah_nota: sales.length, rata_nota: sales.length ? omzet / sales.length : 0, margin: omzet ? (omzet - diskon - hpp) / omzet * 100 : 0, per_tipe: Object.values(tipe), rincian_biaya: expenses.map((x) => ({ keterangan: x.keterangan, nominal: x.nominal })) };
+    return { rentang: { label: r0.label }, omzet_kotor: omzet, total_diskon: diskon, total_retur: retur, jumlah_retur: returs.length, total_hpp: hpp, laba_kotor: omzet - diskon - retur - hpp, total_biaya: biaya, laba_bersih: omzet - diskon - retur - hpp - biaya, jumlah_nota: sales.length, rata_nota: sales.length ? omzet / sales.length : 0, margin: omzet - diskon - retur ? (omzet - diskon - retur - hpp) / (omzet - diskon - retur) * 100 : 0, per_tipe: Object.values(tipe), rincian_biaya: expenses.map((x) => ({ keterangan: x.keterangan, nominal: x.nominal })) };
   }
   if (name === "retur.jualList") {
     if (data.mode === "riwayat") {
@@ -455,20 +498,31 @@ async function action(name, data, s) {
     for (const x of rows) {
       if (data.q && !(String(x.no_nota).toLowerCase().includes(String(data.q).toLowerCase()) || String(x.nama_pelanggan || "").toLowerCase().includes(String(data.q).toLowerCase()))) continue;
       const d = await db("trx_penjualan_detail", `?no_nota=eq.${encodeURIComponent(x.no_nota)}&select=*`);
-      const items = (await d.json()).map((i) => ({ Kode_Obat: i.kode_obat, Nama_Obat: i.nama_obat, Kode_Batch: i.kode_batch, Qty: i.qty, Harga_Satuan: i.harga_satuan }));
-      out.push({ ...x, No_Nota: x.no_nota, Tanggal: x.tanggal, Jam: x.jam, Nama_Pelanggan: x.nama_pelanggan, sudah_retur: 0, items });
+      const sudah = await sudahDiretur(cabangSesi(s), x.no_nota);
+      const items = (await d.json()).map((i) => ({ Kode_Obat: i.kode_obat, Nama_Obat: i.nama_obat, Kode_Batch: i.kode_batch, Qty: i.qty, Harga_Satuan: i.harga_satuan, Sudah_Retur_Qty: sudah.qty[`${i.kode_obat}|${i.kode_batch}`] || 0 }));
+      out.push({ ...x, No_Nota: x.no_nota, Tanggal: x.tanggal, Jam: x.jam, Nama_Pelanggan: x.nama_pelanggan, sudah_retur: sudah.refund, items });
     }
     return out;
   }
   if (name === "retur.jualSimpan") {
     const orig = await one("trx_penjualan", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&no_nota=eq.${encodeURIComponent(data.No_Nota_Asal)}&select=*`);
     if (!orig) throw new Error("Nota asal tidak ditemukan.");
-    const ds = await db("trx_penjualan_detail", `?no_nota=eq.${encodeURIComponent(data.No_Nota_Asal)}&select=*`);
+    const ds = await db("trx_penjualan_detail", `?no_nota=eq.${encodeURIComponent(data.No_Nota_Asal)}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=*`);
     const refs = await ds.json();
+    // Refund mengikuti harga yang benar-benar dibayar: diskon nota dibagi
+    // proporsional ke setiap item (harga_akhir / subtotal).
+    const faktor = Number(orig.subtotal || 0) > 0 ? Number(orig.harga_akhir || 0) / Number(orig.subtotal) : 1;
+    const sudah = await sudahDiretur(cabangSesi(s), data.No_Nota_Asal);
     const items = (data.items || []).map((i) => {
       const ref = refs.find((x) => x.kode_obat === i.Kode_Obat && x.kode_batch === i.Kode_Batch);
       if (!ref) throw new Error("Item retur tidak ada pada nota asal.");
-      return { ...i, ref, subtotal: Number(i.Qty || 0) * Number(ref.harga_satuan || 0) };
+      const qty = Number(i.Qty || 0);
+      const kunci = `${ref.kode_obat}|${ref.kode_batch}`;
+      const terjual = refs.filter((x) => x.kode_obat === ref.kode_obat && x.kode_batch === ref.kode_batch).reduce((n, x) => n + Number(x.qty || 0), 0);
+      if (!(qty > 0)) throw new Error("Qty retur harus lebih dari 0.");
+      if (qty > terjual - (sudah.qty[kunci] || 0)) throw new Error(`Qty retur ${ref.nama_obat} melebihi sisa yang bisa diretur (${terjual - (sudah.qty[kunci] || 0)}).`);
+      sudah.qty[kunci] = (sudah.qty[kunci] || 0) + qty;
+      return { ...i, Qty: qty, ref, subtotal: Math.round(qty * Number(ref.harga_satuan || 0) * faktor) };
     });
     const no = `RJ${today().replaceAll("-", "")}-${Date.now().toString().slice(-4)}`, total = items.reduce((n, i) => n + i.subtotal, 0);
     let r = await db("trx_retur_jual", "", { method: "POST", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ cabang_id: cabangSesi(s), no_retur: no, no_nota_asal: data.No_Nota_Asal, tanggal: today(), jam: clock(), nomor_wa: orig.nomor_wa, nama_pelanggan: orig.nama_pelanggan, petugas: s.username, shift: shift(), alasan: data.Alasan, total_refund: total }) });

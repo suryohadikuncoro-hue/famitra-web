@@ -160,8 +160,9 @@
   function renderProgressTab() {
     return '<div id="mt-progress-body">Memuat data…</div>' +
       '<div style="margin-top:14px;padding:12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:13px;color:#92400e;">' +
-        '<strong>Catatan:</strong> Sebelum target tercapai, perhitungan laba (HPP, biaya operasional, laba bersih) ' +
-        'disembunyikan untuk semua user. Setelah target tercapai, seluruh angka tampil otomatis.' +
+        '<strong>Catatan:</strong> Sebelum target tercapai, laba disembunyikan untuk semua user. ' +
+        'Setelah tercapai, yang tampil adalah <strong>laba bersih setelah target</strong>: laba dari omset di atas target, ' +
+        'dikurangi HPP bagian itu dan porsi biaya operasional (proporsional omset).' +
       '</div>';
   }
 
@@ -215,31 +216,28 @@
 
     var financialHtml = '';
     if (tercapai) {
-      // Laba visible — tampilkan HPP/biaya_op/laba jika tersedia
-      if (s.laba_bersih_idr !== null && s.laba_bersih_idr !== undefined) {
-        financialHtml =
-          '<div class="grid g3" style="margin-top:12px;">' +
-            '<div><div class="sub">HPP</div><strong>' + rupiah(s.total_hpp_idr) + '</strong></div>' +
-            '<div><div class="sub">Biaya Operasional</div><strong>' + rupiah(s.biaya_operasional_idr) + '</strong></div>' +
-            '<div><div class="sub">Laba Bersih</div>' +
-              '<strong style="color:' + (Number(s.laba_bersih_idr) >= 0 ? '#16a34a' : '#dc2626') + ';">' +
-                rupiah(s.laba_bersih_idr) +
-              '</strong></div>' +
-          '</div>';
-      } else {
-        financialHtml =
-          '<div style="margin-top:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;color:#991b1b;font-size:13px;">' +
-            '<strong>HPP tidak tersedia/lengkap</strong>; laba tidak dapat dihitung. ' +
-            'Pastikan transaksi memiliki nilai total_hpp yang valid.' +
-          '</div>';
-      }
+      // Yang dibuka hanya laba bersih SETELAH target (laba bonus tim).
+      financialHtml =
+        '<div class="grid g3" style="margin-top:12px;">' +
+          '<div><div class="sub">Omset di atas target</div><strong>' + rupiah(s.omset_setelah_target_idr) + '</strong></div>' +
+          '<div><div class="sub">Biaya operasional (porsi)</div><strong>' + rupiah(s.biaya_setelah_target_idr) + '</strong></div>' +
+          '<div><div class="sub">Laba setelah target</div>' +
+            '<strong style="color:' + (Number(s.laba_setelah_target_idr) >= 0 ? '#16a34a' : '#dc2626') + ';">' +
+              rupiah(s.laba_setelah_target_idr) +
+            '</strong></div>' +
+        '</div>' +
+        '<div class="sub" style="margin-top:6px;">Target tercapai di nota <strong>' + esc(s.nota_tercapai || "—") + '</strong>' +
+          (s.tercapai_pada ? ' &middot; ' + esc(new Date(s.tercapai_pada).toLocaleString("id-ID")) : '') +
+          ' &middot; ' + formatAngka(s.nota_setelah_target_count) + ' nota setelah target</div>' +
+        (s.hpp_kosong_count ? '<div style="margin-top:8px;color:#991b1b;font-size:13px;">&#9888; ' +
+          formatAngka(s.hpp_kosong_count) + ' nota tanpa HPP &mdash; laba bisa terlalu besar.</div>' : '');
     } else {
       // Laba disembunyikan sesuai permintaan Owner
       financialHtml =
         '<div style="margin-top:12px;padding:14px;background:#f1f5f9;border:1px dashed #94a3b8;border-radius:8px;text-align:center;">' +
           '<div style="font-size:24px;line-height:1;">&#128274;</div>' +
           '<div style="margin-top:6px;font-weight:600;color:#475569;">Laba disembunyikan &mdash; target belum tercapai</div>' +
-          '<div class="sub" style="margin-top:2px;">Angka HPP, biaya operasional, dan laba bersih akan muncul setelah target tercapai.</div>' +
+          '<div class="sub" style="margin-top:2px;">Laba bersih setelah target akan muncul setelah target tercapai.</div>' +
         '</div>';
     }
 
@@ -258,8 +256,7 @@
         '<div style="background:' + (tercapai ? '#16a34a' : '#0ea5e9') + ';width:' + pct.toFixed(1) + '%;height:100%;transition:width .3s ease;"></div>' +
       '</div>' +
       '<div class="sub" style="margin-top:6px;">' +
-        formatAngka(s.transaksi_count) + ' transaksi &middot; ' +
-        formatAngka(s.biaya_operasional_count) + ' catatan biaya operasional' +
+        formatAngka(s.transaksi_count) + ' transaksi (omset sudah dikurangi retur)' +
       '</div>' +
       financialHtml;
   }
@@ -316,15 +313,14 @@
         ? '<span class="chip" style="background:#d1fae5;color:#065f46;">Aktif</span>'
         : '<span class="chip" style="background:#f1f5f9;color:#64748b;">Non-aktif</span>';
 
-      var labaCell;
-      if (t.laba_bersih_idr !== null && t.laba_bersih_idr !== undefined) {
-        labaCell = '<strong style="color:' + (Number(t.laba_bersih_idr) >= 0 ? '#16a34a' : '#dc2626') + ';">' +
-          rupiah(t.laba_bersih_idr) + '</strong>';
-      } else if (t.hpp_available === false) {
-        labaCell = '<span class="sub" style="color:#991b1b;">HPP tidak lengkap</span>';
-      } else {
-        labaCell = '<span class="sub">—</span>';
-      }
+      var labaCell = (t.laba_bersih_idr !== null && t.laba_bersih_idr !== undefined)
+        ? '<strong style="color:' + (Number(t.laba_bersih_idr) >= 0 ? '#16a34a' : '#dc2626') + ';">' + rupiah(t.laba_bersih_idr) + '</strong>'
+        : '<span class="sub">—</span>';
+      if (t.hpp_kosong_count) labaCell += '<br/><span class="sub" style="color:#991b1b;">' + formatAngka(t.hpp_kosong_count) + ' nota tanpa HPP</span>';
+      var bonusCell = t.tercapai
+        ? '<strong style="color:' + (Number(t.laba_setelah_target_idr) >= 0 ? '#16a34a' : '#dc2626') + ';">' + rupiah(t.laba_setelah_target_idr) + '</strong>' +
+          '<br/><button class="btn btn-sm" style="margin-top:4px;" data-mt-rincian="' + esc(t.id) + '">Rincian</button>'
+        : '<span class="sub">&#128274; Belum tercapai</span>';
 
       return '<tr>' +
         '<td><strong>' + esc(t.nama_target) + '</strong></td>' +
@@ -333,6 +329,7 @@
         '<td class="r"><strong>' + rupiah(t.target_omset_idr) + '</strong></td>' +
         '<td class="r">' + rupiah(t.omset_idr) + '</td>' +
         '<td class="r">' + labaCell + '</td>' +
+        '<td class="r">' + bonusCell + '</td>' +
         '<td class="c">' + status + '</td>' +
         '<td class="c" style="white-space:nowrap;">' +
           '<button class="btn btn-sm" data-mt-edit="' + esc(t.id) + '">Ubah</button> ' +
@@ -344,9 +341,48 @@
     }).join("");
 
     return '<div class="card"><div class="table-wrap"><table>' +
-      '<thead><tr><th>Nama Target</th><th>Cabang</th><th>Periode</th><th class="r">Target</th><th class="r">Omset</th><th class="r">Laba Bersih</th><th class="c">Status</th><th class="c">Aksi</th></tr></thead>' +
+      '<thead><tr><th>Nama Target</th><th>Cabang</th><th>Periode</th><th class="r">Target</th><th class="r">Omset</th><th class="r">Laba Bersih Total</th><th class="r">Laba Setelah Target</th><th class="c">Status</th><th class="c">Aksi</th></tr></thead>' +
       '<tbody>' + trs + '</tbody>' +
       '</table></div></div>';
+  }
+
+  // ---------------- Rincian laba setelah target (Owner only) ----------------
+  // Dasar pembagian ke tim: nota mana saja yang masuk omset di atas target.
+  function bukaRincian(id) {
+    modalBuka("Rincian laba setelah target", kerangka(3), [{ label: "Tutup", aksi: modalTutup }]);
+    marketingApi("targetOmsetRincian", { id: id }).then(function (r) {
+      var h = r.hasil || {};
+      var baris = (h.rincian || []).map(function (x) {
+        return '<tr><td>' + esc(x.no_nota) + (x.sebagian ? ' <span class="chip" style="background:#fef3c7;color:#92400e;">sebagian</span>' : '') + '</td>' +
+          '<td>' + tglIndo(x.tanggal) + ' ' + esc(x.jam || "") + '</td>' +
+          '<td class="r">' + rupiah(x.omset_setelah_target_idr) + '</td>' +
+          '<td class="r">' + rupiah(x.hpp_setelah_target_idr) + '</td>' +
+          '<td class="r">' + rupiah(x.laba_kotor_setelah_target_idr) + '</td></tr>';
+      }).join("");
+      document.getElementById("modalBody").innerHTML =
+        '<div class="sub" style="margin-bottom:8px;">' + esc(r.target.nama_target) + ' &middot; ' +
+          tglIndo(r.target.periode_mulai) + ' s.d. ' + tglIndo(r.target.periode_selesai) + '</div>' +
+        '<div class="table-wrap"><table>' +
+          '<tr><td>Omset bersih periode (setelah retur)</td><td class="r">' + rupiah(h.omset_idr) + '</td></tr>' +
+          '<tr><td>Target omset</td><td class="r">' + rupiah(h.target_omset_idr) + '</td></tr>' +
+          '<tr><td>Tercapai di nota</td><td class="r">' + esc(h.nota_tercapai || "—") +
+            (h.tercapai_pada ? '<br/><span class="sub">' + esc(new Date(h.tercapai_pada).toLocaleString("id-ID")) + '</span>' : '') + '</td></tr>' +
+          '<tr><td><strong>Omset di atas target</strong></td><td class="r"><strong>' + rupiah(h.omset_setelah_target_idr) + '</strong></td></tr>' +
+          '<tr><td>HPP bagian di atas target</td><td class="r">-' + rupiah(h.hpp_setelah_target_idr) + '</td></tr>' +
+          '<tr><td>Biaya operasional (porsi ' + (h.omset_idr > 0 ? (h.omset_setelah_target_idr / h.omset_idr * 100).toFixed(1) : '0') + '% dari ' + rupiah(h.biaya_operasional_idr) + ')</td>' +
+            '<td class="r">-' + rupiah(h.biaya_setelah_target_idr) + '</td></tr>' +
+          '<tr><td><strong>Laba bersih setelah target</strong></td><td class="r"><strong>' + rupiah(h.laba_setelah_target_idr) + '</strong></td></tr>' +
+        '</table></div>' +
+        (h.hpp_kosong_count ? '<div style="margin-top:8px;color:#991b1b;font-size:13px;">&#9888; ' + formatAngka(h.hpp_kosong_count) + ' nota tanpa HPP &mdash; periksa sebelum dibagikan.</div>' : '') +
+        '<h4 style="margin:14px 0 6px;">Nota setelah target (' + formatAngka((h.rincian || []).length) + ')</h4>' +
+        '<div class="table-wrap" style="max-height:320px;overflow:auto;"><table>' +
+          '<thead><tr><th>Nota</th><th>Waktu</th><th class="r">Omset</th><th class="r">HPP</th><th class="r">Laba kotor</th></tr></thead>' +
+          '<tbody>' + (baris || '<tr><td colspan="5" class="sub">Belum ada.</td></tr>') + '</tbody>' +
+        '</table></div>' +
+        '<div class="sub" style="margin-top:8px;">Omset sudah dikurangi retur (dibebankan ke nota asal). Nota penembus target hanya dihitung bagian di atas target.</div>';
+    }).catch(function (e) {
+      document.getElementById("modalBody").innerHTML = '<div class="empty" style="color:#dc2626;">' + esc(e.message) + '</div>';
+    });
   }
 
   // ---------------- Tab: Form Target (Owner only) ----------------
@@ -500,6 +536,11 @@
     if (onlyAktifCb) onlyAktifCb.onchange = function () { loadTargetList(bodyEl); };
 
     bodyEl.onclick = function (e) {
+      var rincianBtn = e.target.closest("[data-mt-rincian]");
+      if (rincianBtn) {
+        bukaRincian(rincianBtn.getAttribute("data-mt-rincian"));
+        return;
+      }
       var editBtn = e.target.closest("[data-mt-edit]");
       if (editBtn) {
         state.editId = editBtn.getAttribute("data-mt-edit");
@@ -545,7 +586,7 @@
             '<div class="eyebrow">MARKETING &middot; TARGET OMSET</div>' +
             '<h2>Target Omset &amp; Laba Bersih</h2>' +
             '<p class="sub">Owner menetapkan target omset untuk cabangnya sendiri per periode. Sebelum target tercapai, ' +
-              'laba disembunyikan. Setelah tercapai, seluruh angka tampil.</p>' +
+              'laba disembunyikan. Setelah tercapai, tampil laba bersih setelah target (untuk dibagikan ke tim).</p>' +
           '</div></div>' +
           '<div id="mt-tabs"></div>' +
           '<div id="mt-body">' + kerangka(3) + '</div>' +
