@@ -59,8 +59,9 @@ WHERE k.kode_cabang = 'KARLA';
 
 -- -----------------------------------------------------------------------------
 -- 2. Akun uji coba. Hash sama dengan yang dipakai login: SHA-256 hex dari password.
---    Catatan: dev_owner berperan Owner sehingga fungsi marketing menampilkan SEMUA cabang
---    kepadanya. Karena itu password-nya harus kuat dan akun dihapus sebelum go-live.
+--    Catatan: akun ini hidup di database yang SAMA dengan produksi, jadi pakai password yang
+--    kuat dan hapus akun (jalankan dev_cabang_cleanup.sql) sebelum go-live. Sejak isolasi cabang,
+--    dev_owner hanya melihat data cabang DEV; data KARLA/KENDAL/PUCUK/PULE tidak terlihat.
 -- -----------------------------------------------------------------------------
 INSERT INTO public.app_users (username, nama, role, aktif, cabang_id, password_hash)
 VALUES
