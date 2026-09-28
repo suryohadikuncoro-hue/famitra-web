@@ -742,3 +742,15 @@ html,body{max-width:100%;overflow-x:hidden}
 .grafik-titik{fill:var(--surface); stroke:var(--brand); stroke-width:3}
 .grafik-tip{position:absolute; pointer-events:none; background:var(--ink-deep); color:#fff; border-radius:8px; padding:8px 11px; font-size:12.5px; line-height:1.45; white-space:nowrap; box-shadow:var(--sh-2)}
 .grafik-tip-tgl{font-size:11px; color:rgba(255,255,255,.65)}
+
+/* Hero dashboard 50:50 — gauge target lebih besar, angka pendukung 2×2 (A + C) */
+@media (min-width:821px){
+  #dbIsi .hero{grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:28px}
+  #dbIsi .hero-satelit{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 24px; margin-top:20px; padding-top:18px}
+  #dbIsi .hero .sat-label{font-size:12.5px}
+  #dbIsi .hero .sat-nilai{font-size:22px}
+  #dbIsi .hero-target .gauge{max-width:360px}
+  #dbIsi .hero-target .gauge-info{gap:8px}
+  #dbIsi .hero-target .gauge-baris .sub,#dbIsi .hero-target .gauge-kunci,#dbIsi .hero-target .gauge-periode{font-size:12.5px}
+  #dbIsi .hero-target .gauge-laba strong{font-size:20px}
+}
