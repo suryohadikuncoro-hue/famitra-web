@@ -986,3 +986,80 @@ body{background:var(--shell)}
   .db-hp-sembunyi{display:none}
   .db-rentang button{padding:7px 14px}
 }
+
+/* Sidebar: tanpa scrollbar yang terlihat; menu dipadatkan di layar pendek
+   supaya muat tanpa perlu digeser (tetap bisa di-scroll bila benar-benar penuh). */
+#navMenu{scrollbar-width:none;-ms-overflow-style:none}
+#navMenu::-webkit-scrollbar{display:none}
+@media (min-width:881px) and (max-height:820px){
+  .sidebar{padding-top:16px;padding-bottom:14px}
+  .sidebar-brand,.sidebar-cabang{margin-bottom:12px}
+  #navMenu button{padding-top:7px;padding-bottom:7px}
+}
+@media (min-width:881px) and (max-height:700px){
+  .sidebar-cabang{display:none}
+  #navMenu button{padding-top:5px;padding-bottom:5px}
+}
+
+/* ================================================= Tema v12: Kasir (POS)
+   Sebelumnya: pembungkus hitam dengan margin negatif → tepi putih + blok hitam
+   di dalam panel terang. Sekarang: kartu putih di panel terang seperti halaman
+   lain, dan panel pembayaran menjadi SATU kartu gelap sebagai fokus utama. */
+.pos-dark{margin:0!important;padding:0!important;min-height:0!important;background:transparent!important;color:var(--ink)}
+.pos-dark h3,.pos-dark h4{color:var(--ink-deep)}
+.pos-dark .card{background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:20px;box-shadow:none}
+.pos-dark .field>span{color:var(--muted)}
+.pos-dark .inp{background:var(--paper);border-color:var(--line);color:var(--ink);border-radius:12px}
+.pos-dark .inp:focus{background:#fff;border-color:var(--brand);box-shadow:0 0 0 3px rgba(206,44,43,.14)}
+.pos-dark .inp::placeholder{color:#9BA0A8}
+.pos-dark th{color:#9BA0A8;border-bottom-color:var(--line)}
+.pos-dark td{border-bottom-color:#F1F2F5}
+.pos-dark .empty,.pos-dark .sub{color:var(--muted)}
+.pos-dark .chip{background:var(--paper);color:var(--muted);border-color:var(--line)}
+.pos-dark .chip-brand{background:var(--brand-soft);color:var(--brand-dark);border-color:transparent}
+.pos-dark .btn{background:#fff;border-color:var(--line);color:var(--ink);border-radius:99px}
+.pos-dark .btn:hover{background:var(--paper);border-color:var(--line-strong)}
+.pos-dark .btn-brand{background:var(--brand);border-color:var(--brand);color:#fff}
+.pos-dark .kbd-hint{color:var(--muted);border-color:var(--line-strong)}
+.pos-dark .pos-search .inp{background:#fff;border:1.5px solid var(--line-strong);border-radius:14px}
+.pos-dark .pos-search .inp:focus{border-color:var(--brand)}
+.pos-dark .pos-customer-info:empty{display:none}
+.pos-dark .suggest{background:#fff;border-color:var(--line);box-shadow:0 16px 40px rgba(20,22,27,.14)}
+.pos-dark .suggest button{color:var(--ink);border-bottom-color:#F1F2F5}
+.pos-dark .suggest button:hover,.pos-dark .suggest button.is-cursor{background:var(--brand-soft)}
+.pos-dark .s-meta,.pos-dark .cart-meta{color:var(--muted)}
+.pos-dark .cart-item{background:var(--paper);border-color:var(--line);border-radius:14px}
+.pos-dark .qty input{background:#fff;border-color:var(--line-strong);color:var(--ink)}
+.pos-dark .qty button{background:#fff;border-color:var(--line-strong);color:var(--ink)}
+.pos-dark .qty button:hover{background:var(--brand-soft);border-color:var(--brand-line)}
+/* Panel pembayaran: kartu gelap */
+.pos-dark .pos-pay{background:var(--shell,#141517);border-color:var(--shell,#141517);color:#E7E8EA;border-radius:22px;overflow:hidden}
+.pos-dark .pos-pay::after{content:"";position:absolute;right:-60px;top:-70px;width:200px;height:200px;border-radius:50%;background:rgba(206,44,43,.3);filter:blur(45px);pointer-events:none}
+.pos-dark .pos-pay>*{position:relative;z-index:1}
+.pos-dark .pos-pay .sub,.pos-dark .pos-pay .field>span{color:#A1A4AB}
+.pos-dark .pos-pay .inp{background:#1D1F23;border-color:rgba(255,255,255,.1);color:#fff}
+.pos-dark .pos-pay .inp:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(206,44,43,.25)}
+.pos-dark .pos-pay .inp::placeholder{color:#6E727A}
+.pos-dark .pos-pay .btn{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12);color:#E7E8EA}
+.pos-dark .pos-pay .btn:hover{background:rgba(255,255,255,.12)}
+.pos-dark .pos-pay .pay-row{color:#C9CBD0}
+.pos-dark .pos-pay .pay-row.total{border-top-color:rgba(255,255,255,.1)}
+.pos-dark .pos-pay .pay-total{color:#fff}
+.pos-dark .pos-pay .pos-reward-row{background:rgba(255,255,255,.05);border-color:rgba(245,165,36,.45);color:#F5C66B}
+.pos-dark .pos-pay .pos-pay-grip{border-bottom-color:rgba(255,255,255,.1)}
+.pos-dark .pos-pay .pos-pay-grip span{background:rgba(255,255,255,.3)}
+@media (max-width:1040px){
+  .pos-dark{padding-bottom:160px!important}
+  .pos-dark .pos-pay{border-radius:22px 22px 0 0}
+}
+
+/* ================================================= Tema v12: Ringkasan AI (varian A — gelap)
+   Hanya tampilan: posisi, teks, tombol Mulai/Refresh, ID & class tetap. */
+.aibanner{background:#141517!important;color:#fff!important;border:0!important;border-left:0!important;border-radius:22px!important;box-shadow:none!important;padding:16px 20px!important}
+.aibanner::after{border:0!important;box-shadow:none!important;width:260px!important;height:260px!important;right:-80px!important;top:-120px!important;background:rgba(206,44,43,.38);filter:blur(50px)}
+.aibanner-tag{background:rgba(206,44,43,.28)!important;color:#FFD9D6!important;border:1px solid rgba(232,86,63,.45)!important;border-radius:99px!important}
+.aibanner p,.aibanner p strong{color:#fff!important}.aibanner p.sub{color:#A1A4AB!important}
+.aibanner .btn{background:#fff!important;color:#141517!important;border:0!important;border-radius:99px!important;padding:7px 16px!important}
+.aibanner-sorot{border-top-color:rgba(255,255,255,.1)!important;gap:8px!important}
+.aibanner-sorot>div{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:9px 11px}
+.aibanner .sorot-label,.aibanner .sorot-catatan{color:#8D9098!important}.aibanner .sorot-nilai{color:#fff!important}
