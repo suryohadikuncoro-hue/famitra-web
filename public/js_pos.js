@@ -85,8 +85,11 @@ function tataLetakPOS() {
 
     /* Panel pembayaran */
     '<div class="card pos-pay" id="posPayPanel">' +
-      '<button type="button" class="pos-pay-grip" id="posPayToggle" aria-label="Sembunyikan / tampilkan ringkasan bayar">' +
+      '<button type="button" class="pos-pay-grip" id="posPayToggle" aria-expanded="true" aria-controls="posPayPanel" aria-label="Buka / tutup panel pembayaran">' +
         '<span></span>' +
+        // Ringkasan yang terlihat saat panel tertutup di HP: jumlah item + total + ajakan bayar.
+        '<em class="pos-pay-ringkas"><small id="posPayRingkasItem">0 item</small>' +
+          '<b id="posPayRingkasTotal">Rp0</b><i class="pos-pay-aksi">Bayar</i></em>' +
       '</button>' +
       '<div class="pos-pay-body">' +
         '<div class="pay-row"><span>Subtotal item</span><span id="paySub" class="money">Rp0</span></div>' +
@@ -285,9 +288,28 @@ function pasangEventPOS() {
   // Toggle ringkasan bayar (mobile: tarik/tutup panel bawah).
   var grip = document.getElementById('posPayToggle');
   if (grip) {
-    grip.onclick = function () {
-      document.getElementById('posPayPanel').classList.toggle('is-collapsed');
+    var panel = document.getElementById('posPayPanel');
+    var aturPanel = function (tutup) {
+      panel.classList.toggle('is-collapsed', tutup);
+      grip.setAttribute('aria-expanded', tutup ? 'false' : 'true');
     };
+    grip.onclick = function () { aturPanel(!panel.classList.contains('is-collapsed')); };
+    // Di HP panel bayar mulai TERTUTUP supaya keranjang & pencarian terlihat;
+    // ringkasan total selalu tampil di bilah bawah, ketuk untuk membayar.
+    if (window.matchMedia && window.matchMedia('(max-width:1040px)').matches) aturPanel(true);
+    // Salin total & jumlah item ke bilah ringkas setiap kali berubah.
+    var salin = function () {
+      var t = document.getElementById('payTotal'), n = document.getElementById('posJumlah');
+      if (t) document.getElementById('posPayRingkasTotal').textContent = t.textContent;
+      if (n) document.getElementById('posPayRingkasItem').textContent = n.textContent;
+    };
+    if (typeof MutationObserver !== 'undefined') {
+      ['payTotal', 'posJumlah'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) new MutationObserver(salin).observe(el, { childList: true, characterData: true, subtree: true });
+      });
+    }
+    salin();
   }
 
   // Pintasan keyboard level layar POS.
