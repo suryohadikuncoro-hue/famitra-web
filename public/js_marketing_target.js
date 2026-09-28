@@ -282,7 +282,10 @@
   }
 
   function loadTargetList(bodyEl) {
-    bodyEl.innerHTML = '<div class="card">' +
+    var targetBody = bodyEl.querySelector("#mt-target-body");
+    if (!targetBody) return;
+
+    targetBody.innerHTML = '<div class="card">' +
       '<div class="sk sk-title"></div>' +
       '<div class="sk sk-row" style="width:80%"></div>' +
       '<div class="sk sk-row" style="width:60%"></div>' +
@@ -294,10 +297,10 @@
     marketingApi("targetOmsetList", { kode_cabang: cabang || null, only_aktif: onlyAktif })
       .then(function (rows) {
         state.targets = rows || [];
-        bodyEl.innerHTML = renderTargetTable(state.targets);
+        targetBody.innerHTML = renderTargetTable(state.targets);
       })
       .catch(function (e) {
-        bodyEl.innerHTML = '<div class="card"><div class="empty" style="color:#dc2626;">Gagal memuat target: ' +
+        targetBody.innerHTML = '<div class="card"><div class="empty" style="color:#dc2626;">Gagal memuat target: ' +
           esc(e.message) + '</div></div>';
       });
   }
