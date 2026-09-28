@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy api and promo
+    name: Deploy edge functions
     runs-on: ubuntu-latest
 
     env:
@@ -41,6 +41,9 @@ jobs:
           supabase --version
           test -f supabase/functions/api/index.ts
           test -f supabase/functions/promo/index.ts
+          test -f supabase/functions/marketing/index.ts
+          test -f supabase/functions/lottery/index.ts
+          test -f supabase/functions/hutang/index.ts
           grep -n "ppn: data.PPN" supabase/functions/api/index.ts
 
       - name: Deploy api
@@ -51,4 +54,19 @@ jobs:
       - name: Deploy promo
         run: |
           supabase functions deploy promo \
+            --project-ref "$PROJECT_ID"
+
+      - name: Deploy marketing
+        run: |
+          supabase functions deploy marketing \
+            --project-ref "$PROJECT_ID"
+
+      - name: Deploy lottery
+        run: |
+          supabase functions deploy lottery \
+            --project-ref "$PROJECT_ID"
+
+      - name: Deploy hutang
+        run: |
+          supabase functions deploy hutang \
             --project-ref "$PROJECT_ID"
