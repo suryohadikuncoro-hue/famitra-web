@@ -219,9 +219,9 @@ function gambarDashboard(d) {
         '</div>' +
         '<div class="hero-satelit">' +
           satelit('Laba kotor', rupiah(k.laba_kotor), k.laba_kotor < 0) +
-          (k.laba_bersih_terbuka
-            ? satelitLabaTarget(k)
-            : satelitTerkunci('Laba setelah target', k.laba_bersih_alasan)) +
+          // Laba bersih / laba setelah target ada di widget & halaman Target Omset;
+          // di sini diganti retur supaya tidak dobel.
+          satelit('Retur', rupiah(k.retur_total || 0), false) +
           satelit('Nota terjual', angka(k.nota), false, k.delta_nota) +
           satelit('Rata-rata nota', rupiah(k.rata_nota), false, k.delta_rata) +
         '</div>' +
@@ -419,25 +419,6 @@ function gambarDashboard(d) {
     '</div>';
 }
 
-/* Laba bersih SETELAH target (laba bonus tim) — dihitung untuk periode target,
-   bukan rentang filter dashboard, jadi periodenya ditulis jelas. */
-function satelitLabaTarget(k) {
-  var t = k.target_info || {};
-  return '<div><div class="sat-label">Laba setelah target</div>' +
-    '<div class="sat-nilai' + (k.laba_setelah_target < 0 ? ' minus' : '') + '">' + esc(rupiah(k.laba_setelah_target)) + '</div>' +
-    '<div class="sub" style="font-weight:400;font-size:11px">' +
-      (t.periode_mulai ? 'Periode ' + esc(tglIndo(t.periode_mulai)) + ' s.d. ' + esc(tglIndo(t.periode_selesai)) : 'Periode target') +
-    '</div></div>';
-}
-
-/* Satelit hero untuk angka yang disembunyikan (mis. laba bersih sebelum
-   target omset tercapai). */
-function satelitTerkunci(label, alasan) {
-  return '<div title="' + esc(alasan || 'Terkunci') + '"><div class="sat-label">' + esc(label) + '</div>' +
-    '<div class="sat-nilai">🔒</div>' +
-    '<div class="sub" style="font-weight:400;font-size:11px">' + esc(alasan || 'Terkunci') + '</div></div>';
-}
-
 function satelit(label, nilai, minus, delta) {
   return '<div><div class="sat-label">' + esc(label) + '</div>' +
     '<div class="sat-nilai' + (minus ? ' minus' : '') + '">' + esc(nilai) + '</div>' +
@@ -591,9 +572,7 @@ function cetakRingkasanOwner(d) {
     '<table style="width:100%">' +
       '<tr><td><strong>Omzet</strong></td><td class="r num">' + rupiah(k.omzet) + '</td></tr>' +
       '<tr><td>Laba kotor</td><td class="r num">' + rupiah(k.laba_kotor) + '</td></tr>' +
-      '<tr><td>Laba setelah target (periode target)</td><td class="r num">' + (k.laba_bersih_terbuka
-        ? rupiah(k.laba_setelah_target)
-        : '🔒 ' + esc(k.laba_bersih_alasan || 'Terkunci')) + '</td></tr>' +
+      '<tr><td>Retur (' + angka(k.retur_count || 0) + ')</td><td class="r num">' + rupiah(k.retur_total || 0) + '</td></tr>' +
       '<tr><td>Nota terjual</td><td class="r num">' + angka(k.nota) + '</td></tr>' +
       '<tr><td>Rata-rata nota</td><td class="r num">' + rupiah(k.rata_nota) + '</td></tr>' +
     '</table>' +
