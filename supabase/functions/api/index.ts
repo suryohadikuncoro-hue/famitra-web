@@ -164,14 +164,11 @@ async function sudahDiretur(cabangId, noNota) {
   return { refund: rs.reduce((n, x) => n + Number(x.total_refund || 0), 0), qty };
 }
 async function stokDashboard(cabangId) {
-  const [br, sb] = await Promise.all([
-    db("master_barang", `?cabang_id=eq.${encodeURIComponent(cabangId)}&aktif=eq.YA&select=kode_obat,nama_obat,stok_min&limit=5000`),
-    db("stok_batch", `?cabang_id=eq.${encodeURIComponent(cabangId)}&select=kode_obat,kode_batch,expired_date,stok_real,harga_modal_batch&order=expired_date&limit=5000`)
+  // Semua baris (paginasi), bukan maks. 5000, supaya hitungan stok akurat.
+  const [barang, batch] = await Promise.all([
+    semua("master_barang", `?cabang_id=eq.${encodeURIComponent(cabangId)}&aktif=eq.YA&select=kode_obat,nama_obat,stok_min&order=kode_obat`),
+    semua("stok_batch", `?cabang_id=eq.${encodeURIComponent(cabangId)}&select=kode_obat,kode_batch,expired_date,stok_real,harga_modal_batch&order=expired_date,id_batch`)
   ]);
-  if (!br.ok) throw new Error(await br.text());
-  if (!sb.ok) throw new Error(await sb.text());
-  const barang = await br.json();
-  const batch = await sb.json();
   const nama = Object.fromEntries(barang.map((x) => [x.kode_obat, x.nama_obat]));
   const min = Object.fromEntries(barang.map((x) => [x.kode_obat, Number(x.stok_min || 0)]));
   const total = {};
@@ -180,7 +177,12 @@ async function stokDashboard(cabangId) {
   });
   const expiring = batch.filter((x) => Number(x.stok_real || 0) > 0 && daysUntil(x.expired_date) <= 90).map((x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: nama[x.kode_obat] || x.kode_obat, Kode_Batch: x.kode_batch, Expired_Date: x.expired_date, Stok_Real: x.stok_real, sisa_hari: daysUntil(x.expired_date) }));
   const stok_menipis = barang.filter((x) => (total[x.kode_obat] || 0) <= Number(x.stok_min || 0)).map((x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: x.nama_obat, stok: total[x.kode_obat] || 0, minimal: Number(x.stok_min || 0) }));
-  return { expiring_total: expiring.length, expiring_nilai: expiring.reduce((n, x) => n + Number(x.Stok_Real || 0), 0), expiring_kritis: expiring.filter((x) => x.sisa_hari <= 30).length, expiring, stok_menipis_total: stok_menipis.length, stok_menipis };
+  // Untuk visual "kesehatan stok" di dashboard: aman / menipis / habis dari produk aktif.
+  const stok_habis_total = barang.filter((x) => (total[x.kode_obat] || 0) <= 0).length;
+  const modal = Object.fromEntries(batch.map((x) => [`${x.kode_obat}|${x.kode_batch}`, Number(x.harga_modal_batch || 0)]));
+  return { produk_aktif_total: barang.length, stok_habis_total, expiring_unit: expiring.reduce((n, x) => n + Number(x.Stok_Real || 0), 0),
+    // nilai = unit x harga modal batch (sebelumnya berisi jumlah unit)
+    expiring_nilai: expiring.reduce((n, x) => n + Number(x.Stok_Real || 0) * (modal[`${x.Kode_Obat}|${x.Kode_Batch}`] || 0), 0), expiring_kritis: expiring.filter((x) => x.sisa_hari <= 30).length, expiring, stok_menipis_total: stok_menipis.length, stok_menipis };
 }
 async function action(name, data, s) {
   if (name === "pos.cariBarang") {

@@ -911,7 +911,7 @@ body{background:var(--shell)}
 .db-grafik-svg{display:block;max-width:100%;touch-action:pan-y}
 .db-x{font-size:11.5px;font-weight:500;fill:#B5B9C0}
 .db-x.on{fill:var(--ink-deep);font-weight:700}
-.db-tip{position:absolute;pointer-events:none;background:#fff;color:var(--ink-deep);border-radius:12px;padding:8px 12px;box-shadow:0 10px 30px rgba(20,22,27,.14);text-align:center;white-space:nowrap;line-height:1.35}
+.db-tip{z-index:3;position:absolute;pointer-events:none;background:#fff;color:var(--ink-deep);border-radius:12px;padding:8px 12px;box-shadow:0 10px 30px rgba(20,22,27,.14);text-align:center;white-space:nowrap;line-height:1.35}
 .db-tip small{display:block;color:#9BA0A8;font-size:11px}
 .db-tip b{display:block;font-size:16px;letter-spacing:-.02em}
 .db-rentang{display:flex;justify-content:space-around;gap:6px;margin-top:auto;padding-top:6px}
@@ -1086,3 +1086,99 @@ body{background:var(--shell)}
 .aibanner-sorot{border-top-color:rgba(255,255,255,.1)!important;gap:8px!important}
 .aibanner-sorot>div{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:9px 11px}
 .aibanner .sorot-label,.aibanner .sorot-catatan{color:#8D9098!important}.aibanner .sorot-nilai{color:#fff!important}
+
+
+/* ================================================= Tema v13: gradasi merah
+   Sidebar & bingkai gelap diberi pendar merah; kartu Kasir gelap bergradasi. */
+#appScreen.app{background:radial-gradient(120% 60% at 0% 100%,rgba(206,44,43,.38) 0%,rgba(206,44,43,0) 60%),linear-gradient(180deg,#141517 0%,#191416 60%,#2a1216 100%)!important;background-attachment:fixed!important}
+.sidebar{background:transparent!important}
+.sidebar-cabang{background:rgba(255,255,255,.05)!important;border-color:rgba(255,255,255,.08)!important}
+#navMenu button.is-active{background:linear-gradient(90deg,rgba(206,44,43,.35),rgba(206,44,43,.05))!important}
+@media (max-width:880px){
+  .topbar,.tabbar{background:linear-gradient(90deg,#141517 0%,#2a1216 100%)!important}
+  .sidebar{background:linear-gradient(180deg,#141517 0%,#2a1216 100%)!important}
+}
+.pos-dark .card{background:linear-gradient(145deg,#1D1F23 0%,#1F1C1F 55%,#3A1A1E 100%)!important;border-color:transparent!important}
+.pos-dark .pos-pay{background:linear-gradient(160deg,#141517 0%,#1d1416 50%,#4a161b 100%)!important}
+
+/* ================================================= Tema v13: sparkline KPI */
+.db-spark{width:110px;height:48px}
+
+/* ================================================= Promo & kampanye aktif */
+.db-promo-hitung{margin-left:8px;min-width:22px;height:22px;border-radius:99px;background:var(--brand);color:#fff;font-size:12px;font-weight:700;display:inline-grid;place-items:center;padding:0 6px}
+.db-link-btn{margin-left:auto;border:0;background:transparent;color:var(--brand-dark);font:inherit;font-weight:700;font-size:12.5px;cursor:pointer;padding:4px 6px;border-radius:8px}
+.db-link-btn:hover{background:var(--brand-soft)}
+.db-promo-list{display:grid;gap:8px;margin-top:12px}
+.db-promo-item{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border-radius:16px;background:var(--paper);transition:background .15s}
+.db-promo-item:hover{background:#EEF0F3}
+.db-cincin{width:44px;height:44px}
+.db-cincin-dasar{fill:#fff;stroke:#E3E5EA;stroke-width:4}
+.db-cincin-isi{fill:none;stroke-width:4;stroke-linecap:round}
+.db-cincin-ikon{fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.kupon .db-cincin-isi{stroke:#CE2C2B}.kupon .db-cincin-ikon{stroke:#CE2C2B}
+.bundle .db-cincin-isi{stroke:#E08A1E}.bundle .db-cincin-ikon{stroke:#C2710C}
+.undian .db-cincin-isi{stroke:#0E9F6E}.undian .db-cincin-ikon{stroke:#0E9F6E}
+.db-promo-teks{min-width:0}
+.db-promo-nama{font-weight:700;font-size:13.5px;color:var(--ink-deep);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.db-promo-nama code{font:700 11px ui-monospace,SFMono-Regular,Menlo,monospace;background:#fff;border:1px dashed var(--line-strong);border-radius:6px;padding:1px 6px;color:var(--ink);margin-left:4px}
+.db-promo-bawah{display:flex;align-items:center;gap:10px;margin-top:7px}
+.db-meter{flex:1;max-width:220px;height:6px;border-radius:99px;background:#E3E5EA;overflow:hidden}
+.db-meter i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#9E1F24,#EE6A4F)}
+.bundle .db-meter i{background:linear-gradient(90deg,#C2710C,#F5A524)}
+.undian .db-meter i{background:linear-gradient(90deg,#0E9F6E,#34D399)}
+.db-promo-sisa{font-size:11.5px;font-weight:700;color:var(--muted);white-space:nowrap}
+.db-promo-sisa.mepet{color:var(--bad)}
+.db-promo-angka{text-align:right;line-height:1.1}
+.db-promo-angka b{display:block;font-size:20px;letter-spacing:-.02em;color:var(--ink-deep)}
+.db-promo-angka b small{font-size:12px;color:var(--muted);font-weight:600}
+.db-promo-angka span{font-size:11px;color:var(--muted);font-weight:600}
+.db-promo-kosong{display:flex;flex-direction:column;align-items:center;gap:8px;padding:26px 0;color:var(--muted);font-size:13px}
+.db-promo-kosong svg{width:34px;height:34px;fill:none;stroke:#C9CCD2;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+/* ringkasan hasil promo (kartu gelap bergradasi merah) */
+.db-promo-sum{background:linear-gradient(160deg,#141517 0%,#1d1416 55%,#4a161b 100%);border-color:transparent;color:#fff}
+.db-promo-sum .dk-judul{color:#A1A4AB}
+.db-promo-atas{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px}
+.db-promo-besar{font-size:28px;font-weight:800;letter-spacing:-.03em}
+.db-promo-kecil{font-size:12px;color:#A1A4AB;margin-top:2px}
+.db-roas{width:72px;height:72px;flex:none}
+.db-roas-dasar{fill:none;stroke:rgba(255,255,255,.1);stroke-width:6}
+.db-roas-isi{fill:none;stroke:#EE6A4F;stroke-width:6;stroke-linecap:round;transform:rotate(-90deg);transform-origin:32px 32px}
+.db-roas-angka{font:800 15px 'Plus Jakarta Sans',system-ui,sans-serif;fill:#fff}
+.db-roas-label{font:700 8px 'Plus Jakarta Sans',system-ui,sans-serif;fill:#8D9098;letter-spacing:.08em}
+.db-komposisi{display:flex;height:12px;border-radius:99px;overflow:hidden;background:rgba(255,255,255,.08);margin-top:16px;gap:2px}
+.db-komposisi i{display:block;height:100%}
+.db-komposisi .laba,.db-komposisi-ket .laba{background:#34D399}
+.db-komposisi .hpp,.db-komposisi-ket .hpp{background:#6B6F78}
+.db-komposisi .diskon,.db-komposisi-ket .diskon{background:#EE6A4F}
+.db-komposisi-ket{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:11.5px;color:#C9CBD0}
+.db-komposisi-ket i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+.db-promo-bar{display:grid;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.1)}
+.db-promo-bar div{display:grid;grid-template-columns:minmax(0,1fr) 1.2fr auto;gap:8px;align-items:center;font-size:12px}
+.db-promo-bar .n{color:#C9CBD0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.db-promo-bar .b{height:8px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.db-promo-bar .b i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#9E1F24,#EE6A4F)}
+.db-promo-bar .v{font-weight:700;color:#fff}
+@media (max-width:560px){
+  .db-promo-item{grid-template-columns:40px minmax(0,1fr) auto;gap:10px;padding:9px 10px}
+  .db-cincin{width:40px;height:40px}
+  .db-promo-angka b{font-size:17px}
+}
+
+/* Kartu stok visual */
+.db-stok-visual{display:flex;align-items:center;gap:14px;margin-top:8px}
+.db-donat{width:88px;height:88px;flex:none}
+.db-donat-angka{font:800 16px 'Plus Jakarta Sans',system-ui,sans-serif;fill:var(--ink-deep)}
+.db-donat-label{font:600 8.5px 'Plus Jakarta Sans',system-ui,sans-serif;fill:#9BA0A8}
+.db-stok-angka{display:grid;gap:8px;flex:1;min-width:0}
+.db-stok-angka>div{display:flex;align-items:center;gap:10px}
+.db-stok-ikon{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex:none}
+.db-stok-ikon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.db-stok-angka b{font-size:22px;letter-spacing:-.02em;line-height:1;color:var(--ink-deep)}
+.db-stok-angka small{font-size:11.5px;font-weight:600;color:#9BA0A8;margin-left:-4px}
+.db-stok-angka .bahaya .db-stok-ikon{background:var(--bad-soft);color:var(--bad)}
+.db-stok-angka .bahaya b{color:var(--bad)}
+.db-stok-angka .waspada .db-stok-ikon{background:var(--warn-soft);color:var(--warn)}
+.db-stok-angka .tenang .db-stok-ikon{background:var(--ok-soft);color:var(--ok)}
+.db-stok-legenda{display:flex;gap:12px;margin-top:10px;font-size:11.5px;font-weight:700;color:var(--muted)}
+.db-stok-legenda i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.db-stok.kritis{border-color:var(--brand-line)}

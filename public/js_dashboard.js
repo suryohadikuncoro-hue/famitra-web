@@ -130,6 +130,7 @@ function muatDashboard() {
     // Widget target omset bersifat independen (Edge Function marketing),
     // tidak bergantung pada payload dashboard utama, jadi diload paralel.
     muatTargetOmsetWidget();
+    muatPromoWidget();
   }).catch(function (e) {
     isi.innerHTML = '<div class="card"><p>' + esc(e.message) + '</p></div>';
   });
@@ -269,20 +270,35 @@ function kurvaHalus(p, jepitAtas, jepitBawah) {
   return d;
 }
 
-/* Sparkline kecil untuk kartu KPI: garis periode ini + garis pembanding pudar. */
-function sparkMini(ini, lalu, gelap) {
+/* Sparkline kecil untuk kartu KPI (visual, minim teks):
+   - jenis 'area'  : kurva + area bergradasi merah (kartu omzet, gelap)
+   - jenis 'batang': kolom mini, hari ini disorot (kartu nota) */
+function sparkMini(ini, lalu, gelap, jenis) {
   if (!ini.length) return '';
-  var W = 96, H = 44, semua = ini.concat(lalu || []);
-  var mx = Math.max.apply(null, semua), mn = Math.min.apply(null, semua);
+  var W = 110, H = 48, id = 'sp' + Math.random().toString(36).slice(2, 7);
+  var mx = Math.max.apply(null, ini), mn = Math.min.apply(null, ini);
+  if (jenis === 'batang') {
+    mx = mx || 1;
+    var n = ini.length, gap = 4, bw = (W - gap * (n - 1)) / n;
+    return '<svg class="db-spark" viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">' +
+      ini.map(function (v, i) {
+        var h = Math.max(4, v / mx * (H - 4));
+        var akhir = i === n - 1;
+        return '<rect x="' + (i * (bw + gap)).toFixed(1) + '" y="' + (H - h).toFixed(1) + '" width="' + bw.toFixed(1) +
+          '" height="' + h.toFixed(1) + '" rx="' + Math.min(4, bw / 2).toFixed(1) + '" fill="' +
+          (akhir ? '#CE2C2B' : (gelap ? 'rgba(255,255,255,.16)' : '#E6E8EC')) + '"/>';
+      }).join('') + '</svg>';
+  }
   if (mx === mn) { mx += 1; mn -= 1; }
-  var titik = function (arr) {
-    return arr.map(function (v, i) { return [3 + i * (W - 6) / Math.max(1, arr.length - 1), 4 + (mx - v) / (mx - mn) * (H - 8)]; });
-  };
-  var pa = titik(ini), akhir = pa[pa.length - 1];
+  var titik = ini.map(function (v, i) { return [2 + i * (W - 4) / Math.max(1, ini.length - 1), 6 + (mx - v) / (mx - mn) * (H - 12)]; });
+  var garis = kurvaHalus(titik), akhir = titik[titik.length - 1];
   return '<svg class="db-spark" viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">' +
-    (lalu && lalu.length > 1 ? '<path d="' + kurvaHalus(titik(lalu)) + '" fill="none" stroke="#CE2C2B" stroke-opacity=".4" stroke-width="1.6"/>' : '') +
-    (pa.length > 1 ? '<path d="' + kurvaHalus(pa) + '" fill="none" stroke="' + (gelap ? '#fff' : '#25262A') + '" stroke-width="2.2" stroke-linecap="round"/>' : '') +
-    '<circle cx="' + akhir[0].toFixed(1) + '" cy="' + akhir[1].toFixed(1) + '" r="3.5" fill="#CE2C2B" stroke="' + (gelap ? '#141517' : '#fff') + '" stroke-width="2"/></svg>';
+    '<defs><linearGradient id="' + id + '" x1="0" x2="0" y1="0" y2="1">' +
+      '<stop offset="0" stop-color="#E8563F" stop-opacity=".55"/><stop offset="1" stop-color="#CE2C2B" stop-opacity="0"/></linearGradient></defs>' +
+    '<path d="' + garis + ' L' + akhir[0].toFixed(1) + ',' + H + ' L' + titik[0][0].toFixed(1) + ',' + H + ' Z" fill="url(#' + id + ')"/>' +
+    '<path d="' + garis + '" fill="none" stroke="' + (gelap ? '#fff' : '#CE2C2B') + '" stroke-width="2.2" stroke-linecap="round"/>' +
+    '<circle cx="' + akhir[0].toFixed(1) + '" cy="' + akhir[1].toFixed(1) + '" r="6" fill="#E8563F" opacity=".35"/>' +
+    '<circle cx="' + akhir[0].toFixed(1) + '" cy="' + akhir[1].toFixed(1) + '" r="3.2" fill="#fff"/></svg>';
 }
 
 function grafikOmzetHtml() {
@@ -290,8 +306,8 @@ function grafikOmzetHtml() {
     '<div class="db-grafik-head">' +
       '<div><div class="dk-judul">Omzet harian</div>' +
         '<div class="db-grafik-total" id="dbGrafikTotal"></div>' +
-        '<div class="dk-sub" id="dbGrafikSub"></div></div>' +
-      '<div class="db-legenda"><span><i class="lg-ini"></i>Periode ini</span><span><i class="lg-lalu"></i>Periode sebelumnya</span></div>' +
+        '</div>' +
+      '<div class="db-legenda"><span><i class="lg-ini"></i>Ini</span><span><i class="lg-lalu"></i>Sebelumnya</span></div>' +
     '</div>' +
     '<div class="db-grafik-area" id="dbGrafikArea"></div>' +
     '<div class="db-rentang" role="group" aria-label="Rentang grafik">' +
@@ -330,8 +346,6 @@ function gambarGrafikOmzet() {
   var total = jumlah(data), totalLalu = jumlah(lalu);
   var delta = lalu.length && totalLalu > 0 ? (total - totalLalu) / totalLalu * 100 : null;
   document.getElementById('dbGrafikTotal').innerHTML = esc(rupiah(total)) + ' ' + chipDelta(delta);
-  document.getElementById('dbGrafikSub').textContent =
-    n + ' hari terakhir · rata-rata ' + rupiahPendek(data.length ? total / data.length : 0) + '/hari';
   if (!data.length) { area.innerHTML = '<div class="empty">Belum ada data penjualan.</div>'; return; }
 
   var W = Math.max(260, area.clientWidth || 600);
@@ -422,6 +436,140 @@ function gambarGrafikOmzet() {
   });
 })();
 
+/* ------------------------------------------------ Promo & kampanye aktif
+   Data dari Edge Function `promo` action `dashboardAktif` (Owner & Apoteker):
+   kupon (kampanye ACTIVE dalam periode), bundle ACTIVE, undian aktif, beserta
+   ringkasan laporan periode aktif. Visual diutamakan, teks seminimal mungkin. */
+var IKON_PROMO = {
+  kupon: '<path d="M3 9V6a1 1 0 011-1h16a1 1 0 011 1v3a3 3 0 000 6v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3a3 3 0 000-6z"/><path d="M9 9h.01M15 15h.01M15 9l-6 6"/>',
+  bundle: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+  undian: '<rect x="3" y="8" width="18" height="13" rx="2"/><path d="M3 12h18M12 8v13"/><path d="M12 8c-2-4-6-4-6-1.5S9 8 12 8zm0 0c2-4 6-4 6-1.5S15 8 12 8z"/>'
+};
+
+function promoKartuHtml() {
+  return '<div class="db-grid21" id="dbPromoBaris">' +
+    '<div class="dkartu" id="dbPromo">' + kerangka(3) + '</div>' +
+    '<div class="dkartu db-promo-sum" id="dbPromoSum">' + kerangka(3) + '</div>' +
+  '</div>';
+}
+
+function muatPromoWidget() {
+  var kiri = document.getElementById('dbPromo'), kanan = document.getElementById('dbPromoSum');
+  if (!kiri) return;
+  promoApi('dashboardAktif', {}).then(function (res) {
+    var d = normalisasiPromo(res || {});
+    kiri.innerHTML = gambarDaftarPromo(d.items || []);
+    kanan.innerHTML = gambarRingkasPromo(d.ringkasan || {}, d.items || []);
+    var kelola = kiri.querySelector('[data-kelola]');
+    if (kelola) kelola.onclick = function () { gantiHalaman('marketing'); };
+  }).catch(function (e) {
+    kiri.innerHTML = '<div class="dk-judul">Promo & kampanye aktif</div><div class="empty">' + esc(e.message) + '</div>';
+    kanan.innerHTML = '';
+    kanan.hidden = true;
+  });
+}
+
+/* Samakan bentuk data backend (kupon/bundle/undian) untuk tampilan. */
+function normalisasiPromo(res) {
+  var items = (res.item || res.items || []).map(function (x) {
+    if (x.jenis === 'kupon') {
+      var kode = (x.kode || []).map(function (c) { return c.code; });
+      var kuota = (x.kode || []).every(function (c) { return c.usage_limit_total; }) && (x.kode || []).length
+        ? (x.kode || []).reduce(function (n, c) { return n + Number(c.usage_limit_total || 0); }, 0) : null;
+      return { jenis: 'kupon', nama: x.nama, kode: kode[0] ? kode[0] + (kode.length > 1 ? ' +' + (kode.length - 1) : '') : '',
+        mulai: x.mulai, selesai: x.selesai, pakai: x.dipakai || 0, kuota: kuota, omzet: x.omzet || 0 };
+    }
+    if (x.jenis === 'bundle') {
+      return { jenis: 'bundle', nama: x.nama, kode: x.kode || '', mulai: x.mulai, selesai: x.selesai,
+        pakai: x.terjual || 0, kuota: null, omzet: x.omzet || 0 };
+    }
+    // Undian: tanggal selesai = akhir hari periode_selesai.
+    return { jenis: 'undian', nama: x.nama, kode: '', mulai: x.mulai + 'T00:00:00+07:00', selesai: x.selesai + 'T23:59:59+07:00',
+      pakai: x.pemenang || 0, kuota: x.hadiah || null, omzet: 0 };
+  });
+  var r = res.ringkasan || {};
+  return { items: items, ringkasan: { omzet: r.omzet || 0, diskon: r.diskon || 0, hpp: r.hpp || 0,
+    nota: r.transaksi || r.nota || 0, pelanggan: r.pelanggan_unik || r.pelanggan || 0 } };
+}
+
+function cincinWaktu(mulai, selesai, jenis) {
+  var a = new Date(mulai).getTime(), b = new Date(selesai).getTime(), now = Date.now();
+  var pct = b > a ? Math.max(0, Math.min(1, (now - a) / (b - a))) : 1;
+  var r = 18, kel = 2 * Math.PI * r;
+  return '<svg class="db-cincin" viewBox="0 0 44 44" aria-hidden="true">' +
+    '<circle cx="22" cy="22" r="' + r + '" class="db-cincin-dasar"/>' +
+    '<circle cx="22" cy="22" r="' + r + '" class="db-cincin-isi" transform="rotate(-90 22 22)" stroke-dasharray="' + kel.toFixed(1) + '" stroke-dashoffset="' + (kel * (1 - pct)).toFixed(1) + '"/>' +
+    '<g transform="translate(12,12) scale(.8333)" class="db-cincin-ikon">' + (IKON_PROMO[jenis] || '') + '</g></svg>';
+}
+
+function sisaHari(selesai) {
+  var ms = new Date(selesai).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / 864e5));
+}
+
+function gambarDaftarPromo(items) {
+  var isOwner = SESSION && SESSION.user && SESSION.user.role === 'Owner';
+  var kepala = '<div class="dk-judul">Promo & kampanye aktif' +
+    (items.length ? ' <span class="db-promo-hitung">' + items.length + '</span>' : '') +
+    (isOwner ? '<button type="button" class="db-link-btn" data-kelola>Kelola ›</button>' : '') + '</div>';
+  if (!items.length) {
+    return kepala + '<div class="db-promo-kosong">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true">' + IKON_PROMO.kupon + '</svg>' +
+      '<span>Belum ada promo aktif</span></div>';
+  }
+  var maxOmzet = Math.max.apply(null, items.map(function (x) { return Number(x.omzet || 0); }).concat([1]));
+  return kepala + '<div class="db-promo-list">' + items.map(function (x) {
+    var sisa = sisaHari(x.selesai);
+    var kuota = x.kuota ? Math.min(1, (x.pakai || 0) / x.kuota) : null;
+    var meter = kuota !== null
+      ? '<span class="db-meter" title="Pemakaian ' + angka(x.pakai || 0) + ' dari ' + angka(x.kuota) + '"><i style="width:' + (kuota * 100).toFixed(0) + '%"></i></span>'
+      : '<span class="db-meter alt" title="Omzet ' + esc(rupiahPendek(x.omzet || 0)) + '"><i style="width:' + ((x.omzet || 0) / maxOmzet * 100).toFixed(0) + '%"></i></span>';
+    return '<div class="db-promo-item ' + esc(x.jenis) + '">' +
+      cincinWaktu(x.mulai, x.selesai, x.jenis) +
+      '<div class="db-promo-teks">' +
+        '<div class="db-promo-nama">' + esc(x.nama) + (x.kode ? ' <code>' + esc(x.kode) + '</code>' : '') + '</div>' +
+        '<div class="db-promo-bawah">' + meter +
+          '<span class="db-promo-sisa' + (sisa <= 3 ? ' mepet' : '') + '">' + sisa + ' hr</span></div>' +
+      '</div>' +
+      '<div class="db-promo-angka"><b>' + angka(x.pakai || 0) + (x.jenis === 'undian' && x.kuota ? '<small>/' + angka(x.kuota) + '</small>' : '') + '</b>' +
+        '<span>' + (x.jenis === 'kupon' ? 'dipakai' : x.jenis === 'bundle' ? 'terjual' : 'pemenang') + '</span></div>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+
+function gambarRingkasPromo(r, items) {
+  var omzet = Number(r.omzet || 0), diskon = Number(r.diskon || 0), hpp = Number(r.hpp || 0);
+  var laba = Math.max(0, omzet - hpp), dasar = omzet + diskon || 1;
+  var roas = diskon > 0 ? omzet / diskon : null;
+  var seg = function (v, kelas) { return '<i class="' + kelas + '" style="width:' + (v / dasar * 100).toFixed(1) + '%"></i>'; };
+  var jual = items.filter(function (x) { return x.jenis !== 'undian' && x.omzet > 0; })
+    .sort(function (a, b) { return b.omzet - a.omzet; }).slice(0, 4);
+  var maxJual = jual.length ? jual[0].omzet : 1;
+  // Cincin ROAS: penuh di 10×.
+  var rr = 26, kel = 2 * Math.PI * rr, isi = roas ? Math.min(1, roas / 10) : 0;
+  return '<div class="dk-judul">Hasil promo</div>' +
+    '<div class="db-promo-atas">' +
+      '<div><div class="db-promo-besar">' + esc(rupiahPendek(omzet)) + '</div>' +
+        '<div class="db-promo-kecil">' + angka(r.nota || 0) + ' nota · ' + angka(r.pelanggan || 0) + ' pelanggan</div></div>' +
+      '<svg class="db-roas" viewBox="0 0 64 64" role="img" aria-label="ROAS">' +
+        '<circle cx="32" cy="32" r="' + rr + '" class="db-roas-dasar"/>' +
+        '<circle cx="32" cy="32" r="' + rr + '" class="db-roas-isi" stroke-dasharray="' + kel.toFixed(1) + '" stroke-dashoffset="' + (kel * (1 - isi)).toFixed(1) + '"/>' +
+        '<text x="32" y="33" text-anchor="middle" class="db-roas-angka">' + (roas ? (roas >= 10 ? Math.round(roas) : roas.toFixed(1).replace('.', ',')) + '×' : '—') + '</text>' +
+        '<text x="32" y="45" text-anchor="middle" class="db-roas-label">ROAS</text></svg>' +
+    '</div>' +
+    '<div class="db-komposisi" title="Komposisi nilai belanja promo">' +
+      seg(laba, 'laba') + seg(Math.min(hpp, omzet), 'hpp') + seg(diskon, 'diskon') + '</div>' +
+    '<div class="db-komposisi-ket">' +
+      '<span><i class="laba"></i>Laba ' + esc(rupiahPendek(laba)) + '</span>' +
+      '<span><i class="hpp"></i>HPP ' + esc(rupiahPendek(hpp)) + '</span>' +
+      '<span><i class="diskon"></i>Diskon ' + esc(rupiahPendek(diskon)) + '</span>' +
+    '</div>' +
+    (jual.length ? '<div class="db-promo-bar">' + jual.map(function (x) {
+      return '<div><span class="n">' + esc(x.nama) + '</span><span class="b"><i style="width:' + (x.omzet / maxJual * 100).toFixed(0) + '%"></i></span>' +
+        '<span class="v">' + esc(rupiahPendek(x.omzet)) + '</span></div>';
+    }).join('') + '</div>' : '');
+}
+
 function inisial(nama) {
   var s = String(nama || '').trim();
   if (!s || /^umum$/i.test(s)) return 'U';
@@ -442,8 +590,8 @@ function gambarDashboard(d) {
         '<svg class="dk-ikon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9.5a3 3 0 00-3-1.5c-1.7 0-3 .9-3 2s1.3 1.7 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 01-3-1.5M12 6.5v11"/></svg></div>' +
       '<div class="dk-flex"><div>' +
         '<div class="dk-nilai">' + rupiah(k.omzet) + '</div>' +
-        '<div class="dk-baris">' + chipDelta(k.delta_omzet) + '<span>klik untuk buka laporan</span></div>' +
-      '</div>' + sparkMini(ambil(tren7, 'omzet'), ambil(tren7Lalu, 'omzet'), true) + '</div>' +
+        (k.delta_omzet !== null && k.delta_omzet !== undefined ? '<div class="dk-baris">' + chipDelta(k.delta_omzet) + '</div>' : '') +
+      '</div>' + sparkMini(ambil(tren7, 'omzet'), null, true, 'area') + '</div>' +
       '<div class="dk-sub2">' +
         '<div><small>Laba kotor</small><b class="' + (k.laba_kotor < 0 ? 'minus' : '') + '">' + rupiah(k.laba_kotor) + '</b></div>' +
         '<div><small>Retur</small><b>' + rupiah(k.retur_total || 0) + '</b></div>' +
@@ -457,21 +605,49 @@ function gambarDashboard(d) {
       '<div class="dk-flex"><div>' +
         '<div class="dk-nilai">' + angka(k.nota) + ' <small>nota</small></div>' +
         '<div class="dk-baris">' + chipDelta(k.delta_nota) + '<span>rata-rata ' + rupiah(k.rata_nota) + '</span></div>' +
-      '</div>' + sparkMini(ambil(tren7, 'nota'), ambil(tren7Lalu, 'nota'), false) + '</div>' +
+      '</div>' + sparkMini(ambil(tren7, 'nota'), null, false, 'batang') + '</div>' +
     '</div>';
 
+  /* Kartu stok visual: donat kesehatan stok (aman/menipis/habis dari produk
+     aktif) + dua angka berikon (batch ED <90 hari, produk menipis). */
   var kritis = d.expiring_kritis > 0;
+  var totalProduk = Number(d.produk_aktif_total || 0);
+  var habis = Number(d.stok_habis_total || 0);
+  var menipis = Math.max(0, Number(d.stok_menipis_total || 0) - habis);
+  var aman = Math.max(0, totalProduk - menipis - habis);
+  var persenAman = totalProduk ? Math.round(aman / totalProduk * 100) : null;
+  var donat = (function () {
+    var r = 30, kel = 2 * Math.PI * r, mulai = 0, bagian = [[aman, '#34D399'], [menipis, '#F5A524'], [habis, '#E5484D']];
+    var busur = totalProduk ? bagian.map(function (b) {
+      if (!b[0]) return '';
+      var panjang = b[0] / totalProduk * kel;
+      var el = '<circle cx="40" cy="40" r="' + r + '" fill="none" stroke="' + b[1] + '" stroke-width="10" ' +
+        'stroke-dasharray="' + Math.max(0, panjang - 2).toFixed(1) + ' ' + kel.toFixed(1) + '" stroke-dashoffset="' + (-mulai).toFixed(1) + '" transform="rotate(-90 40 40)"/>';
+      mulai += panjang; return el;
+    }).join('') : '';
+    return '<svg class="db-donat" viewBox="0 0 80 80" role="img" aria-label="Kesehatan stok: ' + aman + ' aman, ' + menipis + ' menipis, ' + habis + ' habis">' +
+      '<circle cx="40" cy="40" r="30" fill="none" stroke="#EEF0F3" stroke-width="10"/>' + busur +
+      '<text x="40" y="42" text-anchor="middle" class="db-donat-angka">' + (persenAman === null ? '—' : persenAman + '%') + '</text>' +
+      '<text x="40" y="53" text-anchor="middle" class="db-donat-label">aman</text></svg>';
+  })();
+  var ikonJam = '<svg viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9s10 4 10 9"/></svg>';
+  var ikonKotak = '<svg viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>';
   var kartuStok =
-    '<div class="dkartu db-stok' + (kritis ? ' kritis' : '') + '" id="dbStrip" role="button" tabindex="0">' +
-      '<div class="dk-judul">Peringatan stok' + (kritis ? ' <span class="chip dk-chip-bad">Kritis</span>' : '') +
+    '<div class="dkartu db-stok' + (kritis ? ' kritis' : '') + '" id="dbStrip" role="button" tabindex="0" title="Buka rincian stok">' +
+      '<div class="dk-judul">Stok' +
         '<svg class="dk-ikon" viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 10v4M12 17.5v.5"/></svg></div>' +
-      '<div class="db-stok-list">' +
-        '<div><span>Kedaluwarsa &lt; 90 hari</span><b>' + angka(d.expiring_total || 0) + ' <small>batch</small></b></div>' +
-        '<div><span>Di bawah stok minimum</span><b class="' + (d.stok_menipis_total ? 'warn' : '') + '">' + angka(d.stok_menipis_total || 0) + '</b></div>' +
+      '<div class="db-stok-visual">' + donat +
+        '<div class="db-stok-angka">' +
+          '<div class="' + (kritis ? 'bahaya' : (d.expiring_total ? 'waspada' : 'tenang')) + '" title="Batch kedaluwarsa < 90 hari' + (kritis ? ' (' + d.expiring_kritis + ' di bawah 30 hari)' : '') + '">' +
+            '<span class="db-stok-ikon">' + ikonJam + '</span><b>' + angka(d.expiring_total || 0) + '</b><small>ED</small></div>' +
+          '<div class="' + (d.stok_menipis_total ? 'waspada' : 'tenang') + '" title="Produk di bawah stok minimum">' +
+            '<span class="db-stok-ikon">' + ikonKotak + '</span><b>' + angka(d.stok_menipis_total || 0) + '</b><small>menipis</small></div>' +
+        '</div>' +
       '</div>' +
-      '<div class="dk-baris"><span class="dk-link">' +
-        (d.expiring_total || d.stok_menipis_total ? 'Lihat rincian stok ›' : 'Stok aman') + '</span>' +
-        (d.expiring_nilai ? '<span>nilai ' + rupiahPendek(d.expiring_nilai) + '</span>' : '') + '</div>' +
+      (totalProduk ? '<div class="db-stok-legenda" aria-hidden="true">' +
+        '<span><i style="background:#34D399"></i>' + angka(aman) + '</span>' +
+        '<span><i style="background:#F5A524"></i>' + angka(menipis) + '</span>' +
+        '<span><i style="background:#E5484D"></i>' + angka(habis) + '</span></div>' : '') +
     '</div>';
 
   /* 2. Grafik + target */
@@ -584,6 +760,7 @@ function gambarDashboard(d) {
 
   return '<div class="db-grid3">' + kartuOmzet + kartuNota + kartuStok + '</div>' +
     '<div class="db-grid21 db-baris-grafik">' + grafikOmzetHtml() + kartuTarget + '</div>' +
+    promoKartuHtml() +
     '<div class="db-grid21">' + kartuTab + widget + '</div>' +
     '<div class="db-lipat">' + lipat + insight + '</div>';
 }
