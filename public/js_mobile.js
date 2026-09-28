@@ -86,6 +86,7 @@
     _ganti.apply(this, arguments);
     if (!boleh) return;
     window.__halamanAktif = id;
+    document.body.setAttribute('data-hal', id);   // dipakai CSS untuk mengecualikan halaman tertentu
     tutupMenuSheet();
     var v = document.getElementById('view');
     if (v && adalahHP()) { v.classList.remove('pindah'); void v.offsetWidth; v.classList.add('pindah'); }

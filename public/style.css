@@ -1379,12 +1379,6 @@ body{background:var(--shell)}
     background:linear-gradient(145deg,#E8563F,#B5252A);border:0;color:#fff;font-weight:800;font-size:14.5px;box-shadow:0 12px 26px rgba(206,44,43,.45)}
   #bgCari{max-width:none!important;flex:1 1 100%}
 
-  /* ---- Beranda: KPI digeser ke samping ---- */
-  .db-grid3{display:flex!important;gap:10px!important;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -14px;padding:2px 14px 10px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
-  .db-grid3::-webkit-scrollbar{display:none}
-  .db-grid3>.dkartu{flex:0 0 78%;scroll-snap-align:start;grid-column:auto!important}
-  .db-grid3>.db-omzet{flex-basis:84%}
-
   /* ---- Kasir: cari + kamera, geser untuk hapus ---- */
   .pos-search{display:flex;gap:10px;align-items:center}
   .pos-search .inp{flex:1;min-width:0}
@@ -1455,4 +1449,16 @@ body{background:var(--shell)}
   .card:has(> .table-wrap > table[data-tk="1"]),.card:has(> .m-list){background:transparent;border:0;box-shadow:none;padding:0}
   .card:has(> .table-wrap > table[data-tk="1"]) > .card-head,.card:has(> .m-list) > .card-head{padding:0 2px}
   .modal-body .grid.g2,.modal-body .grid.g3{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px}
+}
+
+/* ================================================= Dashboard: dipertahankan seperti versi live
+   Permintaan Owner: tampilan isi Dashboard di HP tetap seperti sebelumnya. Aturan
+   umum aplikasi-mobile di atas (bingkai panel, ukuran isian & tombol) dikembalikan
+   khusus untuk halaman ini. Bilah bawah/menu tetap yang baru (berlaku semua halaman). */
+@media (max-width:880px){
+  body[data-hal="dashboard"] .view{margin:0 6px 84px!important;border-radius:24px!important;padding:14px 12px 20px!important;min-height:calc(100dvh - 150px)!important;overflow-x:clip}
+  body[data-hal="dashboard"] .db-filter .inp,body[data-hal="dashboard"] .db-filter select,body[data-hal="dashboard"] .db-filter input{font-size:12.5px!important;min-height:0!important;border-radius:99px!important}
+  body[data-hal="dashboard"] .btn{min-height:0;border-radius:99px}
+  body[data-hal="dashboard"] .db-filter .btn{min-height:44px}
+  body[data-hal="dashboard"] .btn-sm{min-height:0}
 }
