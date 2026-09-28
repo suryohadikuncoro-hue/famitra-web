@@ -294,7 +294,7 @@ function gambarDashboard(d) {
   /* 4b. Target Omset per Cabang — widget marketing */
   var widgetTargetOmset =
     '<div class="card" id="dbTargetOmsetCard">' +
-      '<div class="card-head"><h3>Target omset per cabang</h3>' +
+      '<div class="card-head"><h3>Target omset cabang</h3>' +
         '<span class="sub" style="font-weight:400">Laba tampil setelah target tercapai</span></div>' +
       '<div id="dbTargetOmsetBody">' + kerangka(2) + '</div>' +
     '</div>';
