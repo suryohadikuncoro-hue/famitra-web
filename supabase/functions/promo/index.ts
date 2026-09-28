@@ -39,6 +39,54 @@ async function semuaBaris(table: string, query: string) {
     if (page.length < 1000 || rows.length > 100000) return rows;
   }
 }
+// Promo aktif untuk layar Kasir (Owner/Apoteker/Kasir, cabang sesi):
+// bundle aktif + isi & harga per tipe pembeli, kupon yang cocok dengan pelanggan
+// (segmen, tipe, sisa kuota per pelanggan), dan undian aktif (min. belanja).
+// Hanya untuk SARAN di layar; validasi akhir tetap lewat validate/bundleValidate/checkout.
+async function posPromo(branch: string, data: any) {
+  const cab = encodeURIComponent(branch), now = new Date().toISOString(), hari = today();
+  const [bundles, undian] = await Promise.all([
+    semuaBaris("promo_bundles", `?cabang_id=eq.${cab}&status=eq.ACTIVE&starts_at=lte.${encodeURIComponent(now)}&ends_at=gte.${encodeURIComponent(now)}&select=code,name,bundle_price,ends_at,promo_bundle_items(kode_obat,qty)&order=ends_at.asc`),
+    semuaBaris("lottery_campaigns", `?kode_cabang=eq.${cab}&aktif=eq.true&periode_mulai=lte.${hari}&periode_selesai=gte.${hari}&select=nama,periode_selesai,min_total_belanja_idr&order=periode_selesai.asc`)
+  ]);
+  const kodes = [...new Set(bundles.flatMap((b: any) => (b.promo_bundle_items || []).map((i: any) => String(i.kode_obat))))];
+  const barang: Record<string, any> = {};
+  for (let i = 0; i < kodes.length; i += 150) {
+    const rows = await semuaBaris("master_barang", `?cabang_id=eq.${cab}&kode_obat=in.(${kodes.slice(i, i + 150).map((k) => encodeURIComponent(`"${k}"`)).join(",")})&select=kode_obat,nama_obat,golongan,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi&order=kode_obat`);
+    rows.forEach((r: any) => { barang[r.kode_obat] = r; });
+  }
+  const paket = bundles.map((b: any) => {
+    const items = (b.promo_bundle_items || []).map((i: any) => { const m = barang[i.kode_obat] || {}; return {
+      kode: i.kode_obat, qty: Number(i.qty || 1), nama: m.nama_obat || i.kode_obat, sah: m.aktif === "YA" && m.golongan === "Bebas",
+      harga: { "Umum": Number(m.harga_jual_umum || 0), "Tenaga Kesehatan": Number(m.harga_khusus || 0), "Apotek Lain": Number(m.harga_jual_mutasi || 0) } }; });
+    return { code: b.code, name: b.name, bundle_price: Number(b.bundle_price || 0), ends_at: b.ends_at, items };
+  }).filter((b: any) => b.items.length && b.items.every((i: any) => i.sah));
+  let kupon: any[] = [], pelanggan: any = null;
+  const wa = normWA(data?.nomor_wa || "");
+  if (wa) {
+    const c = await one("master_customer", `?cabang_id=eq.${cab}&nomor_wa=eq.${encodeURIComponent(wa)}&select=*`);
+    if (c) {
+      const seg = segment(c), tipe = data?.tipe_customer || c.tipe_customer || "Umum";
+      pelanggan = { segmen: seg };
+      const cps = await semuaBaris("promo_coupons", `?cabang_id=eq.${cab}&is_active=eq.true&select=id,code,discount_type,discount_value,max_discount,min_purchase,usage_limit_per_customer,promo_campaigns!inner(name,status,starts_at,ends_at,promo_segment_targets(segment,customer_type))&order=created_at.desc`);
+      const t = Date.now();
+      const cocok = cps.filter((cp: any) => { const k = cp.promo_campaigns || {};
+        return k.status === "ACTIVE" && t >= new Date(k.starts_at).getTime() && t <= new Date(k.ends_at).getTime() &&
+          (k.promo_segment_targets || []).some((x: any) => x.segment === seg && (x.customer_type == null || x.customer_type === tipe)); });
+      const dipakai: Record<string, number> = {};
+      if (cocok.length) {
+        const red = await semuaBaris("promo_redemptions", `?customer_id=eq.${c.id}&status=eq.APPLIED&coupon_id=in.(${cocok.map((x: any) => x.id).join(",")})&select=coupon_id&order=id`);
+        red.forEach((r: any) => { dipakai[r.coupon_id] = (dipakai[r.coupon_id] || 0) + 1; });
+      }
+      kupon = cocok.filter((cp: any) => (dipakai[cp.id] || 0) < Number(cp.usage_limit_per_customer || 1)).map((cp: any) => ({
+        code: cp.code, name: cp.promo_campaigns.name, discount_type: cp.discount_type, discount_value: Number(cp.discount_value || 0),
+        max_discount: cp.max_discount == null ? null : Number(cp.max_discount), min_purchase: Number(cp.min_purchase || 0), ends_at: cp.promo_campaigns.ends_at }));
+    }
+  }
+  return { bundles: paket, kupon, pelanggan,
+    undian: undian.map((u: any) => ({ nama: u.nama, min_belanja: Number(u.min_total_belanja_idr || 0), selesai: u.periode_selesai })) };
+}
+
 async function dashboardAktif(branch: string) {
   const cab = encodeURIComponent(branch), now = new Date().toISOString(), hari = today();
   const [kampanye, bundles, undian] = await Promise.all([
@@ -107,6 +155,7 @@ async function action(name: string, data: any, s: any) {
   if (!allowed(s.role, name)) throw new Error(`Akses ditolak untuk role ${s.role}.`);
   const branch = cabangSesi(s);
   if (name === "dashboardAktif") return await dashboardAktif(branch);
+  if (name === "posPromo") return await posPromo(branch, data);
   if (name === "bundleList") { const r=await db("promo_bundles",`?cabang_id=eq.${encodeURIComponent(branch)}&select=*,promo_bundle_items(qty,kode_obat,master_barang(nama_obat,golongan))&order=created_at.desc&limit=200`);if(!r.ok)throw new Error(await r.text());return await r.json(); }
   if (name === "bundleSave") { const code=String(data.code||"").trim().toUpperCase(), items=Array.isArray(data.items)?data.items:[]; if(!data.name||!code||!data.starts_at||!data.ends_at||!items.length)throw new Error("Nama, kode, periode, dan minimal satu SKU wajib diisi."); const skus=items.map((x:any)=>String(x.kode_obat||"").trim().toUpperCase()); const r0=await db("master_barang",`?cabang_id=eq.${encodeURIComponent(branch)}&kode_obat=in.(${skus.map((x:string)=>encodeURIComponent(x)).join(',')})&select=kode_obat,nama_obat,golongan,aktif`);if(!r0.ok)throw new Error(await r0.text());const products=await r0.json();{ // Pesan spesifik per SKU supaya Owner tahu apa yang harus diperbaiki di Master Barang.
       const masalah:string[]=[]; for(const k of skus){ const pr=products.find((x:any)=>x.kode_obat===k);
