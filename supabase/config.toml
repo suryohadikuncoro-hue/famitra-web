@@ -14,3 +14,7 @@ verify_jwt = false
 # Lottery validates the existing app_sessions token, not a Supabase Auth JWT.
 [functions.lottery]
 verify_jwt = false
+
+# Marketing validates the existing app_sessions token, not a Supabase Auth JWT.
+[functions.marketing]
+verify_jwt = false
