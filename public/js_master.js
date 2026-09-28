@@ -51,7 +51,8 @@ function muatBarang(hal) {
         '<td><strong>' + esc(b.Nama_Obat) + '</strong>' +
           (b.Barcode ? '<div class="cart-line-meta">' + esc(b.Barcode) + '</div>' : '') + '</td>' +
         '<td>' + esc(b.Kategori) + '</td>' +
-        '<td class="c"><span class="chip ' + stokKelas + '">' + angka(b.stok) + '</span></td>' +
+        '<td class="c" style="white-space:nowrap"><span class="chip ' + stokKelas + '">' + angka(b.stok) + '</span> ' +
+          '<button class="btn btn-sm" data-stok=\'' + esc(JSON.stringify({ k: b.Kode_Obat, n: b.Nama_Obat })) + '\' title="Ubah stok" aria-label="Ubah stok ' + esc(b.Nama_Obat) + '">✎</button></td>' +
         '<td class="r num">' + rupiah(b.Harga_Modal) + '</td>' +
         '<td class="r num">' + rupiah(b.Harga_Jual_Umum) + '</td>' +
         '<td class="r num">' + rupiah(b.Harga_Khusus) + '</td>' +
@@ -66,11 +67,98 @@ function muatBarang(hal) {
     tb.onclick = function (e) {
       var ed = e.target.closest('[data-edit]');
       if (ed) { formBarang(JSON.parse(ed.dataset.edit)); return; }
+      var st = e.target.closest('[data-stok]');
+      if (st) { formStokBarang(JSON.parse(st.dataset.stok)); return; }
       var hp = e.target.closest('[data-hapus]');
       if (hp) konfirmasiNonaktif(hp.dataset.hapus);
     };
   }).catch(function (e) {
     tb.innerHTML = '<tr><td colspan="10" class="empty">' + esc(e.message) + '</td></tr>';
+  });
+}
+
+/* Ubah stok langsung dari Master Barang. Perubahan disimpan lewat stokopname
+   (opname.simpan), bukan menimpa batch diam-diam, supaya setiap koreksi tercatat
+   di riwayat Stokopname: stok sistem, stok fisik, selisih, alasan, petugas. */
+function formStokBarang(info) {
+  var kode = String(info.k || '');
+  var nama = info.n || kode;
+  modalBuka('Ubah stok ' + nama, '<p class="kpi-sub">Memuat…</p>', [{ label: 'Tutup', aksi: modalTutup }]);
+  api('stok.list', { q: kode, kritis: false }).then(function (rows) {
+    var batch = rows.filter(function (r) { return String(r.Kode_Obat || '') === kode; });
+    if (!batch.length) {
+      modalBuka('Ubah stok ' + nama,
+        '<p class="kpi-sub">Barang ini belum punya batch, jadi stoknya 0. ' +
+        'Tambahkan batch dulu lewat menu <strong>Stok &amp; Batch</strong>.</p>',
+        [{ label: 'Tutup', aksi: modalTutup }]);
+      return;
+    }
+    var body =
+      '<p class="kpi-sub" style="margin-top:0">Isi stok fisik tiap batch. Hanya batch yang berubah yang disimpan, ' +
+        'dan setiap perubahan tercatat di riwayat Stokopname.</p>' +
+      '<div class="table-wrap"><table><thead><tr><th>Kode batch</th><th>Kedaluwarsa</th>' +
+        '<th class="c">Stok sistem</th><th class="c">Stok fisik</th><th class="c">Selisih</th></tr></thead><tbody>' +
+      batch.map(function (s, i) {
+        var sistem = Number(s.Stok_Real) || 0;
+        return '<tr>' +
+          '<td><strong>' + esc(s.Kode_Batch) + '</strong></td>' +
+          '<td>' + tglIndo(s.Expired_Date) + '</td>' +
+          '<td class="c num">' + angka(sistem) + '</td>' +
+          '<td class="c"><input id="stkV' + i + '" class="inp num" type="number" min="0" step="1" style="width:90px" ' +
+            'value="' + sistem + '" data-sistem="' + sistem + '" data-batch="' + esc(s.Kode_Batch) + '" ' +
+            'aria-label="Stok fisik batch ' + esc(s.Kode_Batch) + '"></td>' +
+          '<td class="c num" id="stkS' + i + '">0</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<label class="field" style="margin-top:10px"><span>Alasan perubahan</span>' +
+        '<input id="stkAlasan" class="inp" placeholder="cth: hitung ulang rak, barang rusak, salah input"></label>';
+    modalBuka('Ubah stok ' + nama, body, [
+      { label: 'Batal', aksi: modalTutup },
+      { label: 'Simpan stok', kelas: 'btn-primary', aksi: function () { simpanStokBarang(kode, this); } }
+    ]);
+    document.getElementById('modalBody').oninput = function (e) {
+      var inp = e.target.closest('input[id^="stkV"]');
+      if (!inp) return;
+      var sel = (Number(inp.value) || 0) - Number(inp.dataset.sistem);
+      var sel_el = document.getElementById('stkS' + inp.id.slice(4));
+      sel_el.textContent = (sel > 0 ? '+' : '') + angka(sel);
+      sel_el.style.color = sel < 0 ? 'var(--bad)' : (sel > 0 ? 'var(--ok)' : '');
+    };
+  }).catch(function (e) {
+    modalBuka('Ubah stok ' + nama, '<p class="kpi-sub">' + esc(e.message) + '</p>', [{ label: 'Tutup', aksi: modalTutup }]);
+  });
+}
+
+function simpanStokBarang(kode, tombol) {
+  var inputs = [].slice.call(document.querySelectorAll('#modalBody input[id^="stkV"]'));
+  var ubah = [];
+  for (var i = 0; i < inputs.length; i++) {
+    var n = Number(inputs[i].value);
+    if (inputs[i].value === '' || !isFinite(n) || n < 0 || Math.floor(n) !== n) {
+      toast('Stok fisik harus bilangan bulat nol atau lebih.', true); inputs[i].focus(); return;
+    }
+    if (n !== Number(inputs[i].dataset.sistem)) ubah.push({ batch: inputs[i].dataset.batch, fisik: n });
+  }
+  if (!ubah.length) { modalTutup(); toast('Tidak ada stok yang berubah.'); return; }
+  var alasan = val('stkAlasan');
+  if (!alasan) { toast('Alasan perubahan wajib diisi.', true); document.getElementById('stkAlasan').focus(); return; }
+  if (tombol) { tombol.disabled = true; tombol.textContent = 'Menyimpan…'; }
+  // Disimpan satu per satu supaya kalau ada yang gagal, jelas batch mana.
+  var selesai = 0;
+  ubah.reduce(function (p, u) {
+    return p.then(function () {
+      return api('opname.simpan', {
+        Kode_Obat: kode, Kode_Batch: u.batch, Stok_Fisik: u.fisik,
+        Keterangan: 'Ubah stok dari Master Barang: ' + alasan
+      }).then(function () { selesai++; });
+    });
+  }, Promise.resolve()).then(function () {
+    modalTutup(); toast('Stok diperbarui (' + selesai + ' batch).'); muatBarang();
+  }).catch(function (e) {
+    toast('Gagal di batch ke-' + (selesai + 1) + ': ' + e.message +
+      (selesai ? ' (' + selesai + ' batch sebelumnya sudah tersimpan)' : ''), true);
+    if (tombol) { tombol.disabled = false; tombol.textContent = 'Simpan stok'; }
+    if (selesai) muatBarang();
   });
 }
 
