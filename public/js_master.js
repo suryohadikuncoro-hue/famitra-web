@@ -9,8 +9,10 @@ VIEWS.barang = {
       '<div class="card"><div class="card-head">' +
         '<h3>Katalog produk</h3>' +
         '<input id="bgCari" class="inp" style="max-width:230px" placeholder="Cari nama, kode, kategori">' +
-        '<button id="bgTambah" class="btn btn-primary">Tambah barang</button></div>' +
-      '<div class="table-wrap"><table><thead><tr>' +
+        '<button id="bgTambah" class="btn btn-primary"><span class="hanya-desktop">Tambah barang</span><span class="hanya-hp">+ Barang</span></button></div>' +
+      // Di HP daftar tampil sebagai kartu (#bgKartu); tabel disembunyikan.
+      '<div id="bgKartu" class="m-list hanya-hp"></div>' +
+      '<div class="table-wrap hanya-desktop"><table data-tk-off="1"><thead><tr>' +
         '<th>Kode</th><th>Nama obat</th><th>Kategori</th><th class="c">Stok</th>' +
         '<th class="r">Modal</th><th class="r">Umum</th><th class="r">Nakes</th>' +
         '<th class="r">Apotek lain</th><th class="c">PPN</th><th></th>' +
@@ -43,6 +45,25 @@ function muatBarang(hal) {
     }
     var rows = res.rows;
     gambarPagerBarang(res);
+    var kartu = document.getElementById('bgKartu');
+    if (kartu) {
+      kartu.innerHTML = rows.length ? rows.map(function (b) {
+        var habis = b.stok <= 0, menipis = !habis && b.stok <= b.Stok_Min;
+        var tint = b.Aktif === 'TIDAK' ? 'mati' : (habis ? 'bad' : (menipis ? 'warn' : 'ok'));
+        return '<div class="m-kartu' + (b.Aktif === 'TIDAK' ? ' nonaktif' : '') + '" role="button" tabindex="0" data-edit=\'' + esc(JSON.stringify(b)) + '\'>' +
+          '<span class="m-av ' + tint + '">' + esc(String(b.Nama_Obat || '?').charAt(0).toUpperCase()) + '</span>' +
+          '<div class="m-nm"><b>' + esc(b.Nama_Obat) + '</b><small>' + esc(b.Kode_Obat) + (b.Kategori ? ' · ' + esc(b.Kategori) : '') + '</small></div>' +
+          '<div class="m-rt"><b>' + rupiah(b.Harga_Jual_Umum) + '</b>' +
+            '<button type="button" class="chip ' + (habis ? 'chip-bad' : (menipis ? 'chip-warn' : 'chip-ok')) + '" data-stok=\'' + esc(JSON.stringify({ k: b.Kode_Obat, n: b.Nama_Obat })) + '\' aria-label="Ubah stok ' + esc(b.Nama_Obat) + '">' +
+            (habis ? 'Habis' : angka(b.stok) + ' ' + esc(b.Satuan || 'pcs')) + ' ✎</button></div></div>';
+      }).join('') : '<div class="empty">Belum ada barang.</div>';
+      kartu.onclick = function (e) {
+        var st = e.target.closest('[data-stok]');
+        if (st) { formStokBarang(JSON.parse(st.dataset.stok)); return; }
+        var ed = e.target.closest('[data-edit]');
+        if (ed) formBarang(JSON.parse(ed.dataset.edit));
+      };
+    }
     if (!rows.length) { tb.innerHTML = tabelKosong('Belum ada barang. Tambahkan lewat tombol di atas.', 10); return; }
     tb.innerHTML = rows.map(function (b) {
       var stokKelas = b.stok <= b.Stok_Min ? 'chip-bad' : 'chip-ok';
@@ -213,7 +234,7 @@ function formBarang(b) {
     '</div>' +
     // Golongan kosong ditampilkan apa adanya ("belum diisi"), bukan otomatis
     // terlihat "Bebas" — sebelumnya menyesatkan karena browser memilih opsi pertama.
-    '<label class="field"><span>Golongan</span><select id="fbGol" class="inp">' +
+    '<label class="field"><span>Golongan</span><select id="fbGol" class="inp" data-seg="1">' +
       (['Bebas', 'Bebas Terbatas', 'Resep', 'Khusus'].indexOf(b.Golongan) < 0
         ? '<option value="" selected disabled>— Belum diisi, pilih golongan —</option>' : '') +
       ['Bebas', 'Bebas Terbatas', 'Resep', 'Khusus'].map(function (g) {
@@ -231,7 +252,8 @@ function formBarang(b) {
     '</div>' +
     '<label class="field"><span>PPN (%)</span><input id="fbPPN" class="inp num" type="number" value="' + (b.PPN || 0) + '"></label>' +
     '<p class="kpi-sub">Harga khusus dan harga mutasi hanya berubah dari halaman ini — ' +
-      'faktur pembelian tidak menimpanya.</p>',
+      'faktur pembelian tidak menimpanya.</p>' +
+    (edit && b.Aktif !== 'TIDAK' ? '<button type="button" class="btn btn-sm btn-danger" id="fbNonaktif" style="margin-top:6px">Nonaktifkan barang</button>' : ''),
     [
       { label: 'Batal', aksi: modalTutup },
       { label: edit ? 'Simpan perubahan' : 'Simpan barang', kelas: 'btn-primary', aksi: function () {
@@ -248,6 +270,8 @@ function formBarang(b) {
           }).catch(function (e) { toast(e.message, true); });
         } }
     ]);
+  var nonaktif = document.getElementById('fbNonaktif');
+  if (nonaktif) nonaktif.onclick = function () { modalTutup(); konfirmasiNonaktif(b.Kode_Obat); };
 }
 
 function konfirmasiNonaktif(kode) {

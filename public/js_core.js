@@ -147,8 +147,9 @@ function modalBuka(judul, bodyHtml, tombol) {
     foot.appendChild(b);
   });
   document.getElementById('modal').hidden = false;
-  var first = document.querySelector('#modalBody input, #modalBody select, #modalBody textarea');
-  if (first) setTimeout(function () { first.focus(); }, 40);
+  var first = document.querySelector('#modalBody input:not([readonly]), #modalBody select, #modalBody textarea');
+  var sentuh = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;   // HP: keyboard akan menutupi lembar
+  if (first && !sentuh) setTimeout(function () { first.focus(); }, 40);
 }
 function modalTutup() { document.getElementById('modal').hidden = true; }
 
