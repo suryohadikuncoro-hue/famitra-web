@@ -14,7 +14,7 @@ const cabangSesi = (s: any) => {
   return c;
 };
 function segment(c: any) { const days = c.tanggal_terakhir_beli ? Math.floor((Date.now() - new Date(String(c.tanggal_terakhir_beli).slice(0,10) + "T00:00:00").getTime()) / 86400000) : null; if (!c.tanggal_terakhir_beli || Number(c.jumlah_transaksi || 0) === 0) return "Baru"; if ((days || 0) > 180) return "Dormant"; if ((days || 0) > 60) return "At-Risk"; if (Number(c.total_belanja || 0) >= 2000000 || Number(c.jumlah_transaksi || 0) >= 8) return "VIP"; return "Active Routine"; }
-function allowed(role: string, name: string) { const owner = ["campaignList","campaignSave","campaignStatus","couponList","couponSave","report","bundleList","bundleSave","bundleStatus"]; if (owner.includes(name)) return role === "Owner"; return ["Owner","Apoteker","Kasir"].includes(role); }
+function allowed(role: string, name: string) { if (name === "dashboardAktif") return role === "Owner" || role === "Apoteker"; const owner = ["campaignList","campaignSave","campaignStatus","couponList","couponSave","report","bundleList","bundleSave","bundleStatus"]; if (owner.includes(name)) return role === "Owner"; return ["Owner","Apoteker","Kasir"].includes(role); }
 async function validate(data: any, s: any) {
   const code = String(data.code || "").trim().toUpperCase(); const wa = normWA(data.nomor_wa || "");
   if (!code) throw new Error("Kode kupon wajib diisi."); if (!wa) throw new Error("Pilih pelanggan terlebih dahulu.");
@@ -27,9 +27,86 @@ async function validate(data: any, s: any) {
   const uses = await db("promo_redemptions", `?coupon_id=eq.${cp.id}&customer_id=eq.${c.id}&status=eq.APPLIED&select=id&limit=1000`); const used = uses.ok ? (await uses.json()).length : 0; if (used >= Number(cp.usage_limit_per_customer || 1)) throw new Error("Kupon sudah pernah digunakan oleh pelanggan ini.");
   return { valid: true, code: cp.code, campaign_name: cp.promo_campaigns.name, segment: seg, discount };
 }
+// Ringkasan promo yang SEDANG AKTIF untuk dashboard (Owner & Apoteker, cabang sesi):
+// kampanye kupon (status ACTIVE & dalam periode), bundle (ACTIVE & dalam periode),
+// undian (aktif & tanggal hari ini dalam periode) + ringkasan keuangan periode aktif.
+async function semuaBaris(table: string, query: string) {
+  const rows: any[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const r = await db(table, `${query}&limit=1000&offset=${offset}`);
+    if (!r.ok) throw new Error(await r.text());
+    const page = await r.json(); rows.push(...page);
+    if (page.length < 1000 || rows.length > 100000) return rows;
+  }
+}
+async function dashboardAktif(branch: string) {
+  const cab = encodeURIComponent(branch), now = new Date().toISOString(), hari = today();
+  const [kampanye, bundles, undian] = await Promise.all([
+    semuaBaris("promo_campaigns", `?cabang_id=eq.${cab}&status=eq.ACTIVE&starts_at=lte.${encodeURIComponent(now)}&ends_at=gte.${encodeURIComponent(now)}&select=id,name,description,starts_at,ends_at,promo_coupons(id,code,discount_type,discount_value,max_discount,min_purchase,usage_limit_total,is_active),promo_segment_targets(segment)&order=ends_at.asc`),
+    semuaBaris("promo_bundles", `?cabang_id=eq.${cab}&status=eq.ACTIVE&starts_at=lte.${encodeURIComponent(now)}&ends_at=gte.${encodeURIComponent(now)}&select=id,name,code,bundle_price,starts_at,ends_at,promo_bundle_items(qty)&order=ends_at.asc`),
+    semuaBaris("lottery_campaigns", `?kode_cabang=eq.${cab}&aktif=eq.true&periode_mulai=lte.${hari}&periode_selesai=gte.${hari}&select=id,nama,periode_mulai,periode_selesai,min_total_belanja_idr&order=periode_selesai.asc`)
+  ]);
+  const transaksi: Record<string, any> = {};
+  const ambilNota = async (nomor: string[]) => {
+    const perlu = [...new Set(nomor)].filter((x) => x && !transaksi[x]);
+    for (let i = 0; i < perlu.length; i += 150) {
+      const rows = await semuaBaris("trx_penjualan", `?cabang_id=eq.${cab}&no_nota=in.(${perlu.slice(i, i + 150).map((x) => encodeURIComponent(x)).join(",")})&select=no_nota,harga_akhir,total_hpp,nomor_wa,nama_pelanggan&order=no_nota`);
+      rows.forEach((t: any) => { transaksi[t.no_nota] = t; });
+    }
+  };
+  // Kupon: pemakaian dalam periode kampanye aktif.
+  const kupon = [];
+  for (const k of kampanye) {
+    const red = await semuaBaris("promo_redemptions", `?cabang_id=eq.${cab}&campaign_id=eq.${k.id}&status=eq.APPLIED&redeemed_at=gte.${encodeURIComponent(k.starts_at)}&select=invoice_no,customer_id,discount_amount&order=redeemed_at`);
+    await ambilNota(red.map((x: any) => x.invoice_no));
+    kupon.push({ jenis: "kupon", id: k.id, nama: k.name, mulai: k.starts_at, selesai: k.ends_at,
+      kode: (k.promo_coupons || []).filter((c: any) => c.is_active).map((c: any) => ({ code: c.code, discount_type: c.discount_type, discount_value: Number(c.discount_value), max_discount: c.max_discount == null ? null : Number(c.max_discount), min_purchase: Number(c.min_purchase || 0) })),
+      segmen: (k.promo_segment_targets || []).map((t: any) => t.segment),
+      dipakai: red.length, _nota: red.map((x: any) => x.invoice_no), _pelanggan: red.map((x: any) => "c:" + x.customer_id),
+      diskon: red.reduce((n: number, x: any) => n + Number(x.discount_amount || 0), 0) });
+  }
+  // Bundle: transaksi bundle dalam periode aktif.
+  const bundle = [];
+  for (const b of bundles) {
+    const tx = await semuaBaris("trx_penjualan", `?cabang_id=eq.${cab}&bundle_id=eq.${b.id}&timestamp=gte.${encodeURIComponent(b.starts_at)}&select=no_nota,harga_akhir,total_hpp,bundle_discount,nomor_wa,nama_pelanggan&order=no_nota`);
+    tx.forEach((t: any) => { transaksi[t.no_nota] = t; });
+    bundle.push({ jenis: "bundle", id: b.id, nama: b.name, kode: b.code, harga: Number(b.bundle_price || 0), mulai: b.starts_at, selesai: b.ends_at,
+      jumlah_produk: (b.promo_bundle_items || []).length, terjual: tx.length, _nota: tx.map((t: any) => t.no_nota),
+      _pelanggan: tx.map((t: any) => "w:" + (t.nomor_wa || t.nama_pelanggan || t.no_nota)),
+      diskon: tx.reduce((n: number, t: any) => n + Number(t.bundle_discount || 0), 0) });
+  }
+  // Undian: hadiah aktif & pemenang tercatat.
+  const lot = [];
+  for (const u of undian) {
+    const [hadiah, menang] = await Promise.all([
+      semuaBaris("lottery_prizes", `?campaign_id=eq.${u.id}&retired=eq.false&select=id,nilai_hadiah_idr&order=id`),
+      semuaBaris("lottery_winners", `?campaign_id=eq.${u.id}&select=id,pickup_status&order=id`)
+    ]);
+    lot.push({ jenis: "undian", id: u.id, nama: u.nama, mulai: u.periode_mulai, selesai: u.periode_selesai,
+      min_belanja: Number(u.min_total_belanja_idr || 0), hadiah: hadiah.length,
+      nilai_hadiah: hadiah.reduce((n: number, h: any) => n + Number(h.nilai_hadiah_idr || 0), 0),
+      pemenang: menang.length, diambil: menang.filter((w: any) => w.pickup_status === "sudah_diambil").length });
+  }
+  // Ringkasan keuangan: nota unik dari kupon & bundle aktif (nota yang memakai keduanya dihitung sekali).
+  const semuaNota = new Set<string>(), pelanggan = new Set<string>();
+  let omzet = 0, hpp = 0, diskon = 0;
+  [...kupon, ...bundle].forEach((x: any) => {
+    diskon += x.diskon;
+    x._pelanggan.forEach((p: string) => pelanggan.add(p));
+    x._nota.forEach((n: string) => { if (semuaNota.has(n) || !transaksi[n]) return; semuaNota.add(n); omzet += Number(transaksi[n].harga_akhir || 0); hpp += Number(transaksi[n].total_hpp || 0); });
+    x.omzet = x._nota.reduce((t: number, n: string) => t + Number((transaksi[n] || {}).harga_akhir || 0), 0);
+    delete x._nota; delete x._pelanggan;
+  });
+  const laba = omzet - hpp;
+  return { item: [...kupon, ...bundle, ...lot], jumlah_aktif: kupon.length + bundle.length + lot.length,
+    ringkasan: { transaksi: semuaNota.size, omzet, diskon, hpp, laba_setelah_promo: laba,
+      margin: omzet ? laba / omzet * 100 : null, roas: diskon ? omzet / diskon : null, pelanggan_unik: pelanggan.size } };
+}
+
 async function action(name: string, data: any, s: any) {
   if (!allowed(s.role, name)) throw new Error(`Akses ditolak untuk role ${s.role}.`);
   const branch = cabangSesi(s);
+  if (name === "dashboardAktif") return await dashboardAktif(branch);
   if (name === "bundleList") { const r=await db("promo_bundles",`?cabang_id=eq.${encodeURIComponent(branch)}&select=*,promo_bundle_items(qty,kode_obat,master_barang(nama_obat,golongan))&order=created_at.desc&limit=200`);if(!r.ok)throw new Error(await r.text());return await r.json(); }
   if (name === "bundleSave") { const code=String(data.code||"").trim().toUpperCase(), items=Array.isArray(data.items)?data.items:[]; if(!data.name||!code||!data.starts_at||!data.ends_at||!items.length)throw new Error("Nama, kode, periode, dan minimal satu SKU wajib diisi."); const skus=items.map((x:any)=>String(x.kode_obat||"").trim().toUpperCase()); const r0=await db("master_barang",`?cabang_id=eq.${encodeURIComponent(branch)}&kode_obat=in.(${skus.map((x:string)=>encodeURIComponent(x)).join(',')})&select=kode_obat,nama_obat,golongan,aktif`);if(!r0.ok)throw new Error(await r0.text());const products=await r0.json();if(products.length!==skus.length||products.some((x:any)=>x.aktif!=="YA"||x.golongan!=="Bebas"))throw new Error("Fixed bundle hanya boleh memakai SKU aktif golongan Bebas pada cabang aktif."); const p={cabang_id:branch,name:String(data.name).trim(),code,description:data.description||"",bundle_price:Number(data.bundle_price||0),starts_at:data.starts_at,ends_at:data.ends_at,status:data.status||"DRAFT",created_by:s.username,updated_at:new Date().toISOString()};if(p.bundle_price<0)throw new Error("Harga bundle tidak valid.");const r=await db("promo_bundles","",{method:"POST",headers:{...headers,Prefer:"return=representation"},body:JSON.stringify(p)});if(!r.ok)throw new Error(await r.text());const row=(await r.json())[0];const ins=await db("promo_bundle_items","",{method:"POST",headers:{...headers,Prefer:"return=minimal"},body:JSON.stringify(items.map((x:any)=>({bundle_id:row.id,kode_obat:String(x.kode_obat).trim().toUpperCase(),qty:Math.max(1,Number(x.qty||1))})))});if(!ins.ok)throw new Error(await ins.text());return row; }
   if (name === "bundleStatus") { const status=String(data.status||"");if(!["ACTIVE","PAUSED","ARCHIVED"].includes(status))throw new Error("Status bundle tidak valid.");const r=await db("promo_bundles",`?id=eq.${encodeURIComponent(data.id)}&cabang_id=eq.${encodeURIComponent(branch)}`,{method:"PATCH",headers:{...headers,Prefer:"return=minimal"},body:JSON.stringify({status,updated_at:new Date().toISOString()})});if(!r.ok)throw new Error(await r.text());return true; }
