@@ -211,7 +211,11 @@ function formBarang(b) {
       '<label class="field"><span>Stok minimum</span><input id="fbMin" class="inp num" type="number" value="' +
         (b.Stok_Min || 10) + '"></label>' +
     '</div>' +
+    // Golongan kosong ditampilkan apa adanya ("belum diisi"), bukan otomatis
+    // terlihat "Bebas" — sebelumnya menyesatkan karena browser memilih opsi pertama.
     '<label class="field"><span>Golongan</span><select id="fbGol" class="inp">' +
+      (['Bebas', 'Bebas Terbatas', 'Resep', 'Khusus'].indexOf(b.Golongan) < 0
+        ? '<option value="" selected disabled>— Belum diisi, pilih golongan —</option>' : '') +
       ['Bebas', 'Bebas Terbatas', 'Resep', 'Khusus'].map(function (g) {
         return '<option value="' + g + '"' + (b.Golongan === g ? ' selected' : '') + '>' + g + '</option>';
       }).join('') + '</select></label>' +
@@ -231,6 +235,7 @@ function formBarang(b) {
     [
       { label: 'Batal', aksi: modalTutup },
       { label: edit ? 'Simpan perubahan' : 'Simpan barang', kelas: 'btn-primary', aksi: function () {
+          if (!val('fbGol')) { toast('Pilih golongan obat terlebih dahulu.', true); return; }
           api('barang.simpan', {
             mode: edit ? 'edit' : 'baru',
             Kode_Obat: val('fbKode'), Nama_Obat: val('fbNama'), Kategori: val('fbKat'),
