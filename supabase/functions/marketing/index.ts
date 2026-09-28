@@ -2,9 +2,14 @@
 // Edge Function: Target Omset & Dashboard Laba Bersih Marketing
 //
 // Akses:
-//   - Owner       : boleh CRUD target omset + baca dashboard
+//   - Owner       : boleh CRUD target omset + baca dashboard (cabang sendiri)
 //   - Apoteker    : baca target omset + baca dashboard (cabang sendiri)
 //   - Kasir       : baca target omset + baca dashboard (cabang sendiri)
+//
+// Isolasi cabang: SEMUA role (termasuk Owner) dikunci ke cabang_id sesi,
+// mengikuti docs/rencana-isolasi-cabang.md ("Owner hanya mengelola cabangnya
+// sendiri"). kode_cabang dari payload tidak pernah dipercaya; kalau berbeda
+// dengan cabang sesi, request ditolak.
 //
 // Actions:
 //   targetOmsetList            - daftar target (semua role; Kasir/Apoteker dikunci ke cabang sendiri)
@@ -123,11 +128,11 @@ function addDecimal(a: { units: bigint; scale: number }, b: { units: bigint; sca
   };
 }
 
+// Cabang SELALU dari sesi, untuk semua role (termasuk Owner).
 function cabangSesi(s: any, requested?: string | null) {
-  if (s.role === "Owner") return requested ? String(requested).trim() : null;
   const branch = String(s.cabang_id || "").trim();
   if (!branch) throw new Error("Sesi ini tidak punya cabang. Hubungi Owner.");
-  if (requested && requested !== branch) throw new Error("Akses cabang ditolak");
+  if (requested && String(requested).trim() !== branch) throw new Error("Akses cabang ditolak");
   return branch;
 }
 
@@ -137,14 +142,13 @@ async function targetOmsetList(data: any, s: any) {
   const filterCabang = cabangSesi(s, data?.kode_cabang);
   const onlyAktif = data?.only_aktif === true;
 
-  let path = `/marketing_target_omsets?order=updated_at.desc`;
-  if (filterCabang) path += `&kode_cabang=eq.${encodeURIComponent(filterCabang)}`;
+  let path = `/marketing_target_omsets?order=updated_at.desc&kode_cabang=eq.${encodeURIComponent(filterCabang)}`;
   if (onlyAktif) path += `&aktif=eq.true`;
 
   const rows = await rest(path);
 
   // Halaman "Kelola Target Omset" hanya bisa diakses Owner (dienforce juga di sini,
-  // bukan cuma di frontend). Untuk Owner, laba bersih SELALU ditampilkan di sini,
+  // bukan cuma di frontend) dan hanya berisi target cabang sesi. Untuk Owner, laba bersih SELALU ditampilkan di sini,
   // terlepas dari status tercapai — beda dengan dashboard "Progress per Cabang"
   // (dashboardProgressPerCabang) yang tetap menyembunyikan laba sebelum target tercapai.
   if (s.role === "Owner" && Array.isArray(rows) && rows.length) {
@@ -167,8 +171,8 @@ async function targetOmsetList(data: any, s: any) {
 
 async function targetOmsetSave(data: any, s: any) {
   if (s.role !== "Owner") throw new Error("Hanya Owner yang boleh menyimpan target omset");
-  const kode_cabang = String(data?.kode_cabang || "").trim();
-  if (!kode_cabang) throw new Error("kode_cabang wajib diisi");
+  // Target hanya boleh dibuat/diubah untuk cabang sesi.
+  const kode_cabang = cabangSesi(s, data?.kode_cabang || null);
 
   // Validasi via RPC (server-side enforcement: role check + unique active per branch)
   const payload = {
@@ -318,11 +322,12 @@ async function dashboardLaba(data: any, s: any) {
 }
 
 async function dashboardProgressPerCabang(_data: any, s: any) {
-  // Daftar cabang dari master_cabang (atau distinct dari target_omsets).
-  const cabangs = await rest(`/master_cabang?select=kode_cabang,nama_cabang&order=kode_cabang.asc`);
+  // Hanya cabang sesi — omset & laba cabang lain tidak pernah dikirim.
+  const cab = encodeURIComponent(cabangSesi(s));
+  const cabangs = await rest(`/master_cabang?kode_cabang=eq.${cab}&select=kode_cabang,nama_cabang`);
 
-  // Ambil target aktif per cabang (1 row per cabang by unique index).
-  const targets = await allRows(`/marketing_target_omsets?aktif=eq.true&select=id,kode_cabang,nama_target,periode_mulai,periode_selesai,target_omset_idr`);
+  // Target aktif cabang sesi (maks. 1 row by unique index).
+  const targets = await allRows(`/marketing_target_omsets?aktif=eq.true&kode_cabang=eq.${cab}&select=id,kode_cabang,nama_target,periode_mulai,periode_selesai,target_omset_idr`);
 
   const byCab = new Map<string, any>();
   for (const t of targets) byCab.set(String(t.kode_cabang), t);
@@ -379,11 +384,9 @@ Deno.serve(async (req: Request) => {
     const fn = handlers[name];
     if (!fn) return json({ ok: false, error: `Aksi tidak dikenal: ${name}` }, 400);
 
-    // Lock-branch untuk role non-Owner
-    if (s.role !== "Owner") {
-      try { cabangSesi(s, data?.kode_cabang); } catch (e: any) {
-        return json({ ok: false, error: e?.message || "Akses cabang ditolak" }, 403);
-      }
+    // Lock-branch untuk semua role (termasuk Owner)
+    try { cabangSesi(s, data?.kode_cabang); } catch (e: any) {
+      return json({ ok: false, error: e?.message || "Akses cabang ditolak" }, 403);
     }
 
     const result = await fn(data || {}, s);

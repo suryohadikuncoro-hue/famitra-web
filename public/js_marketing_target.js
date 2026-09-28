@@ -2,7 +2,7 @@
 // UI: Target Omset & Laba Bersih Marketing
 //
 // Akses:
-//   - Owner       : boleh CRUD target omset + baca dashboard progress per cabang
+//   - Owner       : boleh CRUD target omset + baca dashboard progress (cabang sendiri)
 //   - Apoteker    : baca dashboard progress (cabang sendiri, target tidak bisa dibuat)
 //   - Kasir       : baca dashboard progress (cabang sendiri, target tidak bisa dibuat)
 //
@@ -10,7 +10,7 @@
 //   https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/marketing
 //
 // Aturan visibilitas (sesuai permintaan Owner):
-//   - Dashboard "Progress per Cabang" (semua role): sebelum target tercapai, laba
+//   - Dashboard "Progress Cabang" (semua role, hanya cabang sesi): sebelum target tercapai, laba
 //     TIDAK ditampilkan ke user manapun — hanya progress omset + badge
 //     "🔒 Laba disembunyikan". Setelah tercapai, seluruh angka tampil.
 //   - Halaman "Kelola Target Omset" (Owner only): laba bersih SELALU tampil,
@@ -104,10 +104,15 @@
     { kode_cabang: "PULE", nama_cabang: "Apotek Fa-Mitra Pule" }
   ];
 
+  // Isolasi cabang: fitur target omset hanya untuk cabang sesi (semua role,
+  // termasuk Owner). Backend juga menolak cabang lain.
   function cabangList() {
     var SESS = window.SESSION || {};
-    if (Array.isArray(SESS.cabangs) && SESS.cabangs.length) return SESS.cabangs;
-    return DEFAULT_CABANGS;
+    var kode = String((SESS.user && SESS.user.cabang_id) || "").trim();
+    var semua = (Array.isArray(SESS.cabangs) && SESS.cabangs.length) ? SESS.cabangs : DEFAULT_CABANGS;
+    if (!kode) return [];
+    var cocok = semua.filter(function (c) { return c.kode_cabang === kode; });
+    return cocok.length ? cocok : [{ kode_cabang: kode, nama_cabang: kode }];
   }
 
   // ---------------- State ----------------
@@ -125,7 +130,7 @@
     var SESS = window.SESSION || {};
     var isOwner = SESS.user && SESS.user.role === "Owner";
     var tabs = [
-      { id: "progress", label: "Progress per Cabang" },
+      { id: "progress", label: "Progress Cabang" },
       { id: "target", label: "Kelola Target Omset", onlyOwner: true },
     ];
     var html = '<div class="tabs" style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap;">';
@@ -267,12 +272,9 @@
   // ---------------- Tab: Target Omset (Owner only) ----------------
   function renderTargetTab(el) {
     return '<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
-      '<select id="mt-cabang" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;">' +
-        '<option value="">Semua cabang</option>' +
-        cabangList().map(function (c) {
-          return '<option value="' + esc(c.kode_cabang) + '">' + esc(c.nama_cabang) + '</option>';
-        }).join("") +
-      '</select>' +
+      cabangList().map(function (c) {
+        return '<span class="chip" style="background:#e0f2fe;color:#075985;">Cabang: ' + esc(c.nama_cabang) + '</span>';
+      }).join("") +
       '<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="mt-only-aktif"/> Hanya aktif</label>' +
       '<button id="mt-reload" style="padding:6px 12px;background:#0ea5e9;color:#fff;border:0;border-radius:8px;cursor:pointer;">Muat Ulang</button>' +
       '<span style="flex:1"></span>' +
@@ -353,7 +355,7 @@
       ? state.targets.filter(function (t) { return t.id === state.editId; })[0]
       : null;
     var cabangOpts = cabangList().map(function (c) {
-      return '<option value="' + esc(c.kode_cabang) + '">' + esc(c.nama_cabang) + '</option>';
+      return '<option value="' + esc(c.kode_cabang) + '" selected>' + esc(c.nama_cabang) + '</option>';
     }).join("");
 
     var v = editing || {};
@@ -365,8 +367,7 @@
       '<div class="card-head"><h3>' + (editing ? 'Ubah Target Omset' : 'Target Omset Baru') + '</h3></div>' +
       '<form id="mt-form" style="display:grid;gap:12px;">' +
         '<label class="field"><span>Cabang</span>' +
-          '<select id="mt-f-cabang" class="inp" required ' + (editing ? 'disabled' : '') + '>' +
-            '<option value="">— Pilih cabang —</option>' +
+          '<select id="mt-f-cabang" class="inp" required disabled>' +
             cabangOpts +
           '</select>' +
         '</label>' +
@@ -543,7 +544,7 @@
           '<div class="crm-head"><div>' +
             '<div class="eyebrow">MARKETING &middot; TARGET OMSET</div>' +
             '<h2>Target Omset &amp; Laba Bersih</h2>' +
-            '<p class="sub">Owner menetapkan target omset per cabang per periode. Sebelum target tercapai, ' +
+            '<p class="sub">Owner menetapkan target omset untuk cabangnya sendiri per periode. Sebelum target tercapai, ' +
               'laba disembunyikan. Setelah tercapai, seluruh angka tampil.</p>' +
           '</div></div>' +
           '<div id="mt-tabs"></div>' +
