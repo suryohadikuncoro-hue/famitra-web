@@ -66,15 +66,59 @@ VIEWS.dashboard = {
   title: 'Dashboard',
   render: function (el) {
     var punyaAI = SESSION.user.role === 'Owner';
+    var tanggal = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    var pil = [['hari_ini', 'Hari ini'], ['mingguan', '7 hari'], ['bulanan', 'Bulanan'], ['tahunan', 'Tahunan'], ['custom', 'Pilih tanggal']];
+    // Ringkasan AI tetap paling atas (posisi tidak dipindah). Filter memakai
+    // filterBarHtml('db') yang sama (ID dbMode/dbShift/... tetap) supaya
+    // bacaFilter('db') — dipakai ringkasan & insight AI — tidak berubah.
     el.innerHTML =
       (punyaAI ? bannerKerangka() : '') +
-      filterBarHtml('db') +
+      '<div class="db-head">' +
+        '<div class="db-tanggal">' + esc(tanggal) + '</div>' +
+        '<div class="db-kontrol">' +
+          '<div class="db-pil" id="dbPil" role="group" aria-label="Rentang data">' +
+            pil.map(function (p) {
+              return '<button type="button" data-mode="' + p[0] + '" aria-pressed="' + (p[0] === 'hari_ini') + '">' + p[1] + '</button>';
+            }).join('') +
+          '</div>' +
+          '<div class="db-filter">' + filterBarHtml('db') + '</div>' +
+          '<span class="db-pj" id="dbPJ" hidden></span>' +
+          '<button type="button" class="db-ikon-btn" id="dbCetak" title="Cetak ringkasan" aria-label="Cetak ringkasan" disabled>' +
+            '<svg viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/></svg>' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
       '<div id="dbIsi">' + kerangka(6) + '</div>';
     pasangFilter('db', muatDashboard, 'hari_ini');
+    pasangPilRentang();
     muatDashboard();
     // Ringkasan AI dimulai manual melalui tombol Mulai/Refresh.
   }
 };
+
+/* Pil rentang menggantikan dropdown "Rentang" (dropdown tetap ada tapi
+   disembunyikan, jadi nilai filter tetap dibaca dari elemen yang sama). */
+function pasangPilRentang() {
+  var mode = document.getElementById('dbMode');
+  var wadah = document.querySelector('.db-filter');
+  if (!mode || !wadah) return;
+  mode.closest('.field').style.display = 'none';
+  function perluTerapkan() {
+    wadah.classList.toggle('perlu-terapkan', ['bulanan', 'tahunan', 'custom'].indexOf(mode.value) >= 0);
+  }
+  document.getElementById('dbPil').onclick = function (e) {
+    var b = e.target.closest('[data-mode]');
+    if (!b) return;
+    mode.value = b.dataset.mode;
+    mode.dispatchEvent(new Event('change'));
+    this.querySelectorAll('[data-mode]').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+    perluTerapkan();
+    if (b.dataset.mode === 'hari_ini' || b.dataset.mode === 'mingguan') muatDashboard();
+  };
+  var shift = document.getElementById('dbShift');
+  if (shift) shift.addEventListener('change', muatDashboard);
+  perluTerapkan();
+}
 
 function muatDashboard() {
   var isi = document.getElementById('dbIsi');
@@ -144,7 +188,7 @@ function svgGauge(persen, tercapai, teksTengah, teksBawah) {
     var t = i / (GAUGE_N - 1);
     var warna = i < isi
       ? 'rgb(' + dari.map(function (c, k) { return Math.round(c + (ke[k] - c) * t); }).join(',') + ')'
-      : '#ECEDF0';
+      : 'rgba(20,22,27,.08)';
     seg += '<line class="gauge-seg' + (i < isi ? ' isi' : '') + '" style="--i:' + i + '" ' +
       'x1="' + (cx + r1 * cos).toFixed(1) + '" y1="' + (cy - r1 * sin).toFixed(1) + '" ' +
       'x2="' + (cx + r2 * cos).toFixed(1) + '" y2="' + (cy - r2 * sin).toFixed(1) + '" ' +
@@ -167,7 +211,8 @@ function animasiGauge(box) {
 function renderTargetGauge(rows) {
   var isOwner = SESSION && SESSION.user && SESSION.user.role === 'Owner';
   var r = rows[0];
-  var judul = '<div class="sat-label">Target omset</div>';
+  var judul = '<div class="dk-judul">Target omset' +
+    '<svg class="dk-ikon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg></div>';
   if (!r || !r.target) {
     return judul + svgGauge(0, false, '—', 'belum ada target') +
       '<div class="gauge-info"><span class="sub">Belum ada target aktif untuk cabang ini.</span>' +
@@ -204,161 +249,168 @@ function renderTargetGauge(rows) {
     '</div>';
 }
 
-/* Grafik omzet harian (di bawah hero): garis halus bergradasi, area pudar,
-   tooltip + garis putus-putus saat disentuh/diarahkan. 7 atau 30 hari,
-   tidak ikut filter rentang. Digambar sesuai lebar kartu, ulang saat resize. */
-var GRAFIK = { hari: 7, data: [] };
+/* Grafik omzet harian bergaya sparkline (referensi Owner): tanpa sumbu &
+   garis bantu, garis gelap = periode ini, garis merah pudar = periode
+   sebelumnya, titik bercincin + kartu tooltip putih, pilihan 7/14/30 hari
+   di bawah grafik. Data `tren_harian` 60 hari (tidak ikut filter). */
+var GRAFIK = { hari: 7, data: [], aktif: null };
+
+function kurvaHalus(p, jepitAtas, jepitBawah) {
+  var jepit = function (y) {
+    return jepitAtas === undefined ? y : Math.max(jepitAtas, Math.min(jepitBawah, y));
+  };
+  var d = 'M' + p[0][0].toFixed(1) + ',' + p[0][1].toFixed(1);
+  for (var k = 0; k < p.length - 1; k++) {
+    var p0 = p[k - 1] || p[k], p1 = p[k], p2 = p[k + 1], p3 = p[k + 2] || p2;
+    d += ' C' + (p1[0] + (p2[0] - p0[0]) / 6).toFixed(1) + ',' + jepit(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1) +
+      ' ' + (p2[0] - (p3[0] - p1[0]) / 6).toFixed(1) + ',' + jepit(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1) +
+      ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
+  }
+  return d;
+}
+
+/* Sparkline kecil untuk kartu KPI: garis periode ini + garis pembanding pudar. */
+function sparkMini(ini, lalu, gelap) {
+  if (!ini.length) return '';
+  var W = 96, H = 44, semua = ini.concat(lalu || []);
+  var mx = Math.max.apply(null, semua), mn = Math.min.apply(null, semua);
+  if (mx === mn) { mx += 1; mn -= 1; }
+  var titik = function (arr) {
+    return arr.map(function (v, i) { return [3 + i * (W - 6) / Math.max(1, arr.length - 1), 4 + (mx - v) / (mx - mn) * (H - 8)]; });
+  };
+  var pa = titik(ini), akhir = pa[pa.length - 1];
+  return '<svg class="db-spark" viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">' +
+    (lalu && lalu.length > 1 ? '<path d="' + kurvaHalus(titik(lalu)) + '" fill="none" stroke="#CE2C2B" stroke-opacity=".4" stroke-width="1.6"/>' : '') +
+    (pa.length > 1 ? '<path d="' + kurvaHalus(pa) + '" fill="none" stroke="' + (gelap ? '#fff' : '#25262A') + '" stroke-width="2.2" stroke-linecap="round"/>' : '') +
+    '<circle cx="' + akhir[0].toFixed(1) + '" cy="' + akhir[1].toFixed(1) + '" r="3.5" fill="#CE2C2B" stroke="' + (gelap ? '#141517' : '#fff') + '" stroke-width="2"/></svg>';
+}
 
 function grafikOmzetHtml() {
-  return '<div class="card grafik-card" id="dbGrafik">' +
-    '<div class="grafik-head">' +
-      '<div><div class="sat-label">Omzet harian</div>' +
-        '<div class="grafik-total" id="dbGrafikTotal"></div>' +
-        '<div class="sub" id="dbGrafikSub"></div></div>' +
-      '<div class="seg-toggle" role="group" aria-label="Rentang grafik">' +
-        '<button type="button" data-grafik="7" aria-pressed="true">7 hari</button>' +
-        '<button type="button" data-grafik="30" aria-pressed="false">30 hari</button>' +
-      '</div>' +
+  return '<div class="dkartu db-grafik" id="dbGrafik">' +
+    '<div class="db-grafik-head">' +
+      '<div><div class="dk-judul">Omzet harian</div>' +
+        '<div class="db-grafik-total" id="dbGrafikTotal"></div>' +
+        '<div class="dk-sub" id="dbGrafikSub"></div></div>' +
+      '<div class="db-legenda"><span><i class="lg-ini"></i>Periode ini</span><span><i class="lg-lalu"></i>Periode sebelumnya</span></div>' +
     '</div>' +
-    '<div class="grafik-area" id="dbGrafikArea"></div>' +
+    '<div class="db-grafik-area" id="dbGrafikArea"></div>' +
+    '<div class="db-rentang" role="group" aria-label="Rentang grafik">' +
+      '<button type="button" data-grafik="7" aria-pressed="true">7 hari</button>' +
+      '<button type="button" data-grafik="14" aria-pressed="false">14 hari</button>' +
+      '<button type="button" data-grafik="30" aria-pressed="false">30 hari</button>' +
+    '</div>' +
   '</div>';
 }
 
 function pasangGrafikOmzet(d) {
-  var src = d.tren_harian || (d.sparkline || []).map(function (x) { return { tanggal: x.tanggal, omzet: x.omzet, nota: x.nota }; });
-  GRAFIK.data = src;
+  GRAFIK.data = d.tren_harian || (d.sparkline || []).map(function (x) { return { tanggal: x.tanggal, omzet: x.omzet, nota: x.nota }; });
   var card = document.getElementById('dbGrafik');
   if (!card) return;
-  card.querySelector('.seg-toggle').onclick = function (e) {
+  card.querySelector('.db-rentang').onclick = function (e) {
     var b = e.target.closest('[data-grafik]');
     if (!b) return;
     GRAFIK.hari = Number(b.dataset.grafik);
+    GRAFIK.aktif = null;
     gambarGrafikOmzet();
   };
   gambarGrafikOmzet();
 }
 
-function singkatRp(n) {
-  var a = Math.abs(n);
-  if (a >= 1e9) return (n / 1e9).toFixed(1).replace('.', ',') + ' M';
-  if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace('.', ',') + ' jt';
-  if (a >= 1e3) return Math.round(n / 1e3) + ' rb';
-  return String(Math.round(n));
-}
-
 function gambarGrafikOmzet() {
   var area = document.getElementById('dbGrafikArea');
   if (!area) return;
-  var n = GRAFIK.hari;
-  var semuaData = GRAFIK.data;
+  var n = GRAFIK.hari, semuaData = GRAFIK.data;
   var data = semuaData.slice(-n);
-  var sebelum = semuaData.length >= n * 2 ? semuaData.slice(-n * 2, -n) : null;
+  var lalu = semuaData.length >= n * 2 ? semuaData.slice(-n * 2, -n) : [];
 
   document.querySelectorAll('#dbGrafik [data-grafik]').forEach(function (b) {
     b.setAttribute('aria-pressed', Number(b.dataset.grafik) === n ? 'true' : 'false');
   });
-  var total = data.reduce(function (t, x) { return t + Number(x.omzet || 0); }, 0);
-  var totalSebelum = sebelum ? sebelum.reduce(function (t, x) { return t + Number(x.omzet || 0); }, 0) : 0;
-  var delta = sebelum && totalSebelum > 0 ? (total - totalSebelum) / totalSebelum * 100 : null;
+  var jumlah = function (arr) { return arr.reduce(function (t, x) { return t + Number(x.omzet || 0); }, 0); };
+  var total = jumlah(data), totalLalu = jumlah(lalu);
+  var delta = lalu.length && totalLalu > 0 ? (total - totalLalu) / totalLalu * 100 : null;
   document.getElementById('dbGrafikTotal').innerHTML = esc(rupiah(total)) + ' ' + chipDelta(delta);
   document.getElementById('dbGrafikSub').textContent =
-    n + ' hari terakhir · rata-rata ' + rupiahPendek(data.length ? total / data.length : 0) + '/hari' +
-    (delta !== null ? ' · dibanding ' + n + ' hari sebelumnya' : '');
-
+    n + ' hari terakhir · rata-rata ' + rupiahPendek(data.length ? total / data.length : 0) + '/hari';
   if (!data.length) { area.innerHTML = '<div class="empty">Belum ada data penjualan.</div>'; return; }
 
-  var W = Math.max(280, area.clientWidth || 600), H = 230;
-  var pl = 50, pr = 14, pt = 14, pb = 30;
-  var cw = W - pl - pr, ch = H - pt - pb;
+  var W = Math.max(260, area.clientWidth || 600);
+  var sempit = W < 500;
+  var H = sempit ? 200 : 210, pt = sempit ? 70 : 64, pb = 28, px = 10;
+  var ch = H - pt - pb, cw = W - px * 2;
   var nilai = data.map(function (x) { return Number(x.omzet || 0); });
-  var maks = Math.max.apply(null, nilai), min = Math.min(0, Math.min.apply(null, nilai));
-  // Batas atas "rapi" supaya garis bantu jatuh di angka bulat.
-  var kasar = (maks - min) / 4 || 1;
-  var pangkat = Math.pow(10, Math.floor(Math.log10(kasar)));
-  var langkah = [1, 2, 2.5, 5, 10].map(function (m) { return m * pangkat; }).filter(function (v) { return v >= kasar; })[0];
-  var atas = Math.ceil(maks / langkah) * langkah || langkah * 4;
-  var bawah = Math.floor(min / langkah) * langkah;
-  var X = function (i) { return pl + (data.length === 1 ? cw / 2 : i * cw / (data.length - 1)); };
-  var Y = function (v) { return pt + (atas - v) / (atas - bawah) * ch; };
+  var nilaiLalu = lalu.map(function (x) { return Number(x.omzet || 0); });
+  var semua = nilai.concat(nilaiLalu);
+  // Skala mengikuti rentang data (gaya sparkline), bukan dari nol, supaya naik-turun terlihat.
+  var mx = Math.max.apply(null, semua), mn = Math.min.apply(null, semua);
+  var ruang = (mx - mn) * 0.12 || Math.abs(mx) * 0.1 || 1;
+  mx += ruang * 0.4; mn -= ruang;
+  var X = function (i) { return px + (data.length === 1 ? cw / 2 : i * cw / (data.length - 1)); };
+  var Y = function (v) { return pt + (mx - v) / (mx - mn) * ch; };
+  var titik = nilai.map(function (v, i) { return [X(i), Y(v)]; });
+  var titikLalu = nilaiLalu.map(function (v, i) { return [X(i), Y(v)]; });
+  var aktif = GRAFIK.aktif === null || GRAFIK.aktif >= data.length ? data.length - 1 : GRAFIK.aktif;
 
-  var grid = '';
-  for (var g = bawah; g <= atas + 1e-6; g += langkah) {
-    grid += '<line class="grafik-grid" x1="' + pl + '" x2="' + (W - pr) + '" y1="' + Y(g).toFixed(1) + '" y2="' + Y(g).toFixed(1) + '"/>' +
-      '<text class="grafik-y" x="' + (pl - 8) + '" y="' + (Y(g) + 4).toFixed(1) + '" text-anchor="end">' + singkatRp(g) + '</text>';
-  }
-  var tiap = n <= 7 ? 1 : Math.ceil(data.length / Math.max(3, Math.floor(cw / 70)));
-  var sumbuX = data.map(function (x, i) {
-    if ((data.length - 1 - i) % tiap !== 0) return '';
+  // Label tanggal: pudar, yang aktif tebal; label dekat titik aktif disembunyikan.
+  var tiap = Math.max(1, Math.ceil(data.length / Math.max(3, Math.floor(cw / 78))));
+  var label = data.map(function (x, i) {
     var t = String(x.tanggal);
-    var jangkar = i === 0 ? 'start' : (i === data.length - 1 ? 'end' : 'middle');
-    return '<text class="grafik-x" x="' + X(i).toFixed(1) + '" y="' + (H - 8) + '" text-anchor="' + jangkar + '">' +
-      t.slice(8, 10) + '/' + t.slice(5, 7) + '</text>';
+    return '<text class="db-x" data-i="' + i + '" x="' + X(i).toFixed(1) + '" y="' + (H - 7) + '" text-anchor="' +
+      (i === 0 ? 'start' : (i === data.length - 1 ? 'end' : 'middle')) + '"' +
+      ((data.length - 1 - i) % tiap ? ' data-sisip="1"' : '') + '>' +
+      Number(t.slice(8, 10)) + ' ' + ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'][Number(t.slice(5, 7)) - 1] + '</text>';
   }).join('');
-
-  // Kurva halus (Catmull-Rom → Bezier), titik kontrol dijepit di area grafik.
-  var titik = data.map(function (x, i) { return [X(i), Y(Number(x.omzet || 0))]; });
-  var jepit = function (y) { return Math.max(pt, Math.min(pt + ch, y)); };
-  var garis = 'M' + titik[0][0].toFixed(1) + ',' + titik[0][1].toFixed(1);
-  for (var k = 0; k < titik.length - 1; k++) {
-    var p0 = titik[k - 1] || titik[k], p1 = titik[k], p2 = titik[k + 1], p3 = titik[k + 2] || p2;
-    var c1 = [p1[0] + (p2[0] - p0[0]) / 6, jepit(p1[1] + (p2[1] - p0[1]) / 6)];
-    var c2 = [p2[0] - (p3[0] - p1[0]) / 6, jepit(p2[1] - (p3[1] - p1[1]) / 6)];
-    garis += ' C' + c1[0].toFixed(1) + ',' + c1[1].toFixed(1) + ' ' + c2[0].toFixed(1) + ',' + c2[1].toFixed(1) +
-      ' ' + p2[0].toFixed(1) + ',' + p2[1].toFixed(1);
-  }
+  var garis = kurvaHalus(titik, pt - 4, pt + ch + 4);
   var isiArea = garis + ' L' + titik[titik.length - 1][0].toFixed(1) + ',' + (pt + ch) + ' L' + titik[0][0].toFixed(1) + ',' + (pt + ch) + ' Z';
 
   area.innerHTML =
-    '<svg class="grafik" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Grafik omzet ' + n + ' hari terakhir">' +
-      '<defs>' +
-        '<linearGradient id="gOmzetGaris" x1="0" x2="1" y1="0" y2="0">' +
-          '<stop offset="0" stop-color="#8F1D22"/><stop offset=".55" stop-color="#CE2C2B"/><stop offset="1" stop-color="#EE8A3C"/></linearGradient>' +
-        '<linearGradient id="gOmzetArea" x1="0" x2="0" y1="0" y2="1">' +
-          '<stop offset="0" stop-color="#CE2C2B" stop-opacity=".16"/><stop offset="1" stop-color="#CE2C2B" stop-opacity="0"/></linearGradient>' +
-      '</defs>' +
-      grid + sumbuX +
-      '<path d="' + isiArea + '" fill="url(#gOmzetArea)"/>' +
-      '<path d="' + garis + '" fill="none" stroke="url(#gOmzetGaris)" stroke-width="3" stroke-linecap="round"/>' +
-      '<line class="grafik-kursor" id="dbGrafikKursor" y1="' + pt + '" y2="' + (pt + ch) + '" x1="-10" x2="-10"/>' +
-      '<circle class="grafik-titik" id="dbGrafikTitik" r="6" cx="-10" cy="-10"/>' +
-      '<rect x="' + pl + '" y="0" width="' + cw + '" height="' + H + '" fill="transparent" id="dbGrafikSentuh"/>' +
+    '<svg class="db-grafik-svg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Grafik omzet ' + n + ' hari terakhir">' +
+      '<defs><linearGradient id="gOmzetArea" x1="0" x2="0" y1="0" y2="1">' +
+        '<stop offset="0" stop-color="#25262A" stop-opacity=".07"/><stop offset="1" stop-color="#25262A" stop-opacity="0"/></linearGradient></defs>' +
+      (data.length > 1 ? '<path d="' + isiArea + '" fill="url(#gOmzetArea)"/>' : '') +
+      (titikLalu.length > 1 ? '<path d="' + kurvaHalus(titikLalu, pt - 4, pt + ch + 4) + '" fill="none" stroke="#CE2C2B" stroke-opacity=".45" stroke-width="2.2" stroke-linecap="round"/>' : '') +
+      (data.length > 1 ? '<path d="' + garis + '" fill="none" stroke="#25262A" stroke-width="3" stroke-linecap="round"/>' : '') +
+      label +
+      '<g id="dbGrafikPenanda"><circle r="8" fill="#fff" stroke="#25262A" stroke-width="2.5"/><circle r="3" fill="#25262A"/></g>' +
+      '<rect x="0" y="0" width="' + W + '" height="' + (H - pb) + '" fill="transparent" id="dbGrafikSentuh"/>' +
     '</svg>' +
-    '<div class="grafik-tip" id="dbGrafikTip" hidden></div>';
+    '<div class="db-tip" id="dbGrafikTip"></div>';
 
   var hariNama = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
   var bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
-  var sentuh = document.getElementById('dbGrafikSentuh');
-  var kursor = document.getElementById('dbGrafikKursor');
-  var bulat = document.getElementById('dbGrafikTitik');
+  var penanda = document.getElementById('dbGrafikPenanda');
   var tip = document.getElementById('dbGrafikTip');
-  function tunjuk(ev) {
-    var box = sentuh.ownerSVGElement.getBoundingClientRect();
-    var x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - box.left;
-    var i = data.length === 1 ? 0 : Math.round((x - pl) / cw * (data.length - 1));
-    i = Math.max(0, Math.min(data.length - 1, i));
-    var px = titik[i][0], py = titik[i][1];
-    kursor.setAttribute('x1', px); kursor.setAttribute('x2', px);
-    bulat.setAttribute('cx', px); bulat.setAttribute('cy', py);
+  var labelEl = area.querySelectorAll('.db-x');
+  function tunjuk(i) {
+    var px_ = titik[i][0], py = titik[i][1];
+    penanda.setAttribute('transform', 'translate(' + px_.toFixed(1) + ',' + py.toFixed(1) + ')');
+    labelEl.forEach(function (t) {
+      var j = Number(t.getAttribute('data-i'));
+      t.classList.toggle('on', j === i);
+      var dekat = Math.abs(j - i) * cw / Math.max(1, data.length - 1) < 58;
+      t.style.display = (j === i || (!dekat && !t.hasAttribute('data-sisip'))) ? '' : 'none';
+    });
     var tg = new Date(data[i].tanggal + 'T00:00:00');
-    tip.innerHTML = '<div class="grafik-tip-tgl">' + hariNama[tg.getDay()] + ', ' + tg.getDate() + ' ' + bulan[tg.getMonth()] + '</div>' +
-      '<div>Omzet: <strong>' + esc(rupiah(data[i].omzet)) + '</strong></div>' +
-      (data[i].nota !== undefined ? '<div class="grafik-tip-tgl">' + angka(data[i].nota) + ' nota</div>' : '');
-    tip.hidden = false;
-    var tw = tip.offsetWidth;
-    tip.style.left = Math.max(0, Math.min(W - tw, px - tw / 2)) + 'px';
-    // Di atas titik; kalau tidak muat, pindah ke bawah titik supaya titik tetap terlihat.
-    var atasTip = py - tip.offsetHeight - 14;
-    tip.style.top = (atasTip >= 0 ? atasTip : py + 14) + 'px';
+    tip.innerHTML = '<small>' + hariNama[tg.getDay()] + ', ' + tg.getDate() + ' ' + bulan[tg.getMonth()] + '</small>' +
+      '<b>' + esc(rupiah(data[i].omzet)) + '</b>' +
+      (data[i].nota !== undefined ? '<small>' + angka(data[i].nota) + ' nota</small>' : '');
+    var tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = Math.max(0, Math.min(W - tw, px_ - tw / 2)) + 'px';
+    var atas = py - th - 16;
+    tip.style.top = (atas >= 0 ? atas : py + 16) + 'px';
   }
-  function sembunyi() {
-    tip.hidden = true;
-    kursor.setAttribute('x1', -10); kursor.setAttribute('x2', -10);
-    bulat.setAttribute('cx', -10);
+  function dariPosisi(ev) {
+    var box = area.getBoundingClientRect();
+    var x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - box.left;
+    var i = data.length === 1 ? 0 : Math.round((x - px) / cw * (data.length - 1));
+    GRAFIK.aktif = Math.max(0, Math.min(data.length - 1, i));
+    tunjuk(GRAFIK.aktif);
   }
-  sentuh.addEventListener('mousemove', tunjuk);
-  sentuh.addEventListener('mouseleave', sembunyi);
-  sentuh.addEventListener('touchstart', tunjuk, { passive: true });
-  sentuh.addEventListener('touchmove', tunjuk, { passive: true });
+  var sentuh = document.getElementById('dbGrafikSentuh');
+  sentuh.addEventListener('mousemove', dariPosisi);
+  sentuh.addEventListener('touchstart', dariPosisi, { passive: true });
+  sentuh.addEventListener('touchmove', dariPosisi, { passive: true });
+  tunjuk(aktif);
 }
 
 // Gambar ulang grafik saat lebar layar berubah (dipasang sekali).
@@ -370,170 +422,138 @@ function gambarGrafikOmzet() {
   });
 })();
 
+function inisial(nama) {
+  var s = String(nama || '').trim();
+  if (!s || /^umum$/i.test(s)) return 'U';
+  return s.split(/\s+/).slice(0, 2).map(function (x) { return x.charAt(0); }).join('').toUpperCase();
+}
+
 function gambarDashboard(d) {
   var k = d.kpi;
+  var rentangLabel = (d.rentang.label || 'periode ini').toLowerCase();
+  var tren = d.tren_harian || [];
+  var ambil = function (arr, f) { return arr.map(function (x) { return Number(x[f] || 0); }); };
+  var tren7 = tren.slice(-7), tren7Lalu = tren.length >= 14 ? tren.slice(-14, -7) : [];
 
-  /* 1. Hero omzet — angka besar di kiri, gauge target omset di kanan. */
-  // Tentukan rentang label yang sedang aktif untuk header cetak.
-  var rentangLabel = d.rentang.label || 'periode ini';
-  var hero =
-    '<div class="hero" id="dbHero">' +
-      '<div>' +
-        '<div class="hero-label">Omzet ' + esc(rentangLabel.toLowerCase()) +
-          (d.shift_filter !== 'Semua' ? ' · ' + esc(d.shift_filter) : '') +
-          ' <span class="sub" style="font-weight:400">· klik untuk buka laporan</span></div>' +
-        '<div class="hero-row">' +
-          '<div class="hero-value">' + rupiah(k.omzet) + '</div>' +
-          chipDelta(k.delta_omzet) +
-        '</div>' +
-        '<div class="hero-satelit">' +
-          satelit('Laba kotor', rupiah(k.laba_kotor), k.laba_kotor < 0) +
-          // Laba bersih / laba setelah target ada di widget & halaman Target Omset;
-          // di sini diganti retur supaya tidak dobel.
-          satelit('Retur', rupiah(k.retur_total || 0), false) +
-          satelit('Nota terjual', angka(k.nota), false, k.delta_nota) +
-          satelit('Rata-rata nota', rupiah(k.rata_nota), false, k.delta_rata) +
-        '</div>' +
-      '</div>' +
-      // Posisi kanan hero: gauge target omset (dimuat terpisah dari Edge Function marketing).
-      '<div class="hero-chart hero-target" id="dbTargetOmsetBody">' + kerangka(2) + '</div>' +
-    '</div>';
-
-  /* 2. Strip peringatan — klik untuk membuka rincian. */
-  var strip;
-  if (d.expiring_total || d.stok_menipis_total) {
-    var kritis = d.expiring_kritis > 0;
-    var bagian = [];
-    if (d.expiring_total) {
-      bagian.push(d.expiring_total + ' batch kedaluwarsa &lt;90 hari (' + rupiahPendek(d.expiring_nilai) + ')');
-    }
-    if (d.stok_menipis_total) bagian.push(d.stok_menipis_total + ' produk di bawah stok minimum');
-    strip =
-      '<div class="alertstrip ' + (kritis ? 'kritis' : 'perhatian') + '" id="dbStrip">' +
-        '<span class="pesan"><span class="dot"></span>' + bagian.join(' · ') + '</span>' +
-        '<span class="spacer"></span>' +
-        '<span class="lihat">' + (kritis ? '⚠ KRITIS · ' : '') + 'Lihat rincian ▸</span>' +
-      '</div>';
-  } else {
-    strip = '<div class="alertstrip aman"><span class="pesan"><span class="dot"></span>' +
-      'Stok aman, tidak ada batch mendekati kedaluwarsa.</span></div>';
-  }
-
-  /* 3. PJ shift — kartu berbeda untuk yang sedang jaga (Kasir) vs yang mengawasi (Owner/Apoteker) */
-  var pj = d.pj_shift;
-  var chipPJ = '<span class="chip ' + (pj.di_luar_jam ? 'chip-warn' : 'chip-brand') + '">' +
-    (pj.di_luar_jam ? 'Di luar jam buka' : esc(pj.shift) + ' · ' + esc(pj.jam)) + '</span>';
-  var kartuShift;
-  if (pj.role === 'Kasir') {
-    // Yang sedang jaga apotek: tampilkan nama kasir ini sendiri sebagai PJ.
-    kartuShift =
-      '<div class="card">' +
-        '<div class="card-head"><h3>Penanggung jawab</h3>' + chipPJ + '</div>' +
-        '<p style="margin:0"><strong>' + esc(pj.petugas) + '</strong> — ' + esc(labelRole_(pj.role)) + '</p>' +
-        '<p class="sub" style="margin:3px 0 0">Aktif sejak ' + esc(pj.login_at) + '</p>' +
-      '</div>';
-  } else {
-    // Owner/Apoteker melihat dari rumah/lokasi lain:
-    // tampilkan admin yang paling terakhir melakukan transaksi hari ini,
-    // BUKAN nama akun Owner sendiri (Owner sedang mengawasi, bukan jaga).
-    var infoJaga = pj.petugas_jaga
-      ? '<p style="margin:6px 0 0"><strong>Sedang jaga: ' + esc(pj.petugas_jaga) + '</strong></p>' +
-        '<p class="sub" style="margin:3px 0 0">Aktivitas ' + esc(pj.sumber_aktivitas) +
-        ' terakhir pukul ' + esc(pj.aktivitas_jam) + '</p>'
-      : '<p class="sub" style="margin:6px 0 0">Belum ada aktivitas kasir hari ini.</p>';
-    kartuShift =
-      '<div class="card">' +
-        '<div class="card-head"><h3>Penanggung jawab</h3>' + chipPJ + '</div>' +
-        '<p style="margin:0">Anda login sebagai <strong>' + esc(pj.petugas) + '</strong> — ' +
-          esc(labelRole_(pj.role)) + '</p>' +
-        infoJaga +
-      '</div>';
-  }
-
-  /* 4. Strip segmen pelanggan */
-  var s = d.segmen_pelanggan;
-  var segStrip =
-    '<div class="segstrip">' +
-      seg('vip', s.VIP || 0, 'Pelanggan VIP') +
-      seg('rutin', s['Active Routine'] || 0, 'Rutin belanja') +
-      seg('risk', s['At-Risk'] || 0, 'Perlu ditindak') +
-      seg('', s.Baru || 0, 'Baru terdaftar') +
-    '</div>';
-
-  /* 5. Feed transaksi + panel kanan */
-  var feedJual =
-    '<div class="card"><div class="card-head"><h3>Penjualan terkini</h3></div>' +
-      '<div class="table-wrap tbl-sm"><table><thead><tr><th>Nota</th><th>Pembeli</th>' +
-        '<th class="r">Total</th><th>Jam</th></tr></thead><tbody>' +
-        (d.live_sales.length ? d.live_sales.map(function (r) {
-          var pendek = String(r.No_Nota).split('-').pop();
-          return '<tr><td title="' + esc(r.No_Nota) + '">#' + esc(pendek) + '</td>' +
-            '<td>' + esc(r.Nama_Pelanggan) + '</td>' +
-            '<td class="r num">' + rupiah(r.Harga_Akhir) + '</td>' +
-            '<td>' + esc(r.Jam) +
-            (r.Shift === 'Luar Jam' ? ' <span class="chip chip-warn">luar jam</span>' : '') +
-            '</td></tr>';
-        }).join('') : tabelKosong('Belum ada penjualan.', 4)) +
-      '</tbody></table></div></div>' +
-    '<div class="card"><div class="card-head"><h3>Pengeluaran terkini</h3></div>' +
-      '<div class="table-wrap tbl-sm"><table><thead><tr><th>Keterangan</th>' +
-        '<th class="r">Nominal</th><th>Tanggal</th></tr></thead><tbody>' +
-        (d.live_expense.length ? d.live_expense.map(function (r) {
-          return '<tr><td>' + esc(r.Keterangan) + '</td>' +
-            '<td class="r num">' + rupiah(r.Nominal) + '</td>' +
-            '<td>' + tglIndo(r.Tanggal) + '</td></tr>';
-        }).join('') : tabelKosong('Belum ada pengeluaran.', 3)) +
-      '</tbody></table></div></div>';
-
-  var maxShift = Math.max(d.shift_chart.Pagi, d.shift_chart.Sore, d.shift_chart['Luar Jam'] || 0);
-  var kartuShiftBar =
-    '<div class="card"><div class="card-head"><h3>Pagi vs sore</h3></div>' +
-      barPeringkat([
-        { nama: 'Shift pagi', nilai: d.shift_chart.Pagi, tampil: rupiahPendek(d.shift_chart.Pagi) },
-        { nama: 'Shift sore', nilai: d.shift_chart.Sore, tampil: rupiahPendek(d.shift_chart.Sore) }
-      ].concat(d.shift_chart['Luar Jam'] ? [{
-        nama: 'Di luar jam buka', nilai: d.shift_chart['Luar Jam'],
-        tampil: rupiahPendek(d.shift_chart['Luar Jam'])
-      }] : []), { kosong: 'Belum ada penjualan.' }) +
-    '</div>';
-
-  var kartuProduk =
-    '<div class="card"><div class="card-head"><h3>Produk terlaris</h3></div>' +
-      barPeringkat(d.top_produk.map(function (p) {
-        return { nama: p.nama, nilai: p.qty, tampil: angka(p.qty) + ' pcs' };
-      }), { alt: true, kosong: 'Belum ada penjualan pada rentang ini.' }) +
-    '</div>';
-
-  var kartuPelanggan =
-    '<div class="card"><div class="card-head"><h3>Pelanggan</h3>' +
-      '<div class="tabs" id="dbTabsPel">' +
-        '<button class="is-active" data-tab="top">Teratas</button>' +
-        '<button data-tab="risk">Perlu ditindak</button>' +
-      '</div></div>' +
-      '<div id="dbPelTop">' +
-        barPeringkat(d.top_pelanggan.map(function (c) {
-          return {
-            nama: c.Nama, nilai: c.Total_Belanja, tampil: rupiahPendek(c.Total_Belanja),
-            catatan: c.Tipe_Customer + ' · ' + angka(c.Jumlah_Transaksi) + ' transaksi'
-          };
-        }), { kosong: 'Belum ada pelanggan yang berbelanja.' }) +
-      '</div>' +
-      '<div id="dbPelRisk" hidden>' +
-        (d.at_risk.length ? d.at_risk.map(function (c) {
-          return '<div class="rank-item" style="margin-bottom:12px">' +
-            '<div class="rank-top"><strong>' + esc(c.Nama) + '</strong>' +
-              '<a class="btn btn-sm" target="_blank" href="https://wa.me/' + esc(c.Nomor_WA) + '">WhatsApp</a>' +
-            '</div>' +
-            '<div class="sub">' + esc(c.Tipe_Customer) + ' · ' + c.jeda_hari +
-              ' hari tanpa transaksi · ' + rupiahPendek(c.Total_Belanja) + '</div>' +
-          '</div>';
-        }).join('') : '<div class="empty">Tidak ada pelanggan yang tertinggal.</div>') +
+  /* 1. Tiga kartu KPI */
+  var kartuOmzet =
+    '<div class="dkartu dk-gelap db-omzet" id="dbHero" role="link" tabindex="0" title="Buka Laporan dengan filter yang sama">' +
+      '<div class="dk-judul">Omzet ' + esc(rentangLabel) + (d.shift_filter !== 'Semua' ? ' · ' + esc(d.shift_filter) : '') +
+        '<svg class="dk-ikon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9.5a3 3 0 00-3-1.5c-1.7 0-3 .9-3 2s1.3 1.7 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 01-3-1.5M12 6.5v11"/></svg></div>' +
+      '<div class="dk-flex"><div>' +
+        '<div class="dk-nilai">' + rupiah(k.omzet) + '</div>' +
+        '<div class="dk-baris">' + chipDelta(k.delta_omzet) + '<span>klik untuk buka laporan</span></div>' +
+      '</div>' + sparkMini(ambil(tren7, 'omzet'), ambil(tren7Lalu, 'omzet'), true) + '</div>' +
+      '<div class="dk-sub2">' +
+        '<div><small>Laba kotor</small><b class="' + (k.laba_kotor < 0 ? 'minus' : '') + '">' + rupiah(k.laba_kotor) + '</b></div>' +
+        '<div><small>Retur</small><b>' + rupiah(k.retur_total || 0) + '</b></div>' +
       '</div>' +
     '</div>';
 
-  /* 6. Tabel detail terlipat */
+  var kartuNota =
+    '<div class="dkartu db-nota">' +
+      '<div class="dk-judul">Nota terjual' +
+        '<svg class="dk-ikon" viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg></div>' +
+      '<div class="dk-flex"><div>' +
+        '<div class="dk-nilai">' + angka(k.nota) + ' <small>nota</small></div>' +
+        '<div class="dk-baris">' + chipDelta(k.delta_nota) + '<span>rata-rata ' + rupiah(k.rata_nota) + '</span></div>' +
+      '</div>' + sparkMini(ambil(tren7, 'nota'), ambil(tren7Lalu, 'nota'), false) + '</div>' +
+    '</div>';
+
+  var kritis = d.expiring_kritis > 0;
+  var kartuStok =
+    '<div class="dkartu db-stok' + (kritis ? ' kritis' : '') + '" id="dbStrip" role="button" tabindex="0">' +
+      '<div class="dk-judul">Peringatan stok' + (kritis ? ' <span class="chip dk-chip-bad">Kritis</span>' : '') +
+        '<svg class="dk-ikon" viewBox="0 0 24 24"><path d="M12 3l10 18H2L12 3z"/><path d="M12 10v4M12 17.5v.5"/></svg></div>' +
+      '<div class="db-stok-list">' +
+        '<div><span>Kedaluwarsa &lt; 90 hari</span><b>' + angka(d.expiring_total || 0) + ' <small>batch</small></b></div>' +
+        '<div><span>Di bawah stok minimum</span><b class="' + (d.stok_menipis_total ? 'warn' : '') + '">' + angka(d.stok_menipis_total || 0) + '</b></div>' +
+      '</div>' +
+      '<div class="dk-baris"><span class="dk-link">' +
+        (d.expiring_total || d.stok_menipis_total ? 'Lihat rincian stok ›' : 'Stok aman') + '</span>' +
+        (d.expiring_nilai ? '<span>nilai ' + rupiahPendek(d.expiring_nilai) + '</span>' : '') + '</div>' +
+    '</div>';
+
+  /* 2. Grafik + target */
+  var kartuTarget = '<div class="dkartu db-target hero-target" id="dbTargetOmsetBody">' + kerangka(2) + '</div>';
+
+  /* 3. Tabel bertab */
+  var barisJual = (d.live_sales || []).map(function (r) {
+    return '<tr><td><span class="db-av">' + esc(inisial(r.Nama_Pelanggan)) + '</span>' + esc(r.Nama_Pelanggan || 'Umum') + '</td>' +
+      '<td class="db-hp-sembunyi num" title="' + esc(r.No_Nota) + '">' + esc(r.No_Nota) + '</td>' +
+      '<td class="num">' + esc(r.Jam) + '</td>' +
+      '<td class="db-hp-sembunyi"><span class="db-shift' + (r.Shift === 'Luar Jam' ? ' warn' : '') + '">' + esc(r.Shift || '-') + '</span></td>' +
+      '<td class="r num"><b>' + rupiah(r.Harga_Akhir) + '</b></td></tr>';
+  }).join('');
+  var barisProduk = (d.top_produk || []).map(function (p, i) {
+    return '<tr><td><span class="db-av db-av-no">' + (i + 1) + '</span>' + esc(p.nama) + '</td>' +
+      '<td class="r num">' + angka(p.qty) + ' pcs</td><td class="r num"><b>' + rupiah(p.omzet) + '</b></td></tr>';
+  }).join('');
+  var barisPel = (d.top_pelanggan || []).map(function (c) {
+    return '<tr><td><span class="db-av">' + esc(inisial(c.Nama)) + '</span>' + esc(c.Nama) + '</td>' +
+      '<td class="db-hp-sembunyi">' + esc(c.Tipe_Customer) + '</td>' +
+      '<td class="r num">' + angka(c.Jumlah_Transaksi) + ' trx</td><td class="r num"><b>' + rupiah(c.Total_Belanja) + '</b></td></tr>';
+  }).join('');
+  var risiko = (d.at_risk || []).length ? '<div class="db-risiko"><div class="dk-judul">Perlu ditindak</div>' +
+    d.at_risk.map(function (c) {
+      return '<div class="db-risiko-item"><div><b>' + esc(c.Nama) + '</b><div class="dk-sub">' + esc(c.Tipe_Customer) + ' · ' +
+        c.jeda_hari + ' hari tanpa transaksi · ' + rupiahPendek(c.Total_Belanja) + '</div></div>' +
+        '<a class="btn btn-sm" target="_blank" href="https://wa.me/' + esc(c.Nomor_WA) + '">WhatsApp</a></div>';
+    }).join('') + '</div>' : '';
+  var barisBiaya = (d.live_expense || []).map(function (r) {
+    return '<tr><td>' + esc(r.Keterangan) + '</td><td>' + tglIndo(r.Tanggal) + '</td><td class="r num"><b>' + rupiah(r.Nominal) + '</b></td></tr>';
+  }).join('');
+  var tabel = function (kepala, isi, kolom, kosong) {
+    return '<div class="db-tabel"><table><thead><tr>' + kepala + '</tr></thead><tbody>' +
+      (isi || tabelKosong(kosong, kolom)) + '</tbody></table></div>';
+  };
+  var kartuTab =
+    '<div class="dkartu db-tab">' +
+      '<div class="db-tabs" id="dbTabs" role="tablist">' +
+        '<button type="button" role="tab" data-tabdb="jual" aria-selected="true">Penjualan terkini</button>' +
+        '<button type="button" role="tab" data-tabdb="produk" aria-selected="false">Produk terlaris</button>' +
+        '<button type="button" role="tab" data-tabdb="pel" aria-selected="false">Pelanggan teratas</button>' +
+        '<button type="button" role="tab" data-tabdb="biaya" aria-selected="false">Pengeluaran</button>' +
+      '</div>' +
+      '<div data-panel="jual">' + tabel('<th>Pelanggan</th><th class="db-hp-sembunyi">Nota</th><th>Jam</th><th class="db-hp-sembunyi">Shift</th><th class="r">Total</th>', barisJual, 5, 'Belum ada penjualan.') + '</div>' +
+      '<div data-panel="produk" hidden>' + tabel('<th>Produk</th><th class="r">Terjual</th><th class="r">Omzet</th>', barisProduk, 3, 'Belum ada penjualan pada rentang ini.') + '</div>' +
+      '<div data-panel="pel" hidden>' + tabel('<th>Pelanggan</th><th class="db-hp-sembunyi">Tipe</th><th class="r">Transaksi</th><th class="r">Belanja</th>', barisPel, 4, 'Belum ada pelanggan yang berbelanja.') + risiko + '</div>' +
+      '<div data-panel="biaya" hidden>' + tabel('<th>Keterangan</th><th>Tanggal</th><th class="r">Nominal</th>', barisBiaya, 3, 'Belum ada pengeluaran.') + '</div>' +
+    '</div>';
+
+  /* 4. Widget gelap: penanggung jawab, omzet per shift, segmen pelanggan */
+  var pj = d.pj_shift || {};
+  var infoPJ = pj.role === 'Kasir'
+    ? '<b>' + esc(pj.petugas) + '</b><span>Anda sedang jaga · sejak ' + esc(pj.login_at || '-') + '</span>'
+    : (pj.petugas_jaga
+      ? '<b>' + esc(pj.petugas_jaga) + '</b><span>' + esc(pj.sumber_aktivitas || 'Aktivitas') + ' terakhir pukul ' + esc(pj.aktivitas_jam || '-') + '</span>'
+      : '<b>Belum ada aktivitas kasir</b><span>Anda login sebagai ' + esc(pj.petugas || '-') + '</span>');
+  var sc = d.shift_chart || {};
+  var shiftList = [['Pagi · 08–15', sc.Pagi || 0], ['Sore · 15–21', sc.Sore || 0]].concat(sc['Luar Jam'] ? [['Di luar jam', sc['Luar Jam']]] : []);
+  var maxShift = Math.max.apply(null, shiftList.map(function (x) { return x[1]; })) || 1;
+  var s = d.segmen_pelanggan || {};
+  var widget =
+    '<div class="dkartu dk-gelap db-widget">' +
+      '<div class="dk-judul">Penanggung jawab <span class="db-chip-shift' + (pj.di_luar_jam ? ' luar' : '') + '">' +
+        (pj.di_luar_jam ? 'Di luar jam buka' : esc(pj.shift || '-') + ' · ' + esc(pj.jam || '')) + '</span></div>' +
+      '<div class="db-pj-info">' + infoPJ + '</div>' +
+      '<div class="dk-judul" style="margin-top:14px">Omzet per shift</div>' +
+      '<div class="db-shift-list">' + shiftList.map(function (x) {
+        return '<div><div class="t"><span>' + x[0] + '</span><b>' + rupiah(x[1]) + '</b></div>' +
+          '<div class="bar"><i style="width:' + (x[1] / maxShift * 100).toFixed(1) + '%"></i></div></div>';
+      }).join('') + '</div>' +
+      '<div class="dk-judul" style="margin-top:14px">Segmen pelanggan</div>' +
+      '<div class="db-seg4">' +
+        '<div><b>' + angka(s.VIP || 0) + '</b><small>VIP</small></div>' +
+        '<div><b>' + angka(s['Active Routine'] || 0) + '</b><small>Rutin belanja</small></div>' +
+        '<div><b class="' + ((s['At-Risk'] || 0) ? 'warn' : '') + '">' + angka(s['At-Risk'] || 0) + '</b><small>Perlu ditindak</small></div>' +
+        '<div><b>' + angka(s.Baru || 0) + '</b><small>Baru terdaftar</small></div>' +
+      '</div>' +
+    '</div>';
+
+  /* 5. Rincian stok & rekomendasi AI (terlipat; ID tetap) */
   var lipat =
-    '<details class="fold stack14" id="dbFold">' +
+    '<details class="fold" id="dbFold">' +
       '<summary>Rincian stok: kedaluwarsa dan yang perlu dipesan</summary>' +
       '<div class="fold-body"><div class="grid g2">' +
         '<div><h4 style="font-size:14px; margin-bottom:9px">Mendekati kedaluwarsa</h4>' +
@@ -556,26 +576,16 @@ function gambarDashboard(d) {
           '</tbody></table></div></div>' +
       '</div></div>' +
     '</details>';
-
-  /* 7. Insight AI terperinci, hanya Owner */
   var insight = d.ai_enabled ?
-    '<details class="fold stack14" id="dbInsight">' +
+    '<details class="fold" id="dbInsight">' +
       '<summary>Rekomendasi strategis terperinci</summary>' +
       '<div class="fold-body" id="aiInsights">' + kerangka(3) + '</div>' +
     '</details>' : '';
 
-  return hero + grafikOmzetHtml() + strip + segStrip +
-    '<div class="split">' +
-      '<div>' + kartuShift + feedJual + '</div>' +
-      '<div>' + kartuShiftBar + kartuProduk + kartuPelanggan + '</div>' +
-    '</div>' + lipat + insight +
-    // Tombol cetak ringkasan Owner, di luar area yang akan di-screenshot.
-    '<div class="card db-print-card">' +
-      '<div class="card-head"><h3>Cetak ringkasan Owner</h3></div>' +
-      '<p class="sub" style="margin:0 0 10px">Menghasilkan 1 halaman A4 berisi KPI utama, ' +
-        'top 5 produk, top 5 pelanggan, dan 5 transaksi terakhir — siap print untuk arsip.</p>' +
-      '<button class="btn btn-primary" id="dbCetak">' + '\u{1F5B6}️' + ' Cetak ringkasan</button>' +
-    '</div>';
+  return '<div class="db-grid3">' + kartuOmzet + kartuNota + kartuStok + '</div>' +
+    '<div class="db-grid21 db-baris-grafik">' + grafikOmzetHtml() + kartuTarget + '</div>' +
+    '<div class="db-grid21">' + kartuTab + widget + '</div>' +
+    '<div class="db-lipat">' + lipat + insight + '</div>';
 }
 
 function satelit(label, nilai, minus, delta) {
@@ -605,9 +615,8 @@ function pasangEventDashboard(d) {
   if (hero) {
     hero.style.cursor = 'pointer';
     hero.title = 'Buka halaman Laporan dengan filter yang sama';
-    hero.onclick = function (e) {
-      // Klik di area gauge target tidak membuka laporan.
-      if (e.target.closest('.hero-target')) return;
+    hero.onkeydown = function (e) { if (e.key === 'Enter') hero.onclick(e); };
+    hero.onclick = function () {
       if (typeof VIEWS !== 'undefined' && VIEWS.laporan && typeof gantiHalaman === 'function') {
         // Simpan filter ke session agar halaman Laporan bisa langsung memakainya.
         try { sessionStorage.setItem('db_filter', JSON.stringify(bacaFilter('db'))); } catch (e) {}
@@ -616,9 +625,33 @@ function pasangEventDashboard(d) {
     };
   }
 
-  // Tombol cetak ringkasan Owner.
+  if (strip) strip.onkeydown = function (e) { if (e.key === 'Enter') strip.onclick(); };
+
+  // Tombol cetak ringkasan Owner (ikon di header dashboard).
   var btnCetak = document.getElementById('dbCetak');
-  if (btnCetak) btnCetak.onclick = function () { cetakRingkasanOwner(d); };
+  if (btnCetak) { btnCetak.disabled = false; btnCetak.onclick = function () { cetakRingkasanOwner(d); }; }
+
+  // Lencana penanggung jawab di header.
+  var lencana = document.getElementById('dbPJ');
+  var pj = d.pj_shift || {};
+  if (lencana) {
+    var nama = pj.role === 'Kasir' ? pj.petugas : pj.petugas_jaga;
+    lencana.innerHTML = '<span class="dot' + (pj.di_luar_jam ? ' mati' : '') + '"></span>' +
+      (nama ? 'Jaga: <b>' + esc(nama) + '</b>' : 'Belum ada yang jaga') +
+      ' · ' + (pj.di_luar_jam ? 'di luar jam' : esc(pj.shift || '-'));
+    lencana.hidden = false;
+  }
+
+  // Tab tabel: penjualan / produk / pelanggan / pengeluaran.
+  var tabDb = document.getElementById('dbTabs');
+  if (tabDb) {
+    tabDb.onclick = function (e) {
+      var b = e.target.closest('[data-tabdb]');
+      if (!b) return;
+      tabDb.querySelectorAll('[data-tabdb]').forEach(function (x) { x.setAttribute('aria-selected', x === b ? 'true' : 'false'); });
+      tabDb.parentNode.querySelectorAll('[data-panel]').forEach(function (p) { p.hidden = p.dataset.panel !== b.dataset.tabdb; });
+    };
+  }
 
   var tabs = document.getElementById('dbTabsPel');
   if (tabs) {
