@@ -219,7 +219,35 @@ async function action(name, data, s) {
   }
   if (name === "barang.list") {
     const q = String(data.q || "");
-    const r = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&or=(kode_obat.ilike.*${encodeURIComponent(q)}*,nama_obat.ilike.*${encodeURIComponent(q)}*,kategori.ilike.*${encodeURIComponent(q)}*)&select=*&order=nama_obat&limit=100`);
+    const cab = encodeURIComponent(cabangSesi(s));
+    const filterBarang = `?cabang_id=eq.${cab}&or=(kode_obat.ilike.*${encodeURIComponent(q)}*,nama_obat.ilike.*${encodeURIComponent(q)}*,kategori.ilike.*${encodeURIComponent(q)}*)`;
+    // Mode halaman (dipakai halaman Master Barang): 100 barang per halaman + total,
+    // stok dijumlah dari SEMUA batch barang di halaman itu. Tanpa `halaman`,
+    // perilaku lama dipertahankan (dipakai pencarian barang di Pembelian).
+    if (data.halaman !== undefined) {
+      const per = Math.min(Math.max(Math.floor(Number(data.per_halaman) || 100), 1), 200);
+      const hal = Math.max(1, Math.floor(Number(data.halaman) || 1));
+      const r = await db("master_barang", `${filterBarang}&select=*&order=nama_obat,kode_obat&limit=${per}&offset=${(hal - 1) * per}`, { headers: { Prefer: "count=exact" } });
+      if (!r.ok) throw new Error(await r.text());
+      const total = Number(String(r.headers.get("content-range") || "").split("/")[1]) || 0;
+      const rows = await r.json();
+      const stok = {};
+      if (rows.length) {
+        const daftar = rows.map((b) => encodeURIComponent(`"${String(b.kode_obat).replace(/"/g, '\\"')}"`)).join(",");
+        for (let offset = 0; ; offset += 1000) {
+          const br = await db("stok_batch", `?cabang_id=eq.${cab}&kode_obat=in.(${daftar})&select=kode_obat,stok_real&order=id_batch&limit=1000&offset=${offset}`);
+          if (!br.ok) throw new Error(await br.text());
+          const page = await br.json();
+          page.forEach((x) => { stok[x.kode_obat] = (stok[x.kode_obat] || 0) + Number(x.stok_real || 0); });
+          if (page.length < 1000) break;
+        }
+      }
+      return {
+        rows: rows.map((b) => ({ ...b, Kode_Obat: b.kode_obat, Nama_Obat: b.nama_obat, Kategori: b.kategori, Satuan: b.satuan, Barcode: b.barcode, Harga_Modal: b.harga_modal, Harga_Jual_Umum: b.harga_jual_umum, Harga_Khusus: b.harga_khusus, Harga_Jual_Mutasi: b.harga_jual_mutasi, PPN: b.ppn, Stok_Min: b.stok_min, Aktif: b.aktif, stok: stok[b.kode_obat] || 0 })),
+        total, halaman: hal, per_halaman: per, jumlah_halaman: Math.max(1, Math.ceil(total / per))
+      };
+    }
+    const r = await db("master_barang", `${filterBarang}&select=*&order=nama_obat&limit=100`);
     const rows = await r.json();
     return rows.map((b) => ({ ...b, Kode_Obat: b.kode_obat, Nama_Obat: b.nama_obat, Kategori: b.kategori, Satuan: b.satuan, Barcode: b.barcode, Harga_Modal: b.harga_modal, Harga_Jual_Umum: b.harga_jual_umum, Harga_Khusus: b.harga_khusus, Harga_Jual_Mutasi: b.harga_jual_mutasi, PPN: b.ppn, Stok_Min: b.stok_min, Aktif: b.aktif, stok: 0 }));
   }

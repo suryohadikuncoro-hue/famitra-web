@@ -699,3 +699,8 @@ html,body{max-width:100%;overflow-x:hidden}
 
 /* ================================================= Preview struk browser === */
 .preview-toolbar{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}.preview-toolbar .field{margin:0;min-width:180px}.preview-receipt{margin:0 auto;background:#fff;color:#000;border:1px dashed #b9bec7;box-shadow:0 10px 28px rgba(20,22,27,.16);padding:5mm 4mm 8mm;box-sizing:border-box;font-family:"Courier New",monospace;font-size:11px;line-height:1.35}.preview-receipt.w58{width:58mm;max-width:100%}.preview-receipt.w80{width:80mm;max-width:100%;font-size:12px}.preview-receipt table{width:100%;border-collapse:collapse;table-layout:fixed}.preview-receipt td{padding:1px 0;vertical-align:top;overflow-wrap:anywhere}.preview-receipt .ctr{text-align:center}.preview-receipt .r{text-align:right}.preview-receipt hr{border:0;border-top:1px dashed #555;margin:5px 0}
+
+/* Pager halaman Master Barang */
+.pager { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
+.pager-tombol { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.pager-tombol .btn[disabled] { opacity: .45; cursor: default; }
