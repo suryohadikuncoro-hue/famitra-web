@@ -65,6 +65,16 @@ function minimumSpend(v) {
   if (!["string", "number"].includes(typeof v) || String(v).trim() !== String(v) || !/^\d{1,12}(\.\d{1,2})?$/.test(String(v))) fail("Minimum total belanja harus 0–999999999999.99, maksimal 2 desimal");
   return Number(v);
 }
+// Syarat transaksi Kupon Undian: jumlah transaksi minimum (bilangan bulat 1-1000)
+// dan minimal belanja per transaksi (numeric(14,2), sama seperti minimum total).
+function minimumTransaksi(v) {
+  if (!["string", "number"].includes(typeof v) || String(v).trim() !== String(v) || !/^\d{1,4}$/.test(String(v)) || Number(v) < 1 || Number(v) > 1000) fail("Minimal jumlah transaksi harus bilangan bulat 1–1000");
+  return Number(v);
+}
+function minimumPerTransaksi(v) {
+  if (!["string", "number"].includes(typeof v) || String(v).trim() !== String(v) || !/^\d{1,12}(\.\d{1,2})?$/.test(String(v))) fail("Minimal belanja per transaksi harus 0–999999999999.99, maksimal 2 desimal");
+  return Number(v);
+}
 // Keep the authoritative NUMERIC amount as a decimal while aggregating. Do not
 // round each invoice before the eligibility comparison (or use float sums).
 function decimalAmount(v) {
@@ -111,14 +121,20 @@ async function participantData(c, withHpp = false) {
   }
   const matched = trx.filter(t => wa.has(String(t.nomor_wa || "").trim()));
   const minimum = decimalAmount(minimumSpend(c.min_total_belanja_idr === undefined ? 0 : c.min_total_belanja_idr));
+  // Hanya transaksi dengan harga_akhir >= minimal per transaksi yang DIHITUNG (jumlah maupun
+  // total belanja). Default 0 / 1 = perilaku lama. Kolom belum ada (migrasi belum diterapkan) = default.
+  const perTrx = decimalAmount(minimumPerTransaksi(c.min_belanja_per_transaksi_idr === undefined ? 0 : c.min_belanja_per_transaksi_idr));
+  const minTrx = Math.max(1, minimumTransaksi(c.min_jumlah_transaksi === undefined ? 1 : c.min_jumlah_transaksi));
   const stats = new Map();
   for (const t of matched) {
     const key = String(t.nomor_wa).trim(), cur = stats.get(key) || { count: 0, spend: { units: 0n, scale: 0 } };
-    cur.count++; cur.spend = addDecimal(cur.spend, decimalAmount(t.harga_akhir)); stats.set(key, cur);
+    const amount = decimalAmount(t.harga_akhir);
+    if (decimalAtLeast(amount, perTrx)) { cur.count++; cur.spend = addDecimal(cur.spend, amount); }
+    stats.set(key, cur);
   }
   const participants = eligible.filter(customer => {
     const st = stats.get(String(customer.nomor_wa).trim());
-    return st && st.count > 0 && decimalAtLeast(st.spend, minimum);
+    return st && st.count >= minTrx && decimalAtLeast(st.spend, minimum);
   }).map(customer => {
     const st = stats.get(String(customer.nomor_wa).trim());
     return { customer_id: customer.id, nomor_wa: customer.nomor_wa, nama: customer.nama, tipe_customer: customer.tipe_customer, segment_crm: customer.segment_crm, jumlah_transaksi_periode: st.count, total_belanja_periode: decimalNumber(st.spend) };
@@ -158,6 +174,14 @@ async function lotterySave(data, s) {
   if (data.periode_selesai < data.periode_mulai) fail("Periode selesai sebelum periode mulai");
   if (!Array.isArray(data.prizes)) fail("Daftar hadiah wajib dikirim");
   if (Object.prototype.hasOwnProperty.call(data, "min_total_belanja_idr")) minimumSpend(data.min_total_belanja_idr);
+  const hasTrx = Object.prototype.hasOwnProperty.call(data, "min_jumlah_transaksi"), hasPer = Object.prototype.hasOwnProperty.call(data, "min_belanja_per_transaksi_idr");
+  if (hasTrx) minimumTransaksi(data.min_jumlah_transaksi);
+  if (hasPer) minimumPerTransaksi(data.min_belanja_per_transaksi_idr);
+  if (hasTrx || hasPer) {
+    // RPC lama mengabaikan kunci yang tidak dikenal; jangan biarkan pengaturan hilang diam-diam.
+    try { await rest("/lottery_campaigns?select=min_jumlah_transaksi,min_belanja_per_transaksi_idr&limit=1"); }
+    catch (e) { if (["42703", "PGRST204"].includes(e.dbCode)) fail("Pengaturan syarat transaksi belum aktif: migrasi database belum diterapkan. Hubungi pengelola.", 409); throw e; }
+  }
   // Omission on edit preserves the stored threshold inside the locked RPC.
   // A single DB transaction validates, locks, updates, and retires prizes.
   return rest("/rpc/lottery_save_campaign", { method: "POST", body: JSON.stringify({ p_token: s.token, p_data: data }) });

@@ -31,6 +31,7 @@ function backend(opts = {}) {
       const parsed = new URL(url), q = parsed.searchParams, table = parsed.pathname.split('/').pop();
       calls.push({ table, q, init });
       if (opts.errorTable === table) return new Response(JSON.stringify({ code: 'XX000', message: 'internal-private-detail' }), { status: 500 });
+      if (opts.noRuleColumns && table === 'lottery_campaigns' && (q.get('select') || '').includes('min_jumlah_transaksi')) return new Response(JSON.stringify({ code: '42703' }), { status: 400 });
       if (table === 'trx_penjualan' && opts.noHpp && q.get('select').includes('total_hpp')) return new Response(JSON.stringify({ code: '42703' }), { status: 400 });
       if (parsed.pathname.includes('/rpc/')) {
         if (opts.rpcError) return new Response(JSON.stringify({ code: 'P0001', message: opts.rpcError }), { status: 400 });
@@ -256,7 +257,7 @@ test('frontend stale participant response cannot populate changed campaign', asy
 test('frontend open/edit passes campaign ID and retained prize IDs; new campaign resets all', async () => {
   const f = frontend(); f.t.openDetail(C, true); await flush();
   assert.equal(f.t.state().editId, C); assert.equal(f.t.state().tab, 'form');
-  const fields = { 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '', 'lot-f-min-belanja': '0' };
+  const fields = { 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '', 'lot-f-min-belanja': '0', 'lot-f-min-trx': '1', 'lot-f-min-per-trx': '0' };
   for (const [id, value] of Object.entries(fields)) f.el(id).value = value;
   assert.equal(f.t.readForm().id, C);
   assert.match(f.t.renderForm(), /data-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"/);
@@ -382,7 +383,7 @@ test('UI uses explicit cumulative spending field, edit preserves value, new defa
   f.t.openDetail(C, true); await flush();
   assert.match(f.t.renderForm(), /id="lot-f-min-belanja"[^>]*step="0.01"[^>]*value="300000.25"/);
   assert.match(f.t.renderForm(), /Minimum total belanja selama campaign/);
-  const fields = { 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '', 'lot-f-min-belanja': '300000.25' };
+  const fields = { 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '', 'lot-f-min-belanja': '300000.25', 'lot-f-min-trx': '1', 'lot-f-min-per-trx': '0' };
   for (const [id, value] of Object.entries(fields)) f.el(id).value = value;
   assert.equal(f.t.readForm().min_total_belanja_idr, '300000.25');
   f.el('lot-save'); f.t.saveForm(); await flush();
@@ -397,7 +398,7 @@ test('UI uses explicit cumulative spending field, edit preserves value, new defa
 });
 test('UI rejects malformed/negative/excess precision threshold before sending save', () => {
   const f = frontend();
-  for (const [id, value] of Object.entries({ 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '' })) f.el(id).value = value;
+  for (const [id, value] of Object.entries({ 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '', 'lot-f-min-trx': '1', 'lot-f-min-per-trx': '0' })) f.el(id).value = value;
   f.el('lot-save');
   for (const v of ['', '-1', '0.001', 'NaN', 'Infinity', '1000000000000', '1e3', '300,000', '300\n']) {
     f.el('lot-f-min-belanja').value = v; f.t.saveForm();
@@ -413,6 +414,121 @@ test('minimum migration static contracts: additive default, same private RPC sig
   assert.match(sql, /purchase_count = 0/); assert.match(sql, /purchase_total < c.min_total_belanja_idr/);
   assert.match(sql, /where id = cid for update/);
   assert.match(sql, /t.cabang_id = c.kode_cabang/);
+  assert.match(sql, /t.tanggal >= c.periode_mulai and t.tanggal <= c.periode_selesai/);
+  assert.doesNotMatch(sql, /\bDELETE\s+FROM\b|\bTRUNCATE\b|\bDROP\s+TABLE\b/i);
+  assert.doesNotMatch(sql, /update public.lottery_winners/i);
+  for (const fn of ['lottery_save_campaign', 'lottery_record_winner']) {
+    assert.match(sql, new RegExp(`create or replace function public.${fn}\\(p_token text, p_data jsonb\\)`));
+    assert.match(sql, new RegExp(`revoke all on function public.${fn}[^;]+from public, anon, authenticated`));
+    assert.match(sql, new RegExp(`grant execute on function public.${fn}[^;]+to service_role`));
+  }
+  assert.equal((sql.match(/security invoker set search_path = public, pg_temp/g) || []).length, 2);
+});
+
+// ---- Syarat transaksi Kupon Undian: jumlah transaksi minimum + minimal belanja per transaksi ----
+// Fixture default: pelanggan 6281 punya 2 transaksi dalam periode (100.10 dan 50.20).
+const rule = (extra) => ({ tables: { lottery_campaigns: [{ ...campaign, ...extra }] } });
+for (const [label, extra, expected, count, spend] of [
+  ['default (1 transaksi, tanpa batas per transaksi)', {}, 1, 2, 150.3],
+  ['kolom belum ada (migrasi belum diterapkan) = perilaku lama', { min_jumlah_transaksi: undefined, min_belanja_per_transaksi_idr: undefined }, 1, 2, 150.3],
+  ['minimal 2 transaksi terpenuhi tepat di batas', { min_jumlah_transaksi: 2 }, 1, 2, 150.3],
+  ['minimal 3 transaksi tidak terpenuhi', { min_jumlah_transaksi: 3 }, 0],
+  ['per transaksi 60: hanya 1 transaksi dihitung, minimal 1 lolos', { min_belanja_per_transaksi_idr: '60' }, 1, 1, 100.1],
+  ['per transaksi 60 + minimal 2 transaksi: tidak lolos', { min_belanja_per_transaksi_idr: '60', min_jumlah_transaksi: 2 }, 0],
+  ['per transaksi tepat 50.20 dihitung (batas inklusif), 2 lolos', { min_belanja_per_transaksi_idr: '50.20', min_jumlah_transaksi: 2 }, 1, 2, 150.3],
+  ['per transaksi 50.21: transaksi 50.20 tidak dihitung', { min_belanja_per_transaksi_idr: '50.21', min_jumlah_transaksi: 2 }, 0],
+  ['per transaksi di atas semua transaksi: tidak ada yang dihitung', { min_belanja_per_transaksi_idr: '200' }, 0],
+  ['total belanja hanya dari transaksi yang dihitung', { min_belanja_per_transaksi_idr: '60', min_total_belanja_idr: '120' }, 0],
+  ['total belanja dari transaksi yang dihitung terpenuhi', { min_belanja_per_transaksi_idr: '60', min_total_belanja_idr: '100.10' }, 1, 1, 100.1],
+]) {
+  test(`syarat transaksi undian: ${label}`, async () => {
+    const b = backend(rule(extra));
+    const r = await b.request('lotteryEligibleParticipants', { campaign_id: C });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.data.total_peserta, expected);
+    assert.equal(r.body.data.total_transaksi, 2); // total_transaksi tetap semua transaksi periode/cabang
+    if (expected) {
+      assert.equal(r.body.data.participants[0].jumlah_transaksi_periode, count);
+      assert.equal(r.body.data.participants[0].total_belanja_periode, spend);
+    }
+  });
+}
+test('syarat transaksi undian: transaksi tanpa nilai tetap gagal tertutup walau di bawah batas per transaksi', async () => {
+  const b = backend({ tables: { lottery_campaigns: [{ ...campaign, min_belanja_per_transaksi_idr: '60' }],
+    trx_penjualan: [{ no_nota: '1', cabang_id: 'KARLA', tanggal: '2026-09-01', nomor_wa: '6281', harga_akhir: null }] } });
+  const r = await b.request('lotteryEligibleParticipants', { campaign_id: C });
+  assert.equal(r.status, 422);
+});
+test('syarat transaksi undian: validasi sebelum RPC, kunci yang tidak dikirim tidak dikirim ke RPC', async () => {
+  for (const [field, values] of [
+    ['min_jumlah_transaksi', [0, '0', -1, 1001, '1.5', 1.5, '', ' 3', '3 ', 'abc', null, true, [], {}, '1e2', '00000', '10000']],
+    ['min_belanja_per_transaksi_idr', [-1, '-0.01', '', ' ', null, true, [], {}, 'NaN', '1e3', '25000.001', '25,000', '25000\n', 1000000000000]],
+  ]) {
+    for (const value of values) {
+      const b = backend();
+      const r = await b.request('lotterySave', { ...campaign, [field]: value, prizes: [] });
+      assert.equal(r.status, 400, `${field}=${JSON.stringify(value)}`);
+      assert.equal(b.calls.filter(c => c.table === 'lottery_save_campaign').length, 0);
+    }
+  }
+  for (const [field, values] of [['min_jumlah_transaksi', [1, '10', 1000]], ['min_belanja_per_transaksi_idr', [0, 25000, '25000.50', '999999999999.99']]]) {
+    for (const value of values) {
+      const b = backend();
+      assert.equal((await b.request('lotterySave', { ...campaign, [field]: value, prizes: [] })).status, 200, `${field}=${value}`);
+      assert.equal(JSON.parse(b.calls.find(c => c.table === 'lottery_save_campaign').init.body).p_data[field], value);
+    }
+  }
+  const b = backend(); await b.request('lotterySave', { ...campaign, prizes: [] });
+  const sent = JSON.parse(b.calls.find(c => c.table === 'lottery_save_campaign').init.body).p_data;
+  assert.equal(Object.hasOwn(sent, 'min_jumlah_transaksi'), false); assert.equal(Object.hasOwn(sent, 'min_belanja_per_transaksi_idr'), false);
+  assert.equal(b.calls.filter(c => c.table === 'lottery_campaigns' && (c.q.get('select') || '').includes('min_jumlah_transaksi')).length, 0, 'tanpa field baru tidak perlu probe kolom');
+});
+test('syarat transaksi undian: migrasi belum diterapkan -> error jelas, RPC tidak dipanggil', async () => {
+  const b = backend({ noRuleColumns: true });
+  const r = await b.request('lotterySave', { ...campaign, min_jumlah_transaksi: 10, prizes: [] });
+  assert.equal(r.status, 409); assert.match(r.body.error, /migrasi database belum diterapkan/);
+  assert.equal(b.calls.filter(c => c.table === 'lottery_save_campaign').length, 0);
+});
+test('syarat transaksi undian: GET/list mengembalikan nilai tersimpan', async () => {
+  const b = backend(rule({ min_jumlah_transaksi: 10, min_belanja_per_transaksi_idr: '25000.00' }));
+  assert.equal((await b.request('lotteryGet', { id: C })).body.data.campaign.min_jumlah_transaksi, 10);
+  assert.equal((await b.request('lotteryList')).body.data[0].min_belanja_per_transaksi_idr, '25000.00');
+});
+test('UI syarat transaksi: form menampilkan, mengirim, dan menolak nilai salah sebelum kirim', async () => {
+  const f = frontend({ campaign: { min_jumlah_transaksi: 10, min_belanja_per_transaksi_idr: '25000' } });
+  f.t.openDetail(C, true); await flush();
+  assert.match(f.t.renderForm(), /id="lot-f-min-trx"[^>]*min="1"[^>]*step="1"[^>]*value="10"/);
+  assert.match(f.t.renderForm(), /id="lot-f-min-per-trx"[^>]*step="0.01"[^>]*value="25000"/);
+  assert.match(f.t.renderForm(), /Minimal jumlah transaksi/); assert.match(f.t.renderForm(), /Minimal belanja per transaksi/);
+  const base = { 'lot-f-cabang': 'KARLA', 'lot-f-nama': 'Campaign', 'lot-f-mulai': '2026-09-01', 'lot-f-selesai': '2026-09-30', 'lot-f-catatan': '', 'lot-f-min-belanja': '0' };
+  for (const [id, value] of Object.entries(base)) f.el(id).value = value;
+  f.el('lot-save');
+  for (const bad of ['', '0', '1001', '1.5', '-3', 'abc', '3\n']) { f.el('lot-f-min-trx').value = bad; f.el('lot-f-min-per-trx').value = '0'; f.t.saveForm(); }
+  for (const bad of ['', '-1', '0.001', 'NaN', '25,000', '1e3']) { f.el('lot-f-min-trx').value = '10'; f.el('lot-f-min-per-trx').value = bad; f.t.saveForm(); }
+  assert.equal(f.requests.filter(r => r.fn === 'lotterySave').length, 0);
+  f.el('lot-f-min-trx').value = '10'; f.el('lot-f-min-per-trx').value = '25000';
+  const sent = f.t.readForm(); assert.equal(sent.min_jumlah_transaksi, '10'); assert.equal(sent.min_belanja_per_transaksi_idr, '25000');
+  f.t.saveForm(); await flush();
+  const saved = f.requests.find(r => r.fn === 'lotterySave').args[0];
+  assert.equal(saved.min_jumlah_transaksi, '10'); assert.equal(saved.min_belanja_per_transaksi_idr, '25000');
+  assert.match(f.t.minimumHtml({ min_jumlah_transaksi: 10, min_belanja_per_transaksi_idr: 25000 }), /minimal <b>10<\/b> transaksi[\s\S]*25.000/);
+  assert.match(f.t.minimumHtml({}), /minimal <b>1<\/b> transaksi/);
+  f.t.clearCampaign(); assert.match(f.t.renderForm(), /id="lot-f-min-trx"[^>]*value="1"/); assert.match(f.t.renderForm(), /id="lot-f-min-per-trx"[^>]*value="0"/);
+});
+test('migrasi syarat transaksi: aditif, default perilaku lama, RPC privat, hitung transaksi yang memenuhi batas', () => {
+  const sql = source('supabase/migrations/20260929010000_lottery_min_transaksi.sql');
+  assert.match(sql, /begin;[\s\S]*commit;/i);
+  assert.match(sql, /add column min_jumlah_transaksi integer not null default 1/);
+  assert.match(sql, /add column min_belanja_per_transaksi_idr numeric\(14,2\) not null default 0/);
+  assert.match(sql, /check \(min_jumlah_transaksi >= 1 and min_jumlah_transaksi <= 1000\)/);
+  assert.match(sql, /check \(min_belanja_per_transaksi_idr >= 0 and min_belanja_per_transaksi_idr <= 999999999999.99\)/);
+  assert.match(sql, /min_jumlah_transaksi = coalesce\(min_trx, c.min_jumlah_transaksi\)/);
+  assert.match(sql, /min_belanja_per_transaksi_idr = coalesce\(min_per, c.min_belanja_per_transaksi_idr\)/);
+  assert.match(sql, /t.harga_akhir >= c.min_belanja_per_transaksi_idr/);
+  assert.match(sql, /qualifying_count < greatest\(c.min_jumlah_transaksi, 1\)/);
+  assert.match(sql, /coalesce\(qualifying_total, 0\) < c.min_total_belanja_idr/);
+  assert.match(sql, /purchase_count = 0/); assert.match(sql, /valid_amount_count <> purchase_count/);
+  assert.match(sql, /where id = cid for update/); assert.match(sql, /t.cabang_id = c.kode_cabang/);
   assert.match(sql, /t.tanggal >= c.periode_mulai and t.tanggal <= c.periode_selesai/);
   assert.doesNotMatch(sql, /\bDELETE\s+FROM\b|\bTRUNCATE\b|\bDROP\s+TABLE\b/i);
   assert.doesNotMatch(sql, /update public.lottery_winners/i);
