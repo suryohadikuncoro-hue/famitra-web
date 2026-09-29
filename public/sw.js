@@ -3,7 +3,7 @@
  * Request API Supabase, POST/mutasi, serta data pengguna tidak pernah dicache.
  * Jika daftar shell berubah, sesuaikan CACHE_NAME agar cache lama dibuang.
  */
-const CACHE_NAME = 'si-famitra-pwa-shell-v1';
+const CACHE_NAME = 'si-famitra-pwa-shell-v2';
 const OFFLINE_URL = '/offline.html';
 const PRECACHE_URLS = [
   OFFLINE_URL,
