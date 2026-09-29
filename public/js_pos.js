@@ -24,7 +24,6 @@ VIEWS.pos = {
     pasangEventPOS();
     pasangEventPromoPOS();
     gambarKeranjang();
-    muatNotaTerakhir();
     gambarHeaderShift();
     muatPromoPOS();
     // Fokus otomatis ke pencarian begitu layar siap (tidak di HP: keyboard akan menutupi layar).
@@ -78,14 +77,6 @@ function tataLetakPOS() {
         '</div>' +
         '<div id="posPromoRail" aria-live="polite"></div>' +
         '<div id="posCart" class="cart"></div>' +
-      '</div>' +
-
-      '<div class="card">' +
-        '<div class="card-head"><h3>Nota hari ini</h3>' +
-          '<span class="sub">5 terakhir</span></div>' +
-        '<div class="table-wrap"><table><thead><tr>' +
-          '<th>No. Nota</th><th>Jam</th><th>Pembeli</th><th class="r">Total</th>' +
-        '</tr></thead><tbody id="posRiwayat"></tbody></table></div>' +
       '</div>' +
     '</div>' +
 
@@ -682,7 +673,6 @@ function simpanTransaksi() {
     toast('Nota ' + nota.No_Nota + ' tersimpan.');
     cetakStruk(nota);
     kosongkanKeranjang();
-    muatNotaTerakhir();
     if (!layarSentuh()) document.getElementById('posCari').focus();
     if (window.haptik) window.haptik([20, 40, 20]);
   }).catch(function (e) {
@@ -723,18 +713,6 @@ function cetakStruk(nota) {
     '<div class="ctr">Terima kasih atas kunjungan Anda<br>Semoga lekas sembuh</div>';
 
   setTimeout(function () { window.print(); }, 120);
-}
-
-function muatNotaTerakhir() {
-  api('pos.notaTerakhir', {}).then(function (rows) {
-    var tb = document.getElementById('posRiwayat');
-    if (!tb) return;
-    tb.innerHTML = rows.length ? rows.map(function (r) {
-      return '<tr><td>' + esc(r.No_Nota) + '</td><td>' + esc(r.Jam) + '</td>' +
-        '<td>' + esc(r.Nama_Pelanggan) + '</td>' +
-        '<td class="r num">' + rupiah(r.Harga_Akhir) + '</td></tr>';
-    }).join('') : tabelKosong('Belum ada transaksi hari ini.', 4);
-  }).catch(function () {});
 }
 
 /* ======================================================= Promo interaktif
