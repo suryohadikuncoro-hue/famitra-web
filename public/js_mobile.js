@@ -2,7 +2,7 @@
    Perilaku khusus HP (≤880px) supaya terasa seperti aplikasi, tanpa mengubah
    logika halaman lain:
    - bilah bawah per peran (Owner/Apoteker: Beranda di tengah; Kasir: Kasir di tengah)
-   - menu sebagai lembar dari bawah (menggantikan menu samping)
+   - menu mobile sebagai layar penuh (menggantikan menu samping)
    - formulir/dialog sebagai lembar bawah yang bisa diseret turun
    - tabel otomatis jadi kartu (label kolom diambil dari <thead>)
    - keyboard yang sesuai (inputmode), pilihan segmen untuk select kecil
@@ -114,12 +114,12 @@
     }, { passive: true });
   }
 
-  /* ------------------------------------------------------------ Menu (lembar) */
+  /* ---------------------------------------------------------- Menu (layar penuh) */
   function tutupMenuSheet() {
     var el = document.getElementById('menuSheet');
     if (!el) return;
     el.classList.remove('buka');
-    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 260);
   }
 
   function bukaMenuSheet() {
@@ -131,15 +131,15 @@
     el.id = 'menuSheet'; el.className = 'sheet-wadah';
     el.innerHTML =
       '<div class="sheet-dim" data-tutup="1"></div>' +
-      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Menu">' +
-        '<div class="sheet-handle" id="menuHandle"></div>' +
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="Menu utama">' +
         '<div class="sheet-user"><span class="sheet-avatar">' + esc(ini) + '</span>' +
           '<div class="sheet-user-teks"><b>' + esc(u.nama || '-') + '</b><small>' + esc(labelRole_(u.role) + ' · Cabang ' + cab) + '</small></div>' +
-          '<button type="button" class="sheet-keluar" id="menuKeluar">Keluar</button></div>' +
+          '<button type="button" class="sheet-kembali" id="menuKembali">Kembali</button></div>' +
         '<div class="sheet-grid">' + MENU.map(function (m) {
           return '<button type="button" class="sheet-tile' + (m.id === window.__halamanAktif ? ' on' : '') + '" data-id="' + esc(m.id) + '">' +
             '<i>' + ikonSvg(pathMenu(m.id), 'menu-ikon') + '</i><span>' + esc(m.label) + '</span></button>';
         }).join('') + '</div>' +
+        '<div class="sheet-footer"><button type="button" class="sheet-logout" id="menuKeluar">Keluar</button></div>' +
       '</div>';
     document.body.appendChild(el);
     requestAnimationFrame(function () { el.classList.add('buka'); });
@@ -148,10 +148,8 @@
       var t = e.target.closest('.sheet-tile');
       if (t) { window.haptik(8); gantiHalaman(t.dataset.id); }
     });
+    document.getElementById('menuKembali').onclick = tutupMenuSheet;
     document.getElementById('menuKeluar').onclick = function () { tutupMenuSheet(); document.getElementById('logoutBtn').click(); };
-    var sheet = el.querySelector('.sheet');
-    pasangSeret(sheet, document.getElementById('menuHandle'), tutupMenuSheet);
-    pasangSeret(sheet, el.querySelector('.sheet-user'), tutupMenuSheet);
   }
   window.bukaMenuSheet = bukaMenuSheet;
 
