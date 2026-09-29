@@ -14,7 +14,7 @@ const cabangSesi = (s: any) => {
   return c;
 };
 function segment(c: any) { const days = c.tanggal_terakhir_beli ? Math.floor((Date.now() - new Date(String(c.tanggal_terakhir_beli).slice(0,10) + "T00:00:00").getTime()) / 86400000) : null; if (!c.tanggal_terakhir_beli || Number(c.jumlah_transaksi || 0) === 0) return "Baru"; if ((days || 0) > 180) return "Dormant"; if ((days || 0) > 60) return "At-Risk"; if (Number(c.total_belanja || 0) >= 2000000 || Number(c.jumlah_transaksi || 0) >= 8) return "VIP"; return "Active Routine"; }
-function allowed(role: string, name: string) { if (name === "dashboardAktif") return role === "Owner" || role === "Apoteker"; const owner = ["campaignList","campaignSave","campaignStatus","couponList","couponSave","report","bundleList","bundleSave","bundleStatus"]; if (owner.includes(name)) return role === "Owner"; return ["Owner","Apoteker","Kasir"].includes(role); }
+function allowed(role: string, name: string) { if (name === "dashboardAktif") return role === "Owner" || role === "Apoteker"; const owner = ["rewardList","rewardSave","rewardStatus","redemptionList","campaignList","campaignSave","campaignStatus","couponList","couponSave","report","bundleList","bundleSave","bundleStatus"]; if (owner.includes(name)) return role === "Owner"; return ["Owner","Apoteker","Kasir"].includes(role); }
 async function validate(data: any, s: any) {
   const code = String(data.code || "").trim().toUpperCase(); const wa = normWA(data.nomor_wa || "");
   if (!code) throw new Error("Kode kupon wajib diisi."); if (!wa) throw new Error("Pilih pelanggan terlebih dahulu.");
@@ -174,6 +174,49 @@ async function action(name: string, data: any, s: any) {
   if (name === "validate") return validate(data, s);
   if (name === "report") { const r = await db("promo_redemptions", `?cabang_id=eq.${encodeURIComponent(branch)}&status=eq.APPLIED&select=campaign_id,coupon_id,customer_id,invoice_no,discount_amount,redeemed_at,status,promo_campaigns(name),promo_coupons(code),master_customer(nama,nomor_wa)&order=redeemed_at.desc&limit=5000`); if (!r.ok) throw new Error(await r.text()); const rows = await r.json(); const ids = [...new Set(rows.map((x:any)=>x.invoice_no).filter(Boolean))]; const txRows:any[] = []; for (let i = 0; i < ids.length; i += 200) { const batch = ids.slice(i, i + 200); const tx = await db("trx_penjualan", `?cabang_id=eq.${encodeURIComponent(branch)}&no_nota=in.(${batch.map((x:string)=>encodeURIComponent(x)).join(',')})&select=no_nota,subtotal,harga_akhir,total_hpp,diskon,tanggal&limit=200`); if (!tx.ok) throw new Error(`Gagal memuat transaksi report: ${await tx.text()}`); const batchRows = await tx.json(); if (Array.isArray(batchRows)) txRows.push(...batchRows); } const byInvoice:any = Object.fromEntries(txRows.map((x:any)=>[x.no_nota,x])); const enriched = rows.map((x:any)=>({...x,transaction:byInvoice[x.invoice_no]||null})); const campaigns:any = {}; enriched.forEach((x:any)=>{const key=x.campaign_id||'unknown', t=x.transaction||{}, c=x.promo_campaigns||{}; if(!campaigns[key]) campaigns[key]={campaign_id:key,name:c.name||'Tanpa kampanye',redemptions:0,unique_customers:{},discount_total:0,revenue:0,hpp:0,subtotal:0,profit_after_promo:0}; const z=campaigns[key]; z.redemptions++; z.unique_customers[x.customer_id]=true; z.discount_total+=Number(x.discount_amount||0); z.revenue+=Number(t.harga_akhir||0); z.hpp+=Number(t.total_hpp||0); z.subtotal+=Number(t.subtotal||0); z.profit_after_promo+=Number(t.harga_akhir||0)-Number(t.total_hpp||0); }); const campaignRows=Object.values(campaigns).map((z:any)=>{const cost=z.discount_total,profit=z.profit_after_promo; return {campaign_id:z.campaign_id,name:z.name,redemptions:z.redemptions,unique_customers:Object.keys(z.unique_customers).length,discount_total:cost,revenue:z.revenue,hpp:z.hpp,subtotal:z.subtotal,profit_after_promo:profit,margin_after_promo:z.revenue?profit/z.revenue*100:null,roas:cost?z.revenue/cost:null,roi_direct:cost?profit/cost*100:null,average_order_value:z.redemptions?z.revenue/z.redemptions:0};}).sort((a:any,b:any)=>b.profit_after_promo-a.profit_after_promo); const br=await db("trx_penjualan",`?cabang_id=eq.${encodeURIComponent(branch)}&bundle_id=not.is.null&select=no_nota,tanggal,timestamp,nomor_wa,nama_pelanggan,tipe_customer,bundle_id,bundle_code,bundle_discount,subtotal,harga_akhir,total_hpp&order=timestamp.desc&limit=5000`); if(!br.ok) throw new Error(await br.text()); const bundleTransactions=await br.json(); const bundles:any={}; bundleTransactions.forEach((t:any)=>{const key=t.bundle_id||t.bundle_code||'unknown'; if(!bundles[key]) bundles[key]={bundle_id:key,name:t.bundle_code||'Fixed bundle',redemptions:0,unique_customers:{},discount_total:0,revenue:0,hpp:0,subtotal:0,profit_after_promo:0}; const z=bundles[key], customer=String(t.nomor_wa||t.nama_pelanggan||t.no_nota); z.redemptions++; z.unique_customers[customer]=true; z.discount_total+=Number(t.bundle_discount||0); z.revenue+=Number(t.harga_akhir||0); z.hpp+=Number(t.total_hpp||0); z.subtotal+=Number(t.subtotal||0); z.profit_after_promo+=Number(t.harga_akhir||0)-Number(t.total_hpp||0); }); const bundleRows=Object.values(bundles).map((z:any)=>{const cost=z.discount_total,profit=z.profit_after_promo; return {bundle_id:z.bundle_id,name:z.name,redemptions:z.redemptions,unique_customers:Object.keys(z.unique_customers).length,discount_total:cost,revenue:z.revenue,hpp:z.hpp,subtotal:z.subtotal,profit_after_promo:profit,margin_after_promo:z.revenue?profit/z.revenue*100:null,roas:cost?z.revenue/cost:null,roi_direct:cost?profit/cost*100:null,average_order_value:z.redemptions?z.revenue/z.redemptions:0};}).sort((a:any,b:any)=>b.profit_after_promo-a.profit_after_promo); const all=[...campaignRows,...bundleRows]; const total=all.reduce((a:any,x:any)=>({discount_total:a.discount_total+x.discount_total,revenue:a.revenue+x.revenue,hpp:a.hpp+x.hpp,profit_after_promo:a.profit_after_promo+x.profit_after_promo}),{discount_total:0,revenue:0,hpp:0,profit_after_promo:0}); return {redemptions:rows.length,bundle_transactions:bundleTransactions.length,total_promotions:rows.length+bundleTransactions.length,unique_customers:new Set(rows.map((x:any)=>x.customer_id).concat(bundleTransactions.map((x:any)=>x.nomor_wa||x.nama_pelanggan))).size,discount_total:total.discount_total,revenue:total.revenue,hpp:total.hpp,profit_after_promo:total.profit_after_promo,roas:total.discount_total?total.revenue/total.discount_total:null,roi_direct:total.discount_total?total.profit_after_promo/total.discount_total*100:null,campaigns:campaignRows,bundles:bundleRows,rows:enriched,bundle_rows:bundleTransactions}; }
   if (name === "checkout") { const payload = { p_username: s.username, p_nomor_wa: data.nomor_wa || "", p_nama_pelanggan: data.nama_pelanggan || "Umum", p_tipe_customer: data.tipe_customer || "Umum", p_items: data.items || [], p_cabang_id: branch, p_diskon: data.diskon || 0, p_bayar: data.bayar || 0, p_reward_id: data.reward_id || null, p_coupon_code: String(data.coupon_code || "").trim().toUpperCase() }; const r = await db("rpc/pos_checkout_promo", "", { method: "POST", headers, body: JSON.stringify(payload) }); if (!r.ok) throw new Error(await r.text() || "Checkout promo gagal."); return await r.json(); }
+  // --- Poin & Reward (Marketing): kelola reward per cabang + riwayat penukaran ---
+  if (name === "rewardList") {
+    const r = await db("loyalty_rewards", `?cabang_id=eq.${encodeURIComponent(branch)}&select=id,name,points_required,reward_type,reward_value,min_tier,is_active&order=points_required.asc&limit=200`);
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  }
+  if (name === "rewardSave") {
+    const nama = String(data.name || "").trim(), poin = Math.floor(Number(data.points_required)), nilai = Number(data.reward_value), tier = String(data.min_tier || "reguler");
+    if (!nama) throw new Error("Nama reward wajib diisi.");
+    if (!Number.isFinite(poin) || poin <= 0) throw new Error("Poin yang dibutuhkan harus lebih dari 0.");
+    if (!Number.isFinite(nilai) || nilai <= 0) throw new Error("Nilai diskon reward harus lebih dari 0.");
+    if (!["reguler", "silver", "gold"].includes(tier)) throw new Error("Tier minimum tidak valid.");
+    const p = { name: nama, points_required: poin, reward_type: "discount", reward_value: nilai, min_tier: tier };
+    const ret = { ...headers, Prefer: "return=representation" };
+    if (data.id) {
+      const r = await db("loyalty_rewards", `?id=eq.${encodeURIComponent(data.id)}&cabang_id=eq.${encodeURIComponent(branch)}`, { method: "PATCH", headers: ret, body: JSON.stringify(p) });
+      if (!r.ok) throw new Error(await r.text());
+      const rows = await r.json(); if (!rows.length) throw new Error("Reward tidak ditemukan di cabang ini.");
+      return rows[0];
+    }
+    const r = await db("loyalty_rewards", "", { method: "POST", headers: ret, body: JSON.stringify({ ...p, cabang_id: branch, is_active: true }) });
+    if (!r.ok) throw new Error(await r.text());
+    return (await r.json())[0];
+  }
+  if (name === "rewardStatus") {
+    if (typeof data.is_active !== "boolean") throw new Error("Status reward tidak valid.");
+    const r = await db("loyalty_rewards", `?id=eq.${encodeURIComponent(data.id)}&cabang_id=eq.${encodeURIComponent(branch)}`, { method: "PATCH", headers: { ...headers, Prefer: "return=representation" }, body: JSON.stringify({ is_active: data.is_active }) });
+    if (!r.ok) throw new Error(await r.text());
+    if (!(await r.json()).length) throw new Error("Reward tidak ditemukan di cabang ini.");
+    return true;
+  }
+  if (name === "redemptionList") {
+    const cab = encodeURIComponent(branch);
+    const [rw, kp] = await Promise.all([
+      db("loyalty_redemptions", `?cabang_id=eq.${cab}&select=no_nota,points_used,reward_value,status,created_at,loyalty_rewards(name),master_customer(nama,nomor_wa)&order=created_at.desc&limit=200`),
+      db("promo_redemptions", `?cabang_id=eq.${cab}&status=eq.APPLIED&select=invoice_no,discount_amount,redeemed_at,promo_campaigns(name),promo_coupons(code),master_customer(nama,nomor_wa)&order=redeemed_at.desc&limit=200`)
+    ]);
+    if (!rw.ok) throw new Error(await rw.text());
+    if (!kp.ok) throw new Error(await kp.text());
+    const reward = (await rw.json()).map((x: any) => ({ jenis: "reward", waktu: x.created_at, no_nota: x.no_nota, pelanggan: x.master_customer?.nama || "-", nomor_wa: x.master_customer?.nomor_wa || "", nama: x.loyalty_rewards?.name || "-", poin: Number(x.points_used || 0), nilai: Number(x.reward_value || 0), status: x.status }));
+    const kupon = (await kp.json()).map((x: any) => ({ jenis: "kupon", waktu: x.redeemed_at, no_nota: x.invoice_no, pelanggan: x.master_customer?.nama || "-", nomor_wa: x.master_customer?.nomor_wa || "", nama: `${x.promo_coupons?.code || "-"} · ${x.promo_campaigns?.name || "-"}`, poin: 0, nilai: Number(x.discount_amount || 0), status: "APPLIED" }));
+    return [...reward, ...kupon].sort((a, b) => String(b.waktu).localeCompare(String(a.waktu))).slice(0, 200);
+  }
   throw new Error("Aksi promo tidak dikenal.");
 }
 Deno.serve(async (req: Request) => { if (req.method === "OPTIONS") return json({ ok: true }); try { const body = await req.json(); const [name, data, token] = body.args || []; const s = await session(token); if (!s) return json({ ok: false, error: "Sesi berakhir. Silakan login kembali.", code: "NO_SESSION" }); return json({ ok: true, data: await action(name, data || {}, s) }); } catch (e) { return json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500); } });
