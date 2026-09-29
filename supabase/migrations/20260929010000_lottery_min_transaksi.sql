@@ -2,14 +2,39 @@
 -- Additive: dua kolom dengan default yang mempertahankan perilaku lama (minimal 1
 -- transaksi, tanpa batas per transaksi). Tidak menulis ulang riwayat/pemenang.
 -- Apply only with separate approval; never run tests/migrations on production.
+-- Reconciliation-safe: production may already contain these columns/RPCs while
+-- migration history is missing. Existing columns are validated, not overwritten.
 begin;
 alter table public.lottery_campaigns
-  add column min_jumlah_transaksi integer not null default 1
-    constraint lottery_campaigns_min_jumlah_transaksi_check
-    check (min_jumlah_transaksi >= 1 and min_jumlah_transaksi <= 1000),
-  add column min_belanja_per_transaksi_idr numeric(14,2) not null default 0
-    constraint lottery_campaigns_min_belanja_per_trx_check
-    check (min_belanja_per_transaksi_idr >= 0 and min_belanja_per_transaksi_idr <= 999999999999.99);
+  add column if not exists min_jumlah_transaksi integer not null default 1,
+  add column if not exists min_belanja_per_transaksi_idr numeric(14,2) not null default 0;
+do $$
+begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'lottery_campaigns'
+      and column_name in ('min_jumlah_transaksi', 'min_belanja_per_transaksi_idr')
+      and (is_nullable <> 'NO' or column_default is null)
+  ) then
+    raise exception 'Kolom minimum lottery sudah ada tetapi default/not-null tidak sesuai; rekonsiliasi manual diperlukan';
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.lottery_campaigns'::regclass
+      and conname = 'lottery_campaigns_min_jumlah_transaksi_check'
+  ) then
+    alter table public.lottery_campaigns add constraint lottery_campaigns_min_jumlah_transaksi_check
+      check (min_jumlah_transaksi >= 1 and min_jumlah_transaksi <= 1000);
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.lottery_campaigns'::regclass
+      and conname = 'lottery_campaigns_min_belanja_per_trx_check'
+  ) then
+    alter table public.lottery_campaigns add constraint lottery_campaigns_min_belanja_per_trx_check
+      check (min_belanja_per_transaksi_idr >= 0 and min_belanja_per_transaksi_idr <= 999999999999.99);
+  end if;
+end $$;
 comment on column public.lottery_campaigns.min_jumlah_transaksi is
   'Jumlah minimum transaksi yang DIHITUNG (harga_akhir >= min_belanja_per_transaksi_idr) di cabang dan periode campaign. Berlaku untuk pencatatan pemenang berikutnya; tidak mengubah pemenang lama.';
 comment on column public.lottery_campaigns.min_belanja_per_transaksi_idr is
