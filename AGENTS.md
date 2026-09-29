@@ -6,11 +6,11 @@ Baca seluruh file ini sebelum mengubah kode apa pun.
 ## Tentang Project
 
 - Nama: SI-FaMitra (Sistem Informasi Apotek Fa-Mitra)
-- Fungsi: POS/kasir, transaksi & retur, hutang, master data, dashboard, promo/kupon, asisten AI untuk Owner
+- Fungsi: POS/kasir, transaksi & retur, hutang, master data, dashboard, promo/kupon, loyalty, lottery, target marketing, dan asisten AI untuk Owner
 - Frontend: HTML + CSS + JavaScript murni (vanilla), TANPA framework dan TANPA build step
 - Package manager: tidak ada (tidak ada package.json). Jangan menambahkan framework, bundler, atau npm dependency tanpa izin.
-- Backend: Supabase Edge Functions (`api`, `promo`, `hutang`) + Postgres
-- Asisten AI: webhook n8n (`window.AI_CFG` di `index.html`)
+- Backend: lima Supabase Edge Functions (`api`, `promo`, `lottery`, `marketing`, `hutang`) + Postgres
+- Asisten AI: webhook n8n (`window.AI_CFG` di `public/index.html`)
 - Hosting: Cloudflare Pages, project `famitra-web`, alamat production: https://famitra-web.pages.dev (tanpa custom domain)
 - Repository: GitHub, branch utama `main`
 
@@ -25,10 +25,16 @@ Baca seluruh file ini sebelum mengubah kode apa pun.
   - `js_master.js` - master data (obat, pelanggan, dll.)
   - `js_dashboard.js` - dashboard dan ringkasan AI
   - `js_ai.js` - chat asisten AI (khusus Owner)
-- File di luar `public/` (AGENTS.md, supabase/, catatan .md) TIDAK boleh ikut dipublikasikan. Jangan pernah mengubah build output directory ke root repo.
-- `supabase/` - Edge Functions dan migrasi database
-  - Catatan: saat ini hanya function `promo` yang ada di repo. Function `api` dan `hutang` sudah ter-deploy di Supabase tapi kodenya belum ada di repo.
-  - `supabase/.temp/` adalah cache CLI, jangan di-commit (masukkan ke .gitignore).
+  - `js_marketing_target.js` - target omset marketing
+  - `js_marketing_lottery.js` - campaign, peserta, dan pemenang lottery
+  - `js_marketing_poin.js` - Poin & Reward untuk Owner
+  - `js_mobile.js` - perilaku/responsiveness mobile
+- File di luar `public/` (AGENTS.md, `docs/`, dan `supabase/`) tidak dipublikasikan sebagai frontend. Jangan pernah mengubah build output directory ke root repo.
+- `docs/rencana/` - dokumentasi rencana teknis dan keputusan arsitektur
+- `supabase/functions/` - source lima Edge Functions: `api`, `promo`, `lottery`, `marketing`, dan `hutang`
+- `supabase/migrations/` - seluruh perubahan schema/database; migration lama tetap dipertahankan setelah diterapkan
+- `supabase/config.toml` - konfigurasi Supabase CLI project
+- `supabase/.temp/` adalah cache CLI, jangan di-commit (masukkan ke .gitignore).
 
 ## Cara Menjalankan & Mengetes
 
@@ -39,9 +45,10 @@ python -m http.server 8080 --directory public
 # lalu buka http://localhost:8080
 ```
 (Di laptop ini perintahnya `python`, bukan `python3`.)
+- Setelah edit frontend, buka halaman di browser dan pastikan tidak ada error di console.
+- Tes alur yang terdampak secara manual: login, kasir, transaksi, retur, marketing, dan hak akses role.
+- Sebelum menghapus atau mengganti automated test, pastikan coverage yang hilang dicatat di PR dan disetujui reviewer.
 
-- Setelah edit, buka halaman di browser dan pastikan tidak ada error di console.
-- Tes alur yang terdampak (login, kasir, transaksi, dsb.) secara manual.
 - Supabase CLI dan Wrangler TIDAK terinstall global. Selalu pakai lewat npx:
   - `npx supabase ...` (contoh: `npx supabase projects list`, `npx supabase functions serve`)
   - `npx wrangler ...` (contoh: `npx wrangler whoami`)
@@ -55,7 +62,8 @@ python -m http.server 8080 --directory public
 4. Pertahankan gaya kode yang ada (fungsi global, `var`, nama fungsi berbahasa Indonesia seperti `prosesLogin`, `modalTutup`).
 5. Commit dengan pesan jelas, contoh: `fix: perbaiki perhitungan diskon di kasir`
 6. Buka Pull Request dengan `gh pr create`, sertakan ringkasan dan cara mengetes.
-7. Jangan merge PR sendiri. Tunggu review pemilik project.
+7. Jangan merge PR sendiri. Tunggu review dan persetujuan pemilik project.
+8. Sebelum menyatakan pekerjaan selesai, verifikasi working tree, branch remote, dan status checks PR.
 
 ## Aturan Database (Supabase)
 
@@ -68,12 +76,13 @@ python -m http.server 8080 --directory public
   2. `alter table ... enable row level security;`
   3. Policy yang jelas
 - Jangan pernah memberi akses `anon` ke data pasien, pelanggan, transaksi, atau hutang.
+- Sebelum migrasi production, bandingkan migration history dengan repository dan siapkan query verifikasi/rollback.
 
 ## Aturan Deploy (Cloudflare Pages)
 
 - Pengaturan build ada di dashboard Cloudflare Pages (bukan di repo): build command KOSONG, build output directory `public`.
 - Jangan menambahkan `wrangler.jsonc`/`wrangler.toml`, `package.json`, atau file build lain tanpa izin, karena bisa mengubah cara Pages melakukan build.
-- Setiap push ke branch selain `main` membuat preview di `<nama-branch>.famitra-web.pages.dev`. Tidak memengaruhi production.
+- Setiap push ke branch selain `main` membuat preview; preview tidak mengubah production.
 - Merge ke `main` = deploy ke PRODUCTION (https://famitra-web.pages.dev) yang dipakai apotek. Jangan merge sendiri.
 - Check "Cloudflare Pages" di setiap PR harus sukses sebelum menyatakan pekerjaan selesai.
 - Preview memakai database Supabase yang SAMA dengan production. Saat mengetes preview, jangan membuat/mengubah/menghapus data sungguhan.
