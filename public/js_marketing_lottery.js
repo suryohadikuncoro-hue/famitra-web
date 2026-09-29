@@ -74,7 +74,16 @@
   function minimumHtml(c) {
     return '<div style="color:#475569;font-size:13px;margin:8px 0;">Minimum total belanja selama campaign: <b>' +
       rupiah(c.min_total_belanja_idr === undefined ? 0 : c.min_total_belanja_idr) +
-      '</b>. Akumulasi harga akhir transaksi di cabang dan periode campaign (tanggal awal/akhir termasuk), sebelum koreksi retur. Tetap wajib minimal 1 transaksi; bukan jumlah kupon.</div>';
+      '</b>. Akumulasi harga akhir transaksi di cabang dan periode campaign (tanggal awal/akhir termasuk), sebelum koreksi retur. Tetap wajib minimal 1 transaksi; bukan jumlah kupon.<br>' +
+      'Syarat transaksi: minimal <b>' + angka(c.min_jumlah_transaksi === undefined ? 1 : c.min_jumlah_transaksi) + '</b> transaksi, masing-masing minimal belanja <b>' +
+      rupiah(c.min_belanja_per_transaksi_idr === undefined ? 0 : c.min_belanja_per_transaksi_idr) +
+      '</b> (transaksi di bawah nilai itu tidak dihitung, baik untuk jumlah transaksi maupun total belanja).</div>';
+  }
+
+  function angka(n) { var v = Number(n); return Number.isFinite(v) ? v.toLocaleString("id-ID") : "0"; }
+
+  function validMinTransaksi(v) {
+    return String(v).trim() === String(v) && /^\d{1,4}$/.test(String(v)) && Number(v) >= 1 && Number(v) <= 1000;
   }
 
   function validMinimum(v) {
@@ -355,6 +364,18 @@
         true,
       ) +
       formField(
+        "Minimal jumlah transaksi",
+        '<input id="lot-f-min-trx" type="number" min="1" max="1000" step="1" required value="' + esc(c.min_jumlah_transaksi === undefined ? 1 : c.min_jumlah_transaksi) + '" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;"/>' +
+        '<small>Contoh 10: pelanggan harus memiliki minimal 10 transaksi yang dihitung selama periode campaign sebelum kuponnya bisa dicatat. Nilai 1 = cukup satu transaksi. Transaksi di hari yang sama dihitung terpisah.</small>',
+        true,
+      ) +
+      formField(
+        "Minimal belanja per transaksi (Rp)",
+        '<input id="lot-f-min-per-trx" type="number" min="0" max="999999999999.99" step="0.01" required value="' + esc(c.min_belanja_per_transaksi_idr === undefined ? 0 : c.min_belanja_per_transaksi_idr) + '" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;"/>' +
+        '<small>Contoh 25000: transaksi baru dihitung sebagai 1 transaksi bila belanjanya minimal Rp25.000; di bawah itu tidak dihitung sama sekali (juga tidak masuk total belanja campaign). Nilai 0 = semua transaksi dihitung.</small>',
+        true,
+      ) +
+      formField(
         "Catatan",
         '<textarea id="lot-f-catatan" rows="2" style="width:100%;">' + esc(c.catatan || "") + "</textarea>",
       ) +
@@ -456,6 +477,8 @@
       periode_selesai: document.getElementById("lot-f-selesai").value,
       catatan: document.getElementById("lot-f-catatan").value.trim(),
       min_total_belanja_idr: document.getElementById("lot-f-min-belanja").value,
+      min_jumlah_transaksi: document.getElementById("lot-f-min-trx").value,
+      min_belanja_per_transaksi_idr: document.getElementById("lot-f-min-per-trx").value,
       prizes: prizes,
     };
   }
@@ -471,6 +494,10 @@
 
     if (!validMinimum(fd.min_total_belanja_idr))
       return alert("Minimum total belanja harus 0–999999999999.99, maksimal 2 desimal (tanpa pemisah ribuan)");
+    if (!validMinTransaksi(fd.min_jumlah_transaksi))
+      return alert("Minimal jumlah transaksi harus bilangan bulat 1–1000");
+    if (!validMinimum(fd.min_belanja_per_transaksi_idr))
+      return alert("Minimal belanja per transaksi harus 0–999999999999.99, maksimal 2 desimal (tanpa pemisah ribuan)");
 
     var btn = document.getElementById("lot-save");
     if (btn.disabled) return;

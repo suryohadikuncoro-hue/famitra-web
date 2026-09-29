@@ -191,4 +191,119 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ============================================================================
+-- Syarat transaksi (migrasi 20260929010000_lottery_min_transaksi.sql):
+-- min_jumlah_transaksi + min_belanja_per_transaksi_idr. Transaksi di bawah batas per
+-- transaksi TIDAK dihitung (jumlah maupun total belanja). Default = perilaku lama.
+-- ============================================================================
+insert into public.master_customer(id,nomor_wa,nama,tipe_customer,cabang_id)
+values ('20000000-0000-4000-8000-000000000001','628100000001','Sepuluh x 25rb','Umum','LOT_TEST_A'),
+       ('20000000-0000-4000-8000-000000000002','628100000002','Sembilan x 25rb + kecil','Umum','LOT_TEST_A'),
+       ('20000000-0000-4000-8000-000000000003','628100000003','Sepuluh x 24999.99','Umum','LOT_TEST_A'),
+       ('20000000-0000-4000-8000-000000000004','628100000004','Satu transaksi besar','Umum','LOT_TEST_A');
+insert into public.trx_penjualan(no_nota,tanggal,jam,nomor_wa,nama_pelanggan,tipe_customer,petugas_transaksi,shift,subtotal,diskon,harga_akhir,total_hpp,bayar,kembalian,cabang_id)
+select 'LOT-RULE-'||phone||'-'||n,'2026-09-15','10:00',phone,'Lottery rule test','Umum','lot-test-owner','Pagi',amount,0,amount,0,amount,0,'LOT_TEST_A'
+from (
+  select '628100000001' phone, n, 25000::numeric amount from generate_series(1,10) n            -- tepat 25.000 x10 (batas inklusif)
+  union all select '628100000002', n, 25000 from generate_series(1,9) n                          -- 9 transaksi yang dihitung
+  union all select '628100000002', 100+n, 10000 from generate_series(1,5) n                      -- 5 transaksi kecil: tidak dihitung
+  union all select '628100000003', n, 24999.99 from generate_series(1,10) n                      -- semua sesen di bawah batas
+  union all select '628100000004', 1, 900000
+) x(phone,n,amount);
+
+do $$
+declare
+  cid uuid; pid uuid; payload jsonb; winner jsonb; savedprize jsonb; customerid text; bad jsonb;
+begin
+  payload := '{"kode_cabang":"LOT_TEST_A","nama":"Syarat transaksi","periode_mulai":"2026-09-01","periode_selesai":"2026-09-30","min_jumlah_transaksi":10,"min_belanja_per_transaksi_idr":25000,"prizes":[{"nama_hadiah":"Rule prize","nilai_hadiah_idr":25,"probabilitas_persen":10}]}'::jsonb;
+  cid := (public.lottery_save_campaign('lot-test-owner-token',payload)->>'id')::uuid;
+  select id, jsonb_build_object('id',id,'nama_hadiah',nama_hadiah,'nilai_hadiah_idr',nilai_hadiah_idr,'probabilitas_persen',probabilitas_persen)
+    into pid, savedprize from public.lottery_prizes where campaign_id=cid;
+  if (select min_jumlah_transaksi from public.lottery_campaigns where id=cid) <> 10
+     or (select min_belanja_per_transaksi_idr from public.lottery_campaigns where id=cid) <> 25000 then
+    raise exception 'TEST FAILED: syarat transaksi tidak tersimpan';
+  end if;
+  winner := jsonb_build_object('campaign_id',cid,'prize_id',pid,'coupon_expired_at','2026-10-31',
+    'min_jumlah_transaksi',1,'min_belanja_per_transaksi_idr',0);  -- nilai klien palsu harus diabaikan
+
+  -- 10 x Rp25.000 (tepat di batas per transaksi, tepat 10 transaksi): lolos.
+  perform public.lottery_record_winner('lot-test-owner-token',winner || '{"customer_id":"20000000-0000-4000-8000-000000000001"}'::jsonb);
+  -- 9 dihitung + 5 kecil (total 14 transaksi tapi hanya 9 dihitung): ditolak dengan pesan jumlah.
+  begin
+    perform public.lottery_record_winner('lot-test-owner-token',winner || '{"customer_id":"20000000-0000-4000-8000-000000000002"}'::jsonb);
+    raise exception 'TEST FAILED: 9 transaksi yang dihitung lolos';
+  exception when raise_exception then
+    if SQLERRM not like 'Jumlah transaksi pelanggan selama campaign belum memenuhi minimum (9 dari 10%' then raise; end if;
+  end;
+  -- 10 transaksi masing-masing Rp24.999,99 (sesen di bawah batas): tidak ada yang dihitung.
+  begin
+    perform public.lottery_record_winner('lot-test-owner-token',winner || '{"customer_id":"20000000-0000-4000-8000-000000000003"}'::jsonb);
+    raise exception 'TEST FAILED: transaksi di bawah batas per transaksi dihitung';
+  exception when raise_exception then
+    if SQLERRM not like 'Jumlah transaksi pelanggan selama campaign belum memenuhi minimum (0 dari 10%' then raise; end if;
+  end;
+  -- 1 transaksi besar tidak menggantikan syarat jumlah transaksi.
+  begin
+    perform public.lottery_record_winner('lot-test-owner-token',winner || '{"customer_id":"20000000-0000-4000-8000-000000000004"}'::jsonb);
+    raise exception 'TEST FAILED: satu transaksi besar menggantikan jumlah transaksi';
+  exception when raise_exception then
+    if SQLERRM not like 'Jumlah transaksi pelanggan selama campaign belum memenuhi minimum (1 dari 10%' then raise; end if;
+  end;
+  if (select count(*) from public.lottery_winners where campaign_id=cid) <> 1 then raise exception 'TEST FAILED: jumlah pemenang salah'; end if;
+
+  -- Edit tanpa kunci baru mempertahankan nilai tersimpan (klien lama tidak mereset).
+  payload := payload || jsonb_build_object('id',cid,'prizes',jsonb_build_array(savedprize));
+  perform public.lottery_save_campaign('lot-test-owner-token',(payload - 'min_jumlah_transaksi') - 'min_belanja_per_transaksi_idr');
+  if (select min_jumlah_transaksi from public.lottery_campaigns where id=cid) <> 10
+     or (select min_belanja_per_transaksi_idr from public.lottery_campaigns where id=cid) <> 25000 then
+    raise exception 'TEST FAILED: edit tanpa kunci baru mereset syarat';
+  end if;
+
+  -- Turunkan jumlah ke 9: pelanggan 2 (9 dihitung) kini lolos; pemenang lama tidak berubah.
+  perform public.lottery_save_campaign('lot-test-owner-token',payload || '{"min_jumlah_transaksi":"9"}'::jsonb);
+  perform public.lottery_record_winner('lot-test-owner-token',winner || '{"customer_id":"20000000-0000-4000-8000-000000000002"}'::jsonb);
+  if (select count(*) from public.lottery_winners where campaign_id=cid) <> 2 then raise exception 'TEST FAILED: pemenang setelah ubah syarat'; end if;
+
+  -- Total belanja hanya dari transaksi yang dihitung: pelanggan 2 = 225.000 dihitung (+50.000 kecil tidak dihitung).
+  perform public.lottery_save_campaign('lot-test-owner-token',payload || '{"min_jumlah_transaksi":9,"min_total_belanja_idr":250000}'::jsonb);
+  begin
+    perform public.lottery_record_winner('lot-test-owner-token',winner || '{"customer_id":"20000000-0000-4000-8000-000000000002"}'::jsonb);
+    raise exception 'TEST FAILED: belanja transaksi kecil ikut dihitung ke total';
+  exception when raise_exception then
+    if SQLERRM not like 'Total belanja pelanggan selama campaign belum memenuhi minimum%' then raise; end if;
+  end;
+  perform public.lottery_save_campaign('lot-test-owner-token',payload || '{"min_jumlah_transaksi":9,"min_total_belanja_idr":225000}'::jsonb);
+  perform public.lottery_record_winner('lot-test-owner-token',winner || '{"customer_id":"20000000-0000-4000-8000-000000000002"}'::jsonb);
+
+  -- Batas per transaksi 0 = semua transaksi dihitung (perilaku lama): 14 transaksi pelanggan 2.
+  perform public.lottery_save_campaign('lot-test-owner-token',payload || '{"min_jumlah_transaksi":14,"min_belanja_per_transaksi_idr":0,"min_total_belanja_idr":0}'::jsonb);
+  perform public.lottery_record_winner('lot-test-owner-token',winner || '{"customer_id":"20000000-0000-4000-8000-000000000002"}'::jsonb);
+
+  -- Nilai tidak valid ditolak dan tidak mengubah data tersimpan.
+  foreach customerid in array array['min_jumlah_transaksi','min_belanja_per_transaksi_idr'] loop
+    for bad in select value from jsonb_array_elements(case customerid
+      when 'min_jumlah_transaksi' then '[0,-1,1001,"1.5","",null,true,"abc","10000",1.5]'::jsonb
+      else '[-1,"-0.01","",null,true,"NaN","25000.001","25,000",1000000000000]'::jsonb end) loop
+      begin
+        perform public.lottery_save_campaign('lot-test-owner-token',payload || jsonb_build_object(customerid,bad));
+        raise exception 'TEST FAILED: % menerima %',customerid,bad;
+      exception when raise_exception then
+        if SQLERRM like 'TEST FAILED%' then raise; end if;
+      end;
+    end loop;
+  end loop;
+  if (select min_jumlah_transaksi from public.lottery_campaigns where id=cid) <> 14 then raise exception 'TEST FAILED: nilai tidak valid mengubah data'; end if;
+  -- Batas atas diterima; kendala tabel menjaga nilai di luar rentang.
+  perform public.lottery_save_campaign('lot-test-owner-token',payload || '{"min_jumlah_transaksi":1000,"min_belanja_per_transaksi_idr":"999999999999.99"}'::jsonb);
+  begin update public.lottery_campaigns set min_jumlah_transaksi=0 where id=cid; raise exception 'TEST FAILED: check jumlah'; exception when check_violation then null; end;
+  begin update public.lottery_campaigns set min_belanja_per_transaksi_idr=-1 where id=cid; raise exception 'TEST FAILED: check per transaksi'; exception when check_violation then null; end;
+
+  -- Campaign baru tanpa kunci baru memakai default lama (1 transaksi, semua transaksi dihitung).
+  cid := (public.lottery_save_campaign('lot-test-owner-token',(payload - 'id' - 'min_jumlah_transaksi' - 'min_belanja_per_transaksi_idr') || jsonb_build_object('prizes',jsonb_build_array(savedprize - 'id')))->>'id')::uuid;
+  if (select min_jumlah_transaksi from public.lottery_campaigns where id=cid) <> 1
+     or (select min_belanja_per_transaksi_idr from public.lottery_campaigns where id=cid) <> 0 then
+    raise exception 'TEST FAILED: default campaign baru';
+  end if;
+end $$;
 rollback;
