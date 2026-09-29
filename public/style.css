@@ -1234,8 +1234,8 @@ body{background:var(--shell)}
 
 /* ================================================= Tema v14: aplikasi mobile
    Semua aturan di sini hanya berlaku di HP/tablet kecil (≤880px); tampilan
-   laptop tidak berubah. Bilah bawah per peran, menu & dialog sebagai lembar
-   bawah, tabel jadi kartu, kolom isian besar, respons sentuhan. */
+   laptop tidak berubah. Menu menjadi layar penuh, dialog tetap lembar bawah,
+   bilah navigasi per peran, tabel jadi kartu, dan kontrol ramah sentuhan. */
 .hanya-hp{display:none}
 .seg-ctl,#ptr,#scanner,.pos-scan,.ci-del,.top-avatar,.tb-logo{display:none}
 .m-list{display:none}
@@ -1323,25 +1323,27 @@ body{background:var(--shell)}
   .modal-foot .btn-primary{background:linear-gradient(90deg,#CE2C2B,#E8563F);border:0;color:#fff;box-shadow:0 10px 22px rgba(206,44,43,.3)}
   .modal-body .grid.g2{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 
-  /* ---- menu = lembar bawah ---- */
+  /* ---- menu utama = layar penuh ---- */
   .sheet-wadah{position:fixed;inset:0;z-index:75}
   .sheet-dim{position:absolute;inset:0;background:rgba(10,10,12,.55);opacity:0;transition:opacity .22s}
-  .sheet{position:absolute;left:0;right:0;bottom:0;background:#fff;color:var(--ink);border-radius:28px 28px 0 0;padding:8px 18px calc(22px + env(safe-area-inset-bottom));
-    max-height:88dvh;overflow-y:auto;transform:translateY(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1)}
+  .sheet{position:absolute;inset:0;background:#fff;color:var(--ink);border-radius:0;padding:calc(16px + env(safe-area-inset-top)) 18px calc(16px + env(safe-area-inset-bottom));
+    min-height:0;display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+    transform:translateY(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1)}
   .sheet-wadah.buka .sheet-dim{opacity:1}
   .sheet-wadah.buka .sheet{transform:none}
-  .sheet-handle{width:44px;height:5px;border-radius:9px;background:#D5D8DE;margin:2px auto 14px;touch-action:none;padding:8px 0;background-clip:content-box;box-sizing:content-box;height:5px}
-  .sheet-user{display:flex;align-items:center;gap:12px;margin-bottom:18px;touch-action:none}
+  .sheet-user{display:flex;align-items:center;gap:12px;margin-bottom:18px}
   .sheet-avatar{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;background:linear-gradient(135deg,var(--brand),var(--brand-dark))}
   .sheet-user-teks{flex:1;min-width:0}
   .sheet-user-teks b{display:block;font-size:16px;color:var(--ink-deep);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .sheet-user-teks small{color:var(--muted);font-size:12.5px}
-  .sheet-keluar{border:0;border-radius:99px;background:var(--paper);color:var(--ink-deep);font:800 13px 'Plus Jakarta Sans',system-ui,sans-serif;padding:10px 18px;cursor:pointer}
-  .sheet-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 8px}
+  .sheet-kembali{flex:0 0 auto;border:0;border-radius:99px;background:var(--paper);color:var(--ink-deep);font:800 13px 'Plus Jakarta Sans',system-ui,sans-serif;padding:10px 18px;cursor:pointer}
+  .sheet-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 8px;flex:0 0 auto;padding-bottom:16px}
   .sheet-tile{display:flex;flex-direction:column;align-items:center;gap:8px;border:0;background:transparent;font:600 12px 'Plus Jakarta Sans',system-ui,sans-serif;color:var(--ink);text-align:center;cursor:pointer;padding:0;transition:transform .12s}
   .sheet-tile:active{transform:scale(.94)}
   .sheet-tile i{width:58px;height:58px;border-radius:19px;background:var(--paper);display:grid;place-items:center;color:var(--ink-deep)}
   .sheet-tile .menu-ikon{width:26px;height:26px}
+  .sheet-footer{position:sticky;bottom:0;margin-top:auto;padding-top:12px;background:linear-gradient(180deg,rgba(255,255,255,0),#fff 14px)}
+  .sheet-logout{width:100%;min-height:50px;border:0;border-radius:15px;background:var(--bad-soft);color:var(--bad);font:800 14px 'Plus Jakarta Sans',system-ui,sans-serif;cursor:pointer}
   .sheet-tile.on i{background:linear-gradient(145deg,#E8563F,#B5252A);color:#fff;box-shadow:0 8px 16px rgba(206,44,43,.3)}
 
   /* ---- tabel → kartu ---- */
@@ -1470,3 +1472,23 @@ body{background:var(--shell)}
 .pwa-install-help em{font-style:normal;font-weight:600;color:var(--ink)}
 .pwa-install-button{margin-top:14px}
 .pwa-install-button[hidden]{display:none!important}
+
+
+/* Panel kasir fullscreen saat ringkasan Bayar dibuka di perangkat mobile. */
+@media (max-width:1040px){
+  .pos-dark .pos-pay.is-fullscreen{
+    position:fixed!important;inset:0!important;z-index:65!important;
+    max-height:100dvh!important;height:100dvh!important;margin:0!important;
+    border-radius:0!important;padding-top:env(safe-area-inset-top)!important;
+    padding-bottom:env(safe-area-inset-bottom)!important;transform:none!important;
+    overflow:hidden!important
+  }
+  .pos-dark .pos-pay.is-fullscreen .pos-pay-grip{
+    padding-top:calc(8px + env(safe-area-inset-top))!important
+  }
+  .pos-dark .pos-pay.is-fullscreen .pos-pay-body{
+    flex:1 1 auto;min-height:0;max-height:none!important;overflow-y:auto;
+    padding:6px 16px calc(16px + env(safe-area-inset-bottom))!important;
+    -webkit-overflow-scrolling:touch;overscroll-behavior:contain
+  }
+}

@@ -304,14 +304,22 @@ function pasangEventPOS() {
   var grip = document.getElementById('posPayToggle');
   if (grip) {
     var panel = document.getElementById('posPayPanel');
+    var breakpointPanelHP = window.matchMedia ? window.matchMedia('(max-width:1040px)') : null;
     var aturPanel = function (tutup) {
       panel.classList.toggle('is-collapsed', tutup);
+      panel.classList.toggle('is-fullscreen', !!(breakpointPanelHP && breakpointPanelHP.matches && !tutup));
       grip.setAttribute('aria-expanded', tutup ? 'false' : 'true');
+      grip.setAttribute('aria-label', tutup ? 'Buka panel pembayaran' : 'Tutup panel pembayaran');
     };
     grip.onclick = function () { aturPanel(!panel.classList.contains('is-collapsed')); };
     // Di HP panel bayar mulai TERTUTUP supaya keranjang & pencarian terlihat;
     // ringkasan total selalu tampil di bilah bawah, ketuk untuk membayar.
-    if (window.matchMedia && window.matchMedia('(max-width:1040px)').matches) aturPanel(true);
+    if (breakpointPanelHP && breakpointPanelHP.matches) aturPanel(true);
+    if (breakpointPanelHP) {
+      var sinkronPanel = function (e) { aturPanel(!!e.matches); };
+      if (breakpointPanelHP.addEventListener) breakpointPanelHP.addEventListener('change', sinkronPanel);
+      else if (breakpointPanelHP.addListener) breakpointPanelHP.addListener(sinkronPanel);
+    }
     // Salin total & jumlah item ke bilah ringkas setiap kali berubah.
     var salin = function () {
       var t = document.getElementById('payTotal'), n = document.getElementById('posJumlah');
