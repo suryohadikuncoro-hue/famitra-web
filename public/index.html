@@ -4,8 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#141517">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SI-FaMitra">
   <title>SI-FaMitra — Apotek Fa-Mitra</title>
-  <link rel="icon" href="https://ssl.gstatic.com/docs/script/images/logo.png">
+  <link rel="icon" href="/icons/famitra-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -57,6 +61,12 @@
     <div id="loginError" class="login-error" hidden></div>
     <button id="loginBtn" class="btn btn-primary btn-block">Masuk</button>
     <p class="login-note">Belum punya akun? Minta Owner membuatkannya di Manajemen User.</p>
+    <button id="installAppBtn" class="btn btn-primary btn-block pwa-install-button" type="button" hidden>Pasang SI-FaMitra</button>
+    <details class="pwa-install-help">
+      <summary>Pasang di layar utama</summary>
+      <p><strong>Android:</strong> buka menu browser lalu pilih <em>Install app</em> atau <em>Tambahkan ke layar utama</em>.</p>
+      <p><strong>iPhone/iPad:</strong> di Safari, ketuk <em>Bagikan</em> → <em>Tambahkan ke Layar Utama</em>, aktifkan <em>Buka sebagai App Web</em>, lalu ketuk <em>Tambah</em>.</p>
+    </details>
   </div>
 </div>
 
@@ -174,6 +184,7 @@
 <script src="js_marketing_target.js"></script>
 <script src="js_marketing_lottery.js"></script>
 <script src="js_marketing_poin.js"></script>
+<script src="js_pwa.js"></script>
 <script src="js_mobile.js"></script>
 </body>
 </html>

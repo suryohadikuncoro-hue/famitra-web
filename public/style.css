@@ -1462,3 +1462,11 @@ body{background:var(--shell)}
   body[data-hal="dashboard"] .db-filter .btn{min-height:44px}
   body[data-hal="dashboard"] .btn-sm{min-height:0}
 }
+
+/* ------------------------ Bantuan install PWA ------------------------ */
+.pwa-install-help{margin-top:14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;color:var(--muted);font-size:12px;line-height:1.55}
+.pwa-install-help summary{color:var(--ink);font-weight:700;cursor:pointer}
+.pwa-install-help p{margin:10px 0 0}
+.pwa-install-help em{font-style:normal;font-weight:600;color:var(--ink)}
+.pwa-install-button{margin-top:14px}
+.pwa-install-button[hidden]{display:none!important}
