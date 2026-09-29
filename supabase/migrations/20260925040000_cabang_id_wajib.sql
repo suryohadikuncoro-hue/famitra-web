@@ -1,6 +1,6 @@
 -- =============================================================================
 -- SI-FaMitra — Migrasi 4/6 : cabang_id wajib, nomor nota terkunci, nomor faktur PBF
--- Rencana: docs/rencana-isolasi-cabang.md bagian 4.2, 4.3, 4.6 (file 4),
+-- Rencana: docs/rencana/isolasi-cabang.md bagian 4.2, 4.3, 4.6 (file 4),
 --          5.2 poin 5, 10.2 A
 -- Keputusan pemilik project: 4 (nomor faktur pembelian berprefix cabang, PK
 -- (no_faktur) tetap global), 10.2 A (kolom no_faktur_supplier + unique index parsial)

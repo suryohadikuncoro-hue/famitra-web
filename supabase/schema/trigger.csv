@@ -1,5 +1,0 @@
-tabel,trigger_name,action_timing,event_manipulation,action_statement
-master_customer,trg_loyalty_set_tier,BEFORE,INSERT,EXECUTE FUNCTION loyalty_set_tier()
-master_customer,trg_loyalty_set_tier,BEFORE,UPDATE,EXECUTE FUNCTION loyalty_set_tier()
-trx_penjualan,trg_loyalty_after_sale,AFTER,INSERT,EXECUTE FUNCTION loyalty_after_sale()
-trx_retur_jual,trg_loyalty_after_return,AFTER,INSERT,EXECUTE FUNCTION loyalty_after_return()

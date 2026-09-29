@@ -1,6 +1,6 @@
 -- =============================================================================
 -- SI-FaMitra — Migrasi 5/6 : lima fungsi kasir jadi sadar cabang
--- Rencana: docs/rencana-isolasi-cabang.md bagian 5.1–5.6, 4.6 (file 5), 10.2 A/B
+-- Rencana: docs/rencana/isolasi-cabang.md bagian 5.1–5.6, 4.6 (file 5), 10.2 A/B
 -- Keputusan pemilik project: 1, 2, 3, 4, 7, 10.2 A (nomor faktur PBF),
 -- 10.2 B (supplier divalidasi lewat NAMA), dan keputusan 8 (temuan 15 TIDAK
 -- dikerjakan di sini — lihat catatan di generate_refill_reminders).

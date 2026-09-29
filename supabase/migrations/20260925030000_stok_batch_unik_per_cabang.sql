@@ -1,6 +1,6 @@
 -- =============================================================================
 -- SI-FaMitra — Migrasi 3/6 : stok & relasi barang jadi per cabang
--- Rencana: docs/rencana-isolasi-cabang.md bagian 4.1, 4.2, 4.7, 4.6 (file 3),
+-- Rencana: docs/rencana/isolasi-cabang.md bagian 4.1, 4.2, 4.7, 4.6 (file 3),
 --          5.5 poin 3, 10.2 D (promo_bundle_items: kolom cabang_id WAJIB + trigger)
 -- Keputusan pemilik project: 1, 3, 11/10.2 D.
 --
