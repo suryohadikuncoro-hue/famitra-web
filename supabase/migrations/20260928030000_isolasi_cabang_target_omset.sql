@@ -1,7 +1,7 @@
 -- Migrasi: Isolasi cabang untuk RPC marketing_save_target_omset
 -- Tanggal: 2026-09-28
 --
--- Lapis kedua (keputusan 7 di docs/rencana-isolasi-cabang.md): selain dicek di
+-- Lapis kedua (keputusan 7 di docs/rencana/isolasi-cabang.md): selain dicek di
 -- Edge Function `marketing`, RPC ini sekarang menolak kode_cabang yang tidak sama
 -- dengan cabang_id sesi, termasuk untuk Owner. Isi fungsi lainnya sama persis
 -- dengan 20260928020000_fix_marketing_save_target_omset_ambiguous_id.sql.

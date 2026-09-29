@@ -7,7 +7,7 @@
 //   - Kasir       : baca target omset + baca dashboard (cabang sendiri)
 //
 // Isolasi cabang: SEMUA role (termasuk Owner) dikunci ke cabang_id sesi,
-// mengikuti docs/rencana-isolasi-cabang.md ("Owner hanya mengelola cabangnya
+// mengikuti docs/rencana/isolasi-cabang.md ("Owner hanya mengelola cabangnya
 // sendiri"). kode_cabang dari payload tidak pernah dipercaya; kalau berbeda
 // dengan cabang sesi, request ditolak.
 //

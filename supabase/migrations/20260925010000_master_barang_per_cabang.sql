@@ -1,6 +1,6 @@
 -- =============================================================================
 -- SI-FaMitra — Migrasi 1/6 : master_barang per cabang
--- Rencana: docs/rencana-isolasi-cabang.md bagian 3.1, 3.3, 4.1, 4.2, 4.6 (file 1)
+-- Rencana: docs/rencana/isolasi-cabang.md bagian 3.1, 3.3, 4.1, 4.2, 4.6 (file 1)
 -- Keputusan pemilik project: 1 (137 barang tersedia di semua cabang, PK
 -- (cabang_id, kode_obat), kode_obat sama di semua cabang) dan 2 (harga boleh
 -- berbeda per cabang).

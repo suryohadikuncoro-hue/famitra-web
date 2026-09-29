@@ -1,6 +1,6 @@
 -- =============================================================================
 -- SI-FaMitra — Migrasi 6/6 : GRANT, RLS, policy, dan pencabutan EXECUTE
--- Rencana: docs/rencana-isolasi-cabang.md bagian 4.5, 4.6 (file 6)
+-- Rencana: docs/rencana/isolasi-cabang.md bagian 4.5, 4.6 (file 6)
 -- Keputusan pemilik project: 7 (Model A — service_role sebagai satu-satunya jalur
 -- data; otorisasi tetap di Edge Function, RLS sebagai penutup pintu)
 --

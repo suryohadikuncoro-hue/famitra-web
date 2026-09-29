@@ -1,6 +1,6 @@
 -- =============================================================================
 -- SI-FaMitra — Migrasi 2/6 : tabel relasi supplier per cabang (supplier_cabang)
--- Rencana: docs/rencana-isolasi-cabang.md bagian 3.2, 4.1, 4.2, 4.6 (file 2),
+-- Rencana: docs/rencana/isolasi-cabang.md bagian 3.2, 4.1, 4.2, 4.6 (file 2),
 --          10.2 C (penanaman data awal)
 -- Keputusan pemilik project: 3 (master_supplier TETAP GLOBAL + tabel relasi),
 -- 7 (Model A: GRANT + RLS + policy wajib untuk tabel baru), 10.2 C (tanam semua
