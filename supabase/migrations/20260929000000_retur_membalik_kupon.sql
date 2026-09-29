@@ -3,6 +3,9 @@
 -- per kode_obat + kode_batch), promo_redemptions nota itu diubah APPLIED -> REVERSED
 -- sehingga kuota total dan jatah per pelanggan kembali. Retur sebagian tidak
 -- mengubah apa pun (kupon tetap dianggap terpakai).
+-- Reconciliation-safe: the whole migration is atomic and refuses an unreviewed
+-- non-zero backfill candidate instead of silently changing production history.
+begin;
 
 CREATE OR REPLACE FUNCTION public.promo_reverse_on_full_return()
 RETURNS trigger
@@ -57,6 +60,35 @@ AFTER INSERT ON public.trx_retur_jual_detail
 FOR EACH ROW EXECUTE FUNCTION public.promo_reverse_on_full_return();
 
 -- Backfill: nota berkupon yang sudah pernah diretur penuh sebelum migrasi ini.
+do $$
+declare v_candidates bigint;
+begin
+  with sold as (
+    select d.no_nota, d.cabang_id, d.kode_obat, d.kode_batch, sum(d.qty) as sold_qty
+    from public.trx_penjualan_detail d
+    group by d.no_nota, d.cabang_id, d.kode_obat, d.kode_batch
+  ), returned as (
+    select rj.no_nota_asal as no_nota, rj.cabang_id, rd.kode_obat, rd.kode_batch, sum(rd.qty) as returned_qty
+    from public.trx_retur_jual rj
+    join public.trx_retur_jual_detail rd on rd.no_retur = rj.no_retur and rd.cabang_id = rj.cabang_id
+    group by rj.no_nota_asal, rj.cabang_id, rd.kode_obat, rd.kode_batch
+  ), open_items as (
+    select s.no_nota, s.cabang_id
+    from sold s
+    left join returned r on r.no_nota = s.no_nota and r.cabang_id = s.cabang_id
+      and r.kode_obat = s.kode_obat and r.kode_batch = s.kode_batch
+    where s.sold_qty > coalesce(r.returned_qty, 0)
+    group by s.no_nota, s.cabang_id
+  )
+  select count(*) into v_candidates
+  from public.promo_redemptions pr
+  where pr.status = 'APPLIED'
+    and exists (select 1 from sold s where s.no_nota = pr.invoice_no and s.cabang_id = pr.cabang_id)
+    and not exists (select 1 from open_items oi where oi.no_nota = pr.invoice_no and oi.cabang_id = pr.cabang_id);
+  if v_candidates > 0 then
+    raise exception 'Migration dihentikan: % kandidat backfill kupon memerlukan review eksplisit', v_candidates;
+  end if;
+end $$;
 UPDATE public.promo_redemptions pr
 SET status = 'REVERSED'
 WHERE pr.status = 'APPLIED'
@@ -78,3 +110,4 @@ WHERE pr.status = 'APPLIED'
         AND rd.kode_obat = s.kode_obat AND rd.kode_batch = s.kode_batch
     ), 0)
   );
+commit;
