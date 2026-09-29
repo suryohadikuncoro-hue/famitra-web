@@ -1,0 +1,32 @@
+{
+  "id": "/",
+  "name": "SI-FaMitra — Apotek Fa-Mitra",
+  "short_name": "SI-FaMitra",
+  "description": "Sistem Informasi Apotek Fa-Mitra",
+  "lang": "id",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#141517",
+  "theme_color": "#141517",
+  "icons": [
+    {
+      "src": "/icons/famitra-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/famitra-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/famitra-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
