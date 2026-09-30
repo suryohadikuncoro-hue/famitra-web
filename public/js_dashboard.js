@@ -584,8 +584,12 @@ function gambarDashboard(d) {
   var tren7 = tren.slice(-7), tren7Lalu = tren.length >= 14 ? tren.slice(-14, -7) : [];
 
   /* 1. Tiga kartu KPI */
+  // Laba kotor adalah hak Owner. Role lain (Apoteker/Kasir) melihat Rata-rata
+  // nota: angka operasional yang penting, tapi bukan informasi laba.
+  var isOwner = !!(SESSION && SESSION.user && SESSION.user.role === 'Owner');
   var kartuOmzet =
-    '<div class="dkartu dk-gelap db-omzet" id="dbHero" role="link" tabindex="0" title="Buka Laporan dengan filter yang sama">' +
+    '<div class="dkartu dk-gelap db-omzet" id="dbHero"' +
+      (isOwner ? ' role="link" tabindex="0" title="Buka Laporan dengan filter yang sama"' : '') + '>' +
       '<div class="dk-judul">Omzet ' + esc(rentangLabel) + (d.shift_filter !== 'Semua' ? ' · ' + esc(d.shift_filter) : '') +
         '<svg class="dk-ikon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9.5a3 3 0 00-3-1.5c-1.7 0-3 .9-3 2s1.3 1.7 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 01-3-1.5M12 6.5v11"/></svg></div>' +
       '<div class="dk-flex"><div>' +
@@ -593,7 +597,9 @@ function gambarDashboard(d) {
         (k.delta_omzet !== null && k.delta_omzet !== undefined ? '<div class="dk-baris">' + chipDelta(k.delta_omzet) + '</div>' : '') +
       '</div>' + sparkMini(ambil(tren7, 'omzet'), null, true, 'area') + '</div>' +
       '<div class="dk-sub2">' +
-        '<div><small>Laba kotor</small><b class="' + (k.laba_kotor < 0 ? 'minus' : '') + '">' + rupiah(k.laba_kotor) + '</b></div>' +
+        (isOwner
+          ? '<div><small>Laba kotor</small><b class="' + (k.laba_kotor < 0 ? 'minus' : '') + '">' + rupiah(k.laba_kotor) + '</b></div>'
+          : '<div><small>Rata-rata nota</small><b>' + rupiah(k.rata_nota || 0) + '</b></div>') +
         '<div><small>Retur</small><b>' + rupiah(k.retur_total || 0) + '</b></div>' +
       '</div>' +
     '</div>';
@@ -788,8 +794,11 @@ function pasangEventDashboard(d) {
   }
 
   // Klik hero omzet → pindah ke halaman Laporan (filter sudah dibawa).
+  // Hanya untuk Owner: halaman Laporan Laba-Rugi bukan hak role lain, jadi
+  // kartu tidak dibuat seolah bisa diklik oleh mereka.
   var hero = document.getElementById('dbHero');
-  if (hero) {
+  var isOwner = !!(SESSION && SESSION.user && SESSION.user.role === 'Owner');
+  if (hero && isOwner) {
     hero.style.cursor = 'pointer';
     hero.title = 'Buka halaman Laporan dengan filter yang sama';
     hero.onkeydown = function (e) { if (e.key === 'Enter') hero.onclick(e); };
@@ -801,6 +810,7 @@ function pasangEventDashboard(d) {
       }
     };
   }
+  if (hero && !isOwner) hero.style.cursor = 'default';
 
   if (strip) strip.onkeydown = function (e) { if (e.key === 'Enter') strip.onclick(); };
 
