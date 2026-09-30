@@ -446,7 +446,16 @@ var IKON_PROMO = {
   undian: '<rect x="3" y="8" width="18" height="13" rx="2"/><path d="M3 12h18M12 8v13"/><path d="M12 8c-2-4-6-4-6-1.5S9 8 12 8zm0 0c2-4 6-4 6-1.5S15 8 12 8z"/>'
 };
 
+/* Widget promo memakai Edge Function promo action `dashboardAktif` yang hanya
+   untuk Owner dan Apoteker. Untuk role lain kartunya tidak dirender supaya
+   tidak muncul pesan "Akses ditolak" di dashboard. */
+function bolehPromoDashboard_() {
+  var role = (SESSION && SESSION.user && SESSION.user.role) || '';
+  return role === 'Owner' || role === 'Apoteker';
+}
+
 function promoKartuHtml() {
+  if (!bolehPromoDashboard_()) return '';
   return '<div class="db-grid21" id="dbPromoBaris">' +
     '<div class="dkartu" id="dbPromo">' + kerangka(3) + '</div>' +
     '<div class="dkartu db-promo-sum" id="dbPromoSum">' + kerangka(3) + '</div>' +
@@ -454,6 +463,7 @@ function promoKartuHtml() {
 }
 
 function muatPromoWidget() {
+  if (!bolehPromoDashboard_()) return;
   var kiri = document.getElementById('dbPromo'), kanan = document.getElementById('dbPromoSum');
   if (!kiri) return;
   promoApi('dashboardAktif', {}).then(function (res) {
@@ -921,6 +931,9 @@ function muatInsights() {
    berasal dari payload dashboard yang sudah di-load. */
 function cetakRingkasanOwner(d) {
   var k = d.kpi || {};
+  // Baris Laba kotor hanya ikut tercetak untuk Owner; role lain tidak boleh
+  // membawa angka laba ke kertas.
+  var isOwner = !!(SESSION && SESSION.user && SESSION.user.role === 'Owner');
   var barisProduk = (d.top_produk || []).slice(0, 5).map(function (p, i) {
     return '<tr><td class="ctr">' + (i + 1) + '</td><td>' + esc(p.nama) + '</td>' +
       '<td class="r num">' + angka(p.qty) + ' pcs</td></tr>';
@@ -952,7 +965,7 @@ function cetakRingkasanOwner(d) {
     '<hr>' +
     '<table style="width:100%">' +
       '<tr><td><strong>Omzet</strong></td><td class="r num">' + rupiah(k.omzet) + '</td></tr>' +
-      '<tr><td>Laba kotor</td><td class="r num">' + rupiah(k.laba_kotor) + '</td></tr>' +
+      (isOwner ? '<tr><td>Laba kotor</td><td class="r num">' + rupiah(k.laba_kotor) + '</td></tr>' : '') +
       '<tr><td>Retur (' + angka(k.retur_count || 0) + ')</td><td class="r num">' + rupiah(k.retur_total || 0) + '</td></tr>' +
       '<tr><td>Nota terjual</td><td class="r num">' + angka(k.nota) + '</td></tr>' +
       '<tr><td>Rata-rata nota</td><td class="r num">' + rupiah(k.rata_nota) + '</td></tr>' +
