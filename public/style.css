@@ -586,14 +586,15 @@ tbody tr:last-child td{border-bottom:0}
 /* ========================================================= Struk thermal === */
 .struk{display:none}
 @media print{
+  html,body{margin:0!important;padding:0!important}
   body > *:not(#struk){display:none !important}
   .struk{
-    display:block !important; page:thermal58; box-sizing:border-box; width:58mm; margin:0; padding:2mm 2mm 15mm;
-    font-family:'Courier New',monospace; font-size:10px; line-height:1.35; color:#000;
+    display:block !important; page:thermal58; box-sizing:border-box; width:46mm; margin:0 auto; padding:2mm 0 15mm;
+    font-family:'Courier New',monospace; font-size:11px; line-height:1.3; color:#000; overflow:hidden;
   }
   .struk.w80{page:thermal80; width:80mm; font-size:11px}
   .struk.lebar{
-    page:a4; width:auto; padding:14mm 12mm; font-size:12px;
+    page:a4; width:auto; margin:0; padding:14mm 12mm; font-size:12px; overflow:visible;
     font-family:'Plus Jakarta Sans',system-ui,sans-serif;
   }
   .struk.lebar table{border-collapse:collapse}
@@ -602,12 +603,14 @@ tbody tr:last-child td{border-bottom:0}
   .struk table{min-width:0; width:100%; font-size:10px}
   .struk th,.struk td{padding:1px 0; border:0}
   .struk hr{border:0; border-top:1px dashed #000; margin:3px 0}
-  .struk .ctr{text-align:center}
+  .struk .ctr,.struk .tengah{text-align:center}
   .struk .r{text-align:right}
-  /* Feed tambahan sebelum auto-cut printer thermal agar baris terakhir tidak terpotong. */
-  .struk::after{content:"";display:block;height:15mm}
-  @page thermal58{size:58mm auto; margin:0}
-  @page thermal80{size:80mm auto; margin:0}
+  .struk .baris{display:flex;justify-content:space-between;gap:2mm}
+  .struk .baris span:last-child{white-space:nowrap}
+  .struk .nota{word-break:break-all}
+  /* Pilih ukuran roll di dialog/driver printer; auto adalah nilai size yang valid. */
+  @page thermal58{size:auto; margin:0}
+  @page thermal80{size:auto; margin:0}
   @page a4{size:A4 portrait; margin:0}
 }
 
