@@ -132,15 +132,15 @@ function gambarHeaderShift() {
   var now = new Date();
   var jam = now.getHours();               // 0–23 (integer), bukan string "09"
   var shift, jamShift, kelas;
-  if (jam >= 8 && jam < 15) {
-    shift = 'Shift Pagi'; jamShift = '08:00–15:00'; kelas = 'chip-ok';
-  } else if (jam >= 15 && jam < 21) {
-    shift = 'Shift Sore'; jamShift = '15:00–21:00'; kelas = 'chip-ok';
-  } else if (jam >= 21 || jam < 6) {
-    shift = 'Luar Jam'; jamShift = 'Apotek tutup (jam buka 08:00–21:00)'; kelas = 'chip-warn';
+  if (jam >= 7 && jam < 14) {
+    shift = 'Shift Pagi'; jamShift = '07:00–14:00'; kelas = 'chip-ok';
+  } else if (jam >= 14 && jam < 21) {
+    shift = 'Shift Sore'; jamShift = '14:00–21:00'; kelas = 'chip-ok';
+  } else if (jam >= 21) {
+    shift = 'Luar Jam'; jamShift = 'Apotek tutup (jam buka 07:00–21:00)'; kelas = 'chip-warn';
   } else {
-    // 06:00–07:59: terlalu pagi, sebelum buka
-    shift = 'Pra-buka'; jamShift = 'Apotek buka pukul 08:00'; kelas = 'chip-warn';
+    // Sebelum 07:00: apotek belum buka
+    shift = 'Pra-buka'; jamShift = 'Apotek buka pukul 07:00'; kelas = 'chip-warn';
   }
   chip.textContent = shift + ' · ' + jamShift;
   chip.className = 'chip ' + kelas;

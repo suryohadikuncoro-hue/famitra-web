@@ -10,7 +10,10 @@ var today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" })
 var clock = () => new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false }).format(/* @__PURE__ */ new Date());
 var shift = () => {
   const h = Number(clock().slice(0, 2));
-  return h >= 8 && h < 15 ? "Pagi" : h >= 15 && h < 21 ? "Sore" : "Luar Jam";
+  // Jam operasional 07:00-21:00 (Pagi 07:00-13:59, Sore 14:00-20:59). Batas ini
+  // harus sama dengan shiftSekarang_() di public/js_core.js dan v_shift di RPC
+  // pos_checkout.
+  return h >= 7 && h < 14 ? "Pagi" : h >= 14 && h < 21 ? "Sore" : "Luar Jam";
 };
 var normWA = (v) => {
   let s = String(v || "").replace(/\D/g, "");

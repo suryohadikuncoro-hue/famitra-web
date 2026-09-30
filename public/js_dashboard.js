@@ -30,8 +30,8 @@ function filterBarHtml(prefix) {
       '<input id="' + prefix + 'Sampai" class="inp" type="date"></label>' +
     '<label class="field"><span>Shift</span><select id="' + prefix + 'Shift" class="inp">' +
       '<option value="Semua">Semua shift</option>' +
-      '<option value="Pagi">Shift pagi (08–15)</option>' +
-      '<option value="Sore">Shift sore (15–21)</option>' +
+      '<option value="Pagi">Shift pagi (07–14)</option>' +
+      '<option value="Sore">Shift sore (14–21)</option>' +
       '<option value="Luar Jam">Di luar jam buka</option>' +
     '</select></label>' +
     '<button id="' + prefix + 'Terapkan" class="btn btn-primary">Terapkan</button>' +
@@ -721,7 +721,7 @@ function gambarDashboard(d) {
       ? '<b>' + esc(pj.petugas_jaga) + '</b><span>' + esc(pj.sumber_aktivitas || 'Aktivitas') + ' terakhir pukul ' + esc(pj.aktivitas_jam || '-') + '</span>'
       : '<b>Belum ada aktivitas kasir</b><span>Anda login sebagai ' + esc(pj.petugas || '-') + '</span>');
   var sc = d.shift_chart || {};
-  var shiftList = [['Pagi · 08–15', sc.Pagi || 0], ['Sore · 15–21', sc.Sore || 0]].concat(sc['Luar Jam'] ? [['Di luar jam', sc['Luar Jam']]] : []);
+  var shiftList = [['Pagi · 07–14', sc.Pagi || 0], ['Sore · 14–21', sc.Sore || 0]].concat(sc['Luar Jam'] ? [['Di luar jam', sc['Luar Jam']]] : []);
   var maxShift = Math.max.apply(null, shiftList.map(function (x) { return x[1]; })) || 1;
   var s = d.segmen_pelanggan || {};
   var widget =
