@@ -123,6 +123,41 @@ DeepSeek Harness dapat digunakan untuk meninjau dan mengubah kode dalam reposito
 - Setelah perubahan, tinjau `git diff` dan `git status`; pastikan hanya file yang relevan berubah. Jalankan pengujian yang sesuai dan ikuti alur branch/PR yang berlaku.
 - Jangan menganggap ringkasan atau hasil dari Harness sebagai pengganti review kode dan verifikasi hasil.
 
+### Protokol tugas agar efisien (wajib)
+
+Tujuannya: satu tugas selesai dengan sesedikit mungkin putaran bolak-balik, tanpa
+mengorbankan aturan keselamatan di bagian atas. Pemilik project hanya perlu
+meninjau dan merge.
+
+1. **Rekon dulu, baru menyimpulkan.** Periksa kenyataan di repo dan di
+   production/preview (isi berkas yang benar-benar disajikan, isi `menus`/`PERM`,
+   daftar PR dan branch). Jangan menyampaikan dugaan atau ingatan sebagai temuan.
+2. **Periksa PR dan branch terbuka sebelum menulis kode** (`gh pr list --state open`),
+   supaya tidak menduplikasi pekerjaan yang sudah jalan di PR lain.
+3. **Satu ronde keputusan.** Semua yang butuh persetujuan pemilik (lingkup, hak
+   akses role, Edge Function, migrasi, deploy) ditanyakan sekaligus di awal,
+   bukan menyusul di tengah pekerjaan.
+4. **Harness menyelesaikan sendiri sampai PR terbuka.** Edit, uji, verifikasi,
+   commit, `git push`, lalu `gh pr create`. Jangan menyerahkan perintah git/gh
+   kepada pemilik project. Bila push gagal karena batasan sandbox, coba sekali
+   dengan izin lebih luas; hanya jika masih gagal, serahkan satu perintah siap tempel.
+5. **Pastikan branch berada di atas `main` terbaru sebelum push.** Perhatikan
+   metode merge PR sebelumnya: squash-merge membuat commit lama tidak lagi menjadi
+   leluhur `main`, sehingga `git fetch origin` + rebase wajib dilakukan sebelum
+   membuat branch baru.
+6. **Satu blok perintah untuk pemilik, dalam sintaks cmd.exe.** Pemilik memakai
+   Command Prompt: satu perintah per baris, tanpa penyambung baris `\`, tanpa
+   backtick. Urutannya sudah benar dan lengkap (mis. merge dulu, deploy kemudian).
+7. **Sebutkan langkah lanjutan tanpa diminta.** Setelah PR dibuat dan setelah PR
+   di-merge, sampaikan apakah perlu `npx supabase functions deploy <nama>`,
+   `npx supabase db push`, atau tidak perlu apa pun. Bila tidak perlu, nyatakan
+   bahwa perubahan sudah live di production, atau bahwa berkas di luar `public/`
+   tidak dipublikasikan sehingga perilaku aplikasi tidak berubah.
+8. **Verifikasi sendiri yang bisa diperiksa sendiri** ke aset live (production,
+   preview, respons Edge Function); jangan membebankan pengecekan itu kepada pemilik.
+9. **Tetap dilarang tanpa persetujuan eksplisit:** merge PR, deploy Edge Function,
+   `db push`, deploy Cloudflare Pages, atau tindakan lain yang menyentuh production.
+
 ### Keamanan dan lingkungan produksi
 
 - Jangan menempelkan API key, `service_role` key, token, password, atau kredensial lain ke prompt, percakapan, atau file frontend.
