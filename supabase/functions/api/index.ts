@@ -61,7 +61,7 @@ var PERM = {
   "reward.list": ["Owner", "Apoteker", "Kasir"],
   "refill.simpan": ["Owner", "Apoteker"],
   "refill.status": ["Owner", "Apoteker"],
-  "dashboard.ringkasan": ["Owner", "Apoteker"],
+  "dashboard.ringkasan": ["Owner", "Apoteker", "Kasir"],
   "beli.list": ["Owner", "Apoteker"],
   "beli.simpan": ["Owner", "Apoteker"],
   "beli.supplier": ["Owner", "Apoteker"],
@@ -116,7 +116,7 @@ async function login(username, password, roleDipilih) {
 var menus = {
   Owner: [{ id: "dashboard", label: "Dashboard" }, { id: "pos", label: "Kasir / POS" }, { id: "barang", label: "Master Barang" }, { id: "stok", label: "Stok & Batch" }, { id: "beli", label: "Pembelian" }, { id: "crm", label: "Pelanggan" }, { id: "marketing", label: "Marketing" }, { id: "biaya", label: "Biaya Operasional" }, { id: "opname", label: "Stokopname" }, { id: "laporan", label: "Laporan Laba Rugi" }, { id: "retur", label: "Retur" }, { id: "user", label: "Manajemen User" }],
   Apoteker: [{ id: "dashboard", label: "Dashboard" }, { id: "pos", label: "Kasir / POS" }, { id: "barang", label: "Master Barang" }, { id: "stok", label: "Stok & Batch" }, { id: "beli", label: "Pembelian" }, { id: "crm", label: "Pelanggan" }, { id: "opname", label: "Stokopname" }, { id: "retur", label: "Retur" }],
-  Kasir: [{ id: "pos", label: "Kasir / POS" }, { id: "biaya", label: "Biaya Operasional" }, { id: "retur", label: "Retur" }]
+  Kasir: [{ id: "dashboard", label: "Dashboard" }, { id: "pos", label: "Kasir / POS" }, { id: "biaya", label: "Biaya Operasional" }, { id: "retur", label: "Retur" }]
 };
 function menuSaya(s) {
   return { menu: menus[s.role] || [], user: { username: s.username, nama: s.nama, role: s.role, cabang_id: cabangSesi(s), login_at: s.login_at, shift: s.shift }, apotek: "Apotek Fa-Mitra", halamanAwal: s.role === "Kasir" ? "pos" : "dashboard" };
@@ -489,7 +489,9 @@ async function action(name, data, s) {
     jual60.forEach((x) => { const h = perHari[String(x.tanggal)]; if (h) { h.omzet += Number(x.harga_akhir || 0); h.nota++; } });
     retur60.forEach((x) => { const h = perHari[String(x.tanggal)]; if (h) h.omzet -= Number(x.total_refund || 0); });
     const trenHarian = Object.values(perHari);
-    return { rentang: { label: r0.label }, shift_filter: f.shift || "Semua", tren_harian: trenHarian, kpi: { omzet: omzet2, laba_kotor: omzet2 - hpp2, retur_total: rr.reduce((n, x) => n + x.refund, 0), retur_count: rr.length, hpp_kosong: hppKosong, nota: ss.length, rata_nota: ss.length ? omzet2 / ss.length : 0, delta_omzet: null, delta_nota: null, delta_rata: null }, sparkline, ...await stokDashboard(cabangSesi(s)), pj_shift: { role: s.role, petugas: s.nama, shift: shift(), jam: clock(), login_at: s.login_at, di_luar_jam: shift() === "Luar Jam", petugas_jaga: null }, segmen_pelanggan: segmen, live_sales: liveSales, live_expense: liveExpense, shift_chart: shiftChart, top_produk: topProduk, top_pelanggan: topPelanggan, at_risk: [], ai_enabled: false };
+    // Laba kotor (omzet - HPP) hanya untuk Owner. Role lain tetap menerima
+    // payload dashboard, tapi angka labanya tidak pernah dikirim ke browser.
+    return { rentang: { label: r0.label }, shift_filter: f.shift || "Semua", tren_harian: trenHarian, kpi: { omzet: omzet2, laba_kotor: s.role === "Owner" ? omzet2 - hpp2 : null, retur_total: rr.reduce((n, x) => n + x.refund, 0), retur_count: rr.length, hpp_kosong: hppKosong, nota: ss.length, rata_nota: ss.length ? omzet2 / ss.length : 0, delta_omzet: null, delta_nota: null, delta_rata: null }, sparkline, ...await stokDashboard(cabangSesi(s)), pj_shift: { role: s.role, petugas: s.nama, shift: shift(), jam: clock(), login_at: s.login_at, di_luar_jam: shift() === "Luar Jam", petugas_jaga: null }, segmen_pelanggan: segmen, live_sales: liveSales, live_expense: liveExpense, shift_chart: shiftChart, top_produk: topProduk, top_pelanggan: topPelanggan, at_risk: [], ai_enabled: false };
   }
   if (name === "laporan.labaRugi") {
     const r0 = rangeOf(data.filter || {});
