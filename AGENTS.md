@@ -104,3 +104,30 @@ Berhenti dan minta konfirmasi sebelum:
 - Mengubah skema database, policy RLS, atau Edge Function
 - Mengubah alur login, hak akses role, atau URL di `js_core.js` / `window.AI_CFG`
 - Melakukan apa pun yang menyentuh production
+
+## Panduan Penggunaan DeepSeek Harness
+
+DeepSeek Harness dapat digunakan untuk meninjau dan mengubah kode dalam repository ini. Semua aturan di `AGENTS.md` tetap berlaku saat pekerjaan dilakukan melalui Harness.
+
+### Memilih workspace dan menyiapkan repo
+
+- Pilih folder utama repository `famitra-web` sebagai workspace—folder yang berisi `AGENTS.md`, `public/`, dan `supabase/`. Jangan memilih hanya subfolder `public/` atau folder lain di dalam repo.
+- Sebelum mulai, periksa branch aktif dan kondisi perubahan lokal dengan `git status --short --branch`.
+- Jika repo perlu disinkronkan dengan GitHub, periksa dan amankan perubahan lokal terlebih dahulu. Jangan gunakan `git reset --hard`, `git clean`, atau perintah lain yang dapat membuang perubahan lokal tanpa persetujuan eksplisit.
+- Jangan bekerja langsung di `main`. Ikuti alur kerja branch dan Pull Request yang ditetapkan di bagian **Alur Kerja Wajib**.
+
+### Cara memberikan tugas kepada Harness
+
+- Mulai dengan permintaan baca-saja untuk memahami struktur repo, alur terkait, dan aturan dalam `AGENTS.md`.
+- Minta Harness mengerjakan satu perubahan atau lingkup fitur yang jelas dalam satu tugas. Sertakan tujuan dan kriteria penerimaan yang dapat diuji.
+- Minta Harness menjelaskan file yang akan diubah, risiko, dan rencana pengujian sebelum perubahan yang melibatkan alur penting.
+- Setelah perubahan, tinjau `git diff` dan `git status`; pastikan hanya file yang relevan berubah. Jalankan pengujian yang sesuai dan ikuti alur branch/PR yang berlaku.
+- Jangan menganggap ringkasan atau hasil dari Harness sebagai pengganti review kode dan verifikasi hasil.
+
+### Keamanan dan lingkungan produksi
+
+- Jangan menempelkan API key, `service_role` key, token, password, atau kredensial lain ke prompt, percakapan, atau file frontend.
+- Jangan memasukkan data pelanggan, transaksi, atau data sensitif production ke prompt maupun lingkungan pengujian.
+- Preview Cloudflare Pages menggunakan database Supabase yang sama dengan production. Jangan menguji dengan membuat, mengubah, atau menghapus data sungguhan melalui preview.
+- Jangan meminta atau mengizinkan Harness menjalankan migrasi, mengubah database, deploy Edge Function, deploy Cloudflare Pages, merge ke `main`, atau melakukan tindakan lain yang menyentuh production tanpa persetujuan eksplisit.
+- Untuk perubahan database atau production, ikuti seluruh prosedur pemeriksaan, pengujian, persetujuan, dan verifikasi yang ditetapkan dalam `AGENTS.md`.
