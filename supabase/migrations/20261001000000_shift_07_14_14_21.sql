@@ -12,17 +12,27 @@
 -- Data historis SENGAJA tidak diubah: transaksi yang sudah tercatat tetap
 -- memakai label shift sesuai jam yang berlaku saat transaksi itu dibuat.
 --
--- Definisi fungsi diambil apa adanya dari database (pg_get_functiondef) lalu
--- hanya dua pola batas jam yang diganti. Ini menghindari menyalin badan fungsi
--- (~400 baris) yang bisa menyimpang dari definisi yang benar-benar berlaku.
--- Migrasi gagal keras kalau pola lama tidak ditemukan, dan memeriksa hasilnya
--- sebelum selesai. Aman dijalankan ulang: kalau batas baru sudah terpasang,
--- migrasi hanya memberi notice dan tidak mengubah apa pun.
+-- Cara kerja migrasi ini: definisi fungsi diambil apa adanya dari database
+-- (pg_get_functiondef) lalu hanya dua pola batas jam yang diganti. Ini
+-- menghindari menyalin badan fungsi (~400 baris) yang bisa menyimpang dari
+-- definisi yang benar-benar berlaku.
+--
+-- PENTING (revisi 1): pencarian fungsi memakai NAMA, bukan tanda tangan
+-- argumen. Percobaan pertama memakai pg_get_function_identity_arguments dan
+-- gagal di production dengan 'RPC pos_checkout tidak ditemukan' karena tanda
+-- tangan di production tidak persis sama dengan yang tertulis di repo.
+-- Pencocokan pola jam juga tidak peka huruf besar/kecil dan jumlah spasi.
+--
+-- Migrasi gagal keras kalau tidak ada definisi yang berhasil diperbarui, dan
+-- pesan errornya menyebutkan semua kandidat tanda tangan yang ditemukan supaya
+-- penyebabnya bisa langsung dilihat. Aman dijalankan ulang: definisi yang sudah
+-- memakai batas baru hanya dilewati dengan notice.
 --
 -- Verifikasi (read-only, jalankan setelah push):
---   select pg_get_functiondef(p.oid) like '%between 7 and 13%'  as batas_pagi_baru,
---          pg_get_functiondef(p.oid) like '%between 14 and 20%' as batas_sore_baru,
---          pg_get_functiondef(p.oid) like '%between 8 and 14%'  as masih_pola_lama
+--   select p.oid::regprocedure::text as signature,
+--          lower(pg_get_functiondef(p.oid)) ~ 'between\s+7\s+and\s+13'  as batas_pagi_baru,
+--          lower(pg_get_functiondef(p.oid)) ~ 'between\s+14\s+and\s+20' as batas_sore_baru,
+--          lower(pg_get_functiondef(p.oid)) ~ 'between\s+8\s+and\s+14'  as masih_pola_lama
 --   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 --   where n.nspname = 'public' and p.proname = 'pos_checkout';
 --   -> diharapkan: batas_pagi_baru = true, batas_sore_baru = true, masih_pola_lama = false
@@ -41,48 +51,47 @@
 
 do $$
 declare
+  r record;
   d text;
-  pola_lama_pagi constant text := 'between 8 and 14';
-  pola_lama_sore constant text := 'between 15 and 20';
-  pola_baru_pagi constant text := 'between 7 and 13';
-  pola_baru_sore constant text := 'between 14 and 20';
+  jumlah integer := 0;
+  kandidat text := '';
+  pola_pagi_lama constant text := 'between\s+8\s+and\s+14';
+  pola_sore_lama constant text := 'between\s+15\s+and\s+20';
+  pola_pagi_baru constant text := 'between\s+7\s+and\s+13';
+  pola_sore_baru constant text := 'between\s+14\s+and\s+20';
 begin
-  select pg_get_functiondef(p.oid) into d
-  from pg_proc p
-  join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public'
-    and p.proname = 'pos_checkout'
-    and pg_get_function_identity_arguments(p.oid) = 'text, text, text, text, jsonb, numeric, numeric, text, uuid';
+  for r in
+    select p.oid, p.oid::regprocedure::text as tanda_tangan
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'pos_checkout'
+    order by p.pronargs
+  loop
+    kandidat := kandidat || r.tanda_tangan || '; ';
+    d := pg_get_functiondef(r.oid);
 
-  if d is null then
-    raise exception 'RPC pos_checkout dengan 9 argumen tidak ditemukan.';
+    -- Sudah memakai batas baru (mis. migrasi dijalankan ulang): lewati.
+    if lower(d) ~ pola_pagi_baru and lower(d) ~ pola_sore_baru then
+      raise notice 'Dilewati, sudah memakai batas jam baru: %', r.tanda_tangan;
+      continue;
+    end if;
+
+    if lower(d) !~ pola_pagi_lama or lower(d) !~ pola_sore_lama then
+      raise notice 'Dilewati, pola batas jam lama tidak ditemukan: %', r.tanda_tangan;
+      continue;
+    end if;
+
+    d := regexp_replace(d, pola_pagi_lama, 'between 7 and 13', 'gi');
+    d := regexp_replace(d, pola_sore_lama, 'between 14 and 20', 'gi');
+    execute d;
+    jumlah := jumlah + 1;
+    raise notice 'Diperbarui: %', r.tanda_tangan;
+  end loop;
+
+  if jumlah = 0 then
+    raise exception 'Tidak ada definisi pos_checkout yang diperbarui. Kandidat yang ditemukan: %',
+      coalesce(nullif(kandidat, ''), '(tidak ada fungsi bernama pos_checkout)');
   end if;
 
-  -- Sudah memakai batas baru (mis. migrasi dijalankan ulang): tidak ada yang diubah.
-  if position(pola_baru_pagi in d) > 0 and position(pola_baru_sore in d) > 0 then
-    raise notice 'pos_checkout sudah memakai batas jam 07-13 / 14-20; tidak ada yang diubah.';
-    return;
-  end if;
-
-  if position(pola_lama_pagi in d) = 0 or position(pola_lama_sore in d) = 0 then
-    raise exception 'Pola batas jam lama tidak ditemukan pada pos_checkout. Periksa definisi fungsi sebelum melanjutkan.';
-  end if;
-
-  d := replace(d, pola_lama_pagi, pola_baru_pagi);
-  d := replace(d, pola_lama_sore, pola_baru_sore);
-  execute d;
-
-  -- Pastikan hasilnya benar sebelum migrasi dianggap selesai.
-  select pg_get_functiondef(p.oid) into d
-  from pg_proc p
-  join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public'
-    and p.proname = 'pos_checkout'
-    and pg_get_function_identity_arguments(p.oid) = 'text, text, text, text, jsonb, numeric, numeric, text, uuid';
-
-  if position(pola_baru_pagi in d) = 0 or position(pola_baru_sore in d) = 0 then
-    raise exception 'Definisi pos_checkout setelah perubahan tidak memuat batas jam baru.';
-  end if;
-
-  raise notice 'Batas jam shift pos_checkout diperbarui: Pagi 07-13, Sore 14-20.';
+  raise notice 'Selesai: % definisi pos_checkout memakai batas jam baru (Pagi 07-13, Sore 14-20).', jumlah;
 end $$;
