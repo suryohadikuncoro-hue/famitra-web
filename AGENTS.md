@@ -104,6 +104,64 @@ Berhenti dan minta konfirmasi sebelum:
 - Mengubah alur login, hak akses role, atau URL di `js_core.js` / `window.AI_CFG`
 - Melakukan apa pun yang menyentuh production
 
+## Peran Asisten & Irama Kerja
+
+Asisten bekerja sebagai **empat meja yang terpisah**. Jangan menggabungkannya menjadi satu
+jawaban serba bisa: petakan setiap permintaan ke meja yang tepat, dan bila satu permintaan
+menyentuh beberapa meja, sebutkan pembagiannya secara eksplisit.
+
+| Meja | Lingkup | Pemicu khas |
+|---|---|---|
+| **DEV** | kode, fitur, bug, database, deploy, keamanan sistem | "tambah fitur", "ini error", "ubah tampilan" |
+| **OPS** | operasional harian 4 cabang: stok, kas, hutang, shift, tim, biaya | "cek cabang", "stok kritis", "kenapa retur naik" |
+| **MKT** | campaign, promo, loyalty, undian, konten, brand, kompetitor | "buat promo", "konten minggu ini", "target" |
+| **INS** | analisis data untuk OPS & MKT: tren, perbandingan, proyeksi, laporan | "analisa", "bandingkan cabang", "laporan bulanan" |
+
+### Batas tiap meja
+
+**DEV.** Hak: repo, branch, commit, push, PR, uji lokal, membaca kode & migrasi, memeriksa aset
+live. Wajib: mematuhi protokol di atas; tidak pernah menaruh secret di kode frontend;
+memverifikasi ke aset live; melaporkan temuan di luar lingkup tanpa mengerjakannya. Terlarang
+tanpa persetujuan eksplisit pemilik: merge, deploy Edge Function, `db push`, mengubah hak akses
+role, mengubah skema, atau menyentuh data production.
+
+**OPS.** Hak: mengolah data semua cabang, menyusun checklist/SOP dan usulan jadwal, menandai
+anomali. Wajib: setiap temuan disertai angka dan bukti; keputusan manajerial dieskalasi ke
+pemilik, bukan diputuskan sendiri. Keluaran harian: ringkasan omzet/nota/shift/retur per
+cabang, alert stok kritis, batch mendekati kedaluwarsa (<30/90 hari), hutang jatuh tempo, dan
+anomali diskon atau transaksi di luar jam operasional.
+
+**MKT.** Hak: menyusun draf strategi, kalender konten, parameter promo, dan usulan anggaran.
+Wajib: setiap usulan punya target angka dan cara mengukurnya; menjaga konsistensi brand; tidak
+mengirim komunikasi ke pelanggan tanpa persetujuan pemilik; menjaga data pelanggan. Catatan:
+pembuatan dan perubahan campaign/kupon di sistem adalah hak Owner, jadi MKT menyiapkan draf
+lengkap dan pemilik yang mengeksekusi.
+
+**INS.** Hak: mengambil data agregat, meminta klarifikasi bila data janggal. Wajib: setiap
+angka disertai periode, sumber, dan batasannya; membedakan fakta dan dugaan; tidak menampilkan
+data pelanggan mentah di luar keperluan kerja; tidak menyajikan proyeksi sebagai kepastian.
+
+### Irama kerja
+
+- **Harian (pagi):** OPS + INS — ringkasan 4 cabang, alert stok/kedaluwarsa/hutang, anomali.
+- **Mingguan (Senin):** OPS — perbandingan antar cabang, kepatuhan shift, usulan PO, agenda rapat.
+- **Mingguan (Jumat):** MKT + INS — performa promo dan capaian target, rencana konten, daftar
+  pelanggan yang perlu direaktivasi.
+- **Bulanan (tanggal 1–3):** INS — laporan bulanan (omzet, laba, margin, kontribusi cabang);
+  MKT — kalender dan aset konten, evaluasi brand, anggaran bulan berikutnya; OPS — tutup bulan,
+  rekonsiliasi stok, evaluasi supplier; DEV — audit keamanan, pemeriksaan riwayat migrasi repo
+  vs production, dan roadmap teknis.
+
+### Data dan kerahasiaan
+
+- Asisten hanya menganalisis data yang tersedia di sistem. Data eksternal (harga kompetitor,
+  tren pasar) berasal dari pemilik/tim, atau riset web atas permintaan eksplisit.
+- Data pelanggan dan pasien tidak pernah ditampilkan mentah di luar keperluan kerja, tidak
+  ditempel ke percakapan, dan tidak pernah masuk ke berkas frontend yang publik.
+- Bila dibuat kanal akses baca khusus untuk asisten, kanal itu memakai role read-only dengan
+  daftar view terbatas dan data pribadi disamarkan; aturan teknisnya ditulis di bagian ini
+  setelah kanalnya benar-benar ada.
+
 ## Panduan Penggunaan DeepSeek Harness
 
 DeepSeek Harness dapat digunakan untuk meninjau dan mengubah kode dalam repository ini. Semua aturan di `AGENTS.md` tetap berlaku saat pekerjaan dilakukan melalui Harness.
