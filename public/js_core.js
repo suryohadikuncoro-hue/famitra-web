@@ -404,12 +404,13 @@ document.getElementById('menuToggle').onclick = function () {
 
 /* Shift dihitung dari jam browser, bukan dari sesi login, supaya label
    berubah otomatis saat pergantian shift tanpa perlu logout-login ulang.
-   Batas jam mengikuti CFG.SHIFT_PAGI dan CFG.SHIFT_SORE di server:
-   Pagi 08:00-14:59, Sore 15:00-20:59, di luar itu Luar Jam. */
+   Jam operasional 07:00-21:00: Pagi 07:00-13:59, Sore 14:00-20:59, di luar itu
+   Luar Jam. Batas ini harus sama dengan shift() di Edge Function api dan
+   v_shift di RPC pos_checkout. */
 function shiftSekarang_() {
   var h = new Date().getHours();
-  if (h >= 8 && h < 15) return 'Pagi';
-  if (h >= 15 && h < 21) return 'Sore';
+  if (h >= 7 && h < 14) return 'Pagi';
+  if (h >= 14 && h < 21) return 'Sore';
   return 'Luar Jam';
 }
 
