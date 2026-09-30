@@ -29,8 +29,7 @@ Baca seluruh file ini sebelum mengubah kode apa pun.
   - `js_marketing_lottery.js` - campaign, peserta, dan pemenang lottery
   - `js_marketing_poin.js` - Poin & Reward untuk Owner
   - `js_mobile.js` - perilaku/responsiveness mobile
-- File di luar `public/` (AGENTS.md, `docs/`, dan `supabase/`) tidak dipublikasikan sebagai frontend. Jangan pernah mengubah build output directory ke root repo.
-- `docs/rencana/` - dokumentasi rencana teknis dan keputusan arsitektur
+- File di luar `public/` (AGENTS.md dan `supabase/`) tidak dipublikasikan sebagai frontend. Jangan pernah mengubah build output directory ke root repo.
 - `supabase/functions/` - source lima Edge Functions: `api`, `promo`, `lottery`, `marketing`, dan `hutang`
 - `supabase/migrations/` - seluruh perubahan schema/database; migration lama tetap dipertahankan setelah diterapkan
 - `supabase/config.toml` - konfigurasi Supabase CLI project
