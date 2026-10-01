@@ -30,9 +30,21 @@ function call(fn, args) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ fn: fn, args: args || [] })
   })
-    .then(function (r) {
-      if (!r.ok) throw new Error('Gagal menghubungi server (HTTP ' + r.status + ').');
-      return r.json();
+    .then(async function (r) {
+      var body = null;
+      try {
+        body = await r.json();
+      } catch (_) {
+        // Response bukan JSON; gunakan pesan HTTP sebagai fallback.
+      }
+      if (!r.ok) {
+        throw new Error(
+          body && body.error
+            ? body.error
+            : 'Gagal menghubungi server (HTTP ' + r.status + ').'
+        );
+      }
+      return body;
     })
     .catch(function (e) {
       throw new Error(e.message || 'Gagal menghubungi server.');
