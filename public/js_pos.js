@@ -14,8 +14,18 @@ var POS = {
   coupon: null,
   bundle: null,
   bayar: 0,
-  lebarStruk: '58'
+  lebarStruk: '58',
+  // Akses cepat "Sering dibeli" — daftarnya TIDAK menyimpan harga (lihat
+  // catatan di style.css): harga baru diambil saat tile diklik.
+  cepat: [],
+  // true selama harga keranjang sedang diambil ulang dari server, supaya kasir
+  // tidak menekan Simpan dengan harga tipe pembeli yang lama.
+  sedangHitungHarga: false
 };
+
+// Riwayat klik kasir di perangkat ini; dipakai melengkapi daftar bila cabang
+// belum punya cukup riwayat penjualan. Tidak berisi data pelanggan.
+var POS_CEPAT_KEY = 'famitra.pos.cepat.v1';
 
 VIEWS.pos = {
   title: 'Kasir',
@@ -23,9 +33,11 @@ VIEWS.pos = {
     el.innerHTML = tataLetakPOS();
     pasangEventPOS();
     pasangEventPromoPOS();
+    pasangEventAksesCepat();
     gambarKeranjang();
     gambarHeaderShift();
     muatPromoPOS();
+    muatAksesCepat();
     // Fokus otomatis ke pencarian begitu layar siap (tidak di HP: keyboard akan menutupi layar).
     var s = document.getElementById('posCari');
     if (s && !layarSentuh()) s.focus();
@@ -77,7 +89,23 @@ function tataLetakPOS() {
           '<button id="posKosong" class="btn btn-sm">Kosongkan</button>' +
         '</div>' +
         '<div id="posPromoRail" aria-live="polite"></div>' +
-        '<div id="posCart" class="cart"></div>' +
+        '<div class="pos-cart-scroll"><div id="posCart" class="cart"></div></div>' +
+
+        /* Akses cepat "Sering dibeli" — satu kartu dengan keranjang. Tile tidak
+           memuat harga; begitu diklik, produk diambil ulang dari server. */
+        '<div class="pos-quick" id="posQuick">' +
+          '<button type="button" class="pq-toggle" id="posQuickToggle" aria-expanded="false" aria-controls="posQuickGrid">' +
+            '<strong>Sering dibeli</strong>' +
+            '<span class="sub" id="posQuickRingkas">Lihat daftar produk</span>' +
+            '<svg class="pq-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>' +
+          '</button>' +
+          '<div class="pos-quick-head">' +
+            '<div><h3>Sering dibeli</h3><p class="sub" id="posQuickSub">Memuat riwayat penjualan…</p></div>' +
+            '<span class="sub pq-hint">Klik untuk menambah ke keranjang</span>' +
+            '<button type="button" class="link-btn pq-more" id="posQuickMore">Lihat semua</button>' +
+          '</div>' +
+          '<div class="pq-grid" id="posQuickGrid"></div>' +
+        '</div>' +
       '</div>' +
     '</div>' +
 
@@ -578,14 +606,24 @@ function terapkanBundlePOS() {
   promoApi('bundleValidate',{code:code,tipe_customer:document.getElementById('posTipe').value,items:POS.items.map(function(it){return {kode:it.kode,qty:it.qty};})}).then(function(r){POS.bundle=r;gambarRingkasan();toast('Bundle '+r.code+' aktif: hemat '+rupiah(r.discount)+'.');}).catch(function(e){POS.bundle=null;gambarRingkasan();toast(e.message,true);});
 }
 
+/** Harga ikut berubah saat tipe pembeli diganti di tengah transaksi.
+    Selama pengambilan ulang berjalan, tombol Simpan dikunci dan item yang tidak
+    ketemu ditandai "harga perlu dicek" — jangan diam-diam memakai harga lama. */
 function hitungUlangHarga() {
   var tipe = document.getElementById('posTipe').value;
+  if (!POS.items.length) return;
+  POS.sedangHitungHarga = true;
+  gambarRingkasan();
   Promise.all(POS.items.map(function (it) {
     return api('pos.cariBarang', { q: it.kode, tipe: tipe }).then(function (list) {
       var m = list.filter(function (x) { return x.Kode_Obat === it.kode; })[0];
-      if (m) it.harga = m.harga;
-    });
-  })).then(gambarKeranjang).catch(function () {});
+      if (m) { it.harga = m.harga; it.stok = m.stok; it.perluCek = false; }
+      else it.perluCek = true;
+    }).catch(function () { it.perluCek = true; });
+  })).then(function () {
+    POS.sedangHitungHarga = false;
+    gambarKeranjang();
+  });
 }
 
 function gambarKeranjang() {
@@ -608,6 +646,7 @@ function gambarKeranjang() {
             (it.batch ? '<span>batch ' + esc(it.batch) + '</span>' : '') +
             chipExpired(it.sisa_hari, it.expired) +
             '<span>' + rupiah(it.harga) + ' / ' + esc(it.satuan || 'pcs') + '</span>' +
+            (it.perluCek ? '<span class="chip chip-cek">harga perlu dicek</span>' : '') +
           '</div>' +
         '</div>' +
         '<div class="cart-kanan">' +
@@ -616,7 +655,7 @@ function gambarKeranjang() {
             '<input class="num" type="number" min="1" value="' + it.qty + '" data-qty="' + i + '">' +
             '<button data-aksi="plus" data-i="' + i + '" aria-label="Tambah">+</button>' +
           '</div>' +
-          '<div class="cart-sub num">' + rupiah(it.harga * it.qty) + '</div>' +
+          '<div class="cart-sub num' + (it.perluCek ? ' is-cek' : '') + '">' + rupiah(it.harga * it.qty) + '</div>' +
           '<button class="icon-btn" data-aksi="hapus" data-i="' + i + '" aria-label="Hapus">' +
             '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>' +
         '</div>' +
@@ -626,6 +665,7 @@ function gambarKeranjang() {
 
   var jml = POS.items.reduce(function (a, it) { return a + it.qty; }, 0);
   document.getElementById('posJumlah').textContent = angka(jml) + ' item';
+  aturLipatAksesCepat();
   if (POS.diskonMode === 'persen') perbaruiDiskonPOS();
   else gambarRingkasan();
 }
@@ -675,7 +715,9 @@ function gambarRingkasan() {
   else if (kembali === 0 && POS.bayar > 0) kelasKembali += ' is-pas';
   else if (kembali > 0) kelasKembali += ' is-ada';
   k.className = kelasKembali;
-  document.getElementById('posSimpan').disabled = (!POS.items.length || kembali < 0);
+  // Tombol Simpan juga dikunci saat harga sedang diambil ulang dari server,
+  // supaya tidak ada nota yang memakai harga tipe pembeli yang lama.
+  document.getElementById('posSimpan').disabled = (!POS.items.length || kembali < 0 || POS.sedangHitungHarga);
 
   var quick = document.getElementById('posCashQuick');
   if (quick) {
@@ -720,13 +762,226 @@ function bukaPreviewStruk() {
   document.getElementById('previewWidth').onchange=function(){var x=this.value;document.getElementById('modalTitle').textContent='Pratinjau struk — '+x+' mm';document.getElementById('previewReceiptWrap').innerHTML=htmlStrukPreview_(nota,x);};
 }
 
+/* ----------------------------------------------------------- Akses cepat
+   "Sering dibeli" memakai agregat penjualan cabang (action pos.seringDibeli).
+   Tile sengaja tidak memuat harga; harga diambil dari server saat tile diklik,
+   jadi harga yang tampil di keranjang selalu harga otoritatif untuk tipe
+   pembeli yang sedang aktif. */
+
+function bacaRiwayatCepat_() {
+  try { return JSON.parse(localStorage.getItem(POS_CEPAT_KEY) || '[]') || []; }
+  catch (e) { return []; }
+}
+
+function catatRiwayatCepat_(kode, nama) {
+  try {
+    var arr = bacaRiwayatCepat_().filter(function (x) { return x.kode !== kode; });
+    arr.unshift({ kode: kode, nama: nama });
+    localStorage.setItem(POS_CEPAT_KEY, JSON.stringify(arr.slice(0, 24)));
+  } catch (e) { /* localStorage bisa diblokir; abaikan saja */ }
+}
+
+/** Tambal daftar dari riwayat klik kasir di perangkat ini (tanpa backend). */
+function lengkapiDariRiwayat_() {
+  if (POS.cepat.length >= 12) return;
+  var ada = {};
+  POS.cepat.forEach(function (x) { ada[x.kode] = true; });
+  bacaRiwayatCepat_().forEach(function (h) {
+    if (POS.cepat.length >= 12 || ada[h.kode]) return;
+    ada[h.kode] = true;
+    POS.cepat.push({ kode: h.kode, nama: h.nama, stok: null, sumber: 'riwayat' });
+  });
+}
+
+function muatAksesCepat() {
+  var grid = document.getElementById('posQuickGrid');
+  if (!grid) return;
+  var q = document.getElementById('posQuick');
+  if (q) q.classList.remove('is-penuh');
+  grid.innerHTML = '<div class="pq-muat">Memuat…</div>';
+  api('pos.seringDibeli', { hari: 30, limit: 12 }).then(function (rows) {
+    POS.cepat = (rows || []).map(function (r) {
+      return { kode: r.Kode_Obat, nama: r.Nama_Obat, stok: Number(r.stok || 0),
+        expired: r.expired || '', sisa_hari: r.sisa_hari, sumber: 'server' };
+    });
+    lengkapiDariRiwayat_();
+    gambarAksesCepat();
+  }).catch(function () {
+    POS.cepat = [];
+    lengkapiDariRiwayat_();
+    gambarAksesCepat();
+  });
+}
+
+function gambarAksesCepat() {
+  var grid = document.getElementById('posQuickGrid');
+  if (!grid) return;
+  var cabang = (document.getElementById('sbCabang') || {}).textContent || '';
+  var sub = document.getElementById('posQuickSub');
+  if (sub) {
+    sub.textContent = POS.cepat.length
+      ? '30 hari terakhir' + (cabang && cabang !== '—' ? ' · ' + cabang : '')
+      : 'Belum ada riwayat penjualan';
+  }
+  var ringkas = document.getElementById('posQuickRingkas');
+  if (ringkas) ringkas.textContent = POS.cepat.length + ' produk teratas · klik untuk membuka';
+  var more = document.getElementById('posQuickMore');
+  if (more) more.textContent = 'Lihat semua ' + POS.cepat.length + ' produk →';
+  if (!POS.cepat.length) {
+    grid.innerHTML = '<div class="empty" style="padding:14px 0">Belum ada riwayat penjualan di cabang ini. ' +
+      'Daftar terisi otomatis setelah ada transaksi.</div>';
+    return;
+  }
+  grid.innerHTML = POS.cepat.map(function (t) {
+    var habis = t.stok !== null && Number(t.stok) <= 0;
+    var badge = t.stok === null
+      ? '<span class="chip">riwayat</span>'
+      : (habis ? '<span class="chip chip-bad">habis</span>' : '<span class="chip">stok ' + angka(t.stok) + '</span>');
+    var ed = (t.sisa_hari !== null && t.sisa_hari !== undefined && t.sisa_hari <= 90)
+      ? chipExpired(t.sisa_hari, t.expired) : '';
+    return '<button type="button" class="pq-tile' + (habis ? ' is-habis' : '') + '" data-cepat="' + esc(t.kode) + '"' +
+      (t.nama ? ' title="' + esc(t.nama) + '"' : '') + '>' +
+      '<span class="pq-nama">' + esc(t.nama || t.kode) + '</span>' +
+      '<span class="pq-meta">' + badge + ed + '</span></button>';
+  }).join('');
+}
+
+/** Klik tile: produk diambil ulang dari server (harga & stok terbaru), lalu masuk
+    keranjang lewat jalur yang sama dengan hasil scan. */
+function tambahDariAksesCepat(kode) {
+  if (!kode) return;
+  var tipe = document.getElementById('posTipe').value;
+  api('pos.cariBarang', { q: kode, tipe: tipe }).then(function (list) {
+    var m = list.filter(function (x) { return x.Kode_Obat === kode; })[0];
+    if (!m) throw new Error('Produk ' + kode + ' tidak ditemukan atau nonaktif.');
+    if (Number(m.stok) <= 0) throw new Error('Stok ' + m.Nama_Obat + ' kosong.');
+    tambahKeKeranjang(m);
+    catatRiwayatCepat_(m.Kode_Obat, m.Nama_Obat);
+  }).catch(function (e) { toast(e.message, true); });
+}
+
+/** Keranjang kosong = daftar terbuka; keranjang berisi = melipat jadi satu baris. */
+function aturLipatAksesCepat() {
+  var q = document.getElementById('posQuick');
+  if (!q) return;
+  var lipat = POS.items.length > 0;
+  q.classList.toggle('is-lipat', lipat);
+  if (!lipat) q.classList.remove('is-buka');
+  var tog = document.getElementById('posQuickToggle');
+  if (tog) tog.setAttribute('aria-expanded', q.classList.contains('is-buka') ? 'true' : 'false');
+}
+
+function pasangEventAksesCepat() {
+  var tog = document.getElementById('posQuickToggle');
+  if (tog) tog.onclick = function () {
+    var buka = document.getElementById('posQuick').classList.toggle('is-buka');
+    this.setAttribute('aria-expanded', buka ? 'true' : 'false');
+  };
+  var more = document.getElementById('posQuickMore');
+  if (more) more.onclick = function () {
+    document.getElementById('posQuick').classList.add('is-penuh');
+  };
+  var grid = document.getElementById('posQuickGrid');
+  if (grid) grid.onclick = function (e) {
+    var b = e.target.closest('[data-cepat]');
+    if (b) tambahDariAksesCepat(b.dataset.cepat);
+  };
+  // Saat kasir kembali ke tab ini, stok bisa sudah berubah → ambil ulang daftarnya.
+  if (!window.__posAksesCepatMuatan) {
+    window.__posAksesCepatMuatan = true;
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden && document.getElementById('posQuickGrid')) muatAksesCepat();
+    });
+  }
+}
+
 /* --------------------------------------------------------- Simpan & cetak */
 
-function simpanTransaksi() {
-  if (!POS.items.length) { toast('Keranjang masih kosong.', true); return; }
-  var total = Math.max(0, subtotalPOS() - (POS.diskon || 0) - (POS.rewardDiscount || 0) - (POS.coupon ? Number(POS.coupon.discount || 0) : 0) - (POS.bundle ? Number(POS.bundle.discount || 0) : 0));
-  if ((POS.bayar || 0) < total) { toast('Uang tunai belum mencukupi total belanja.', true); return; }
-  var btn = document.getElementById('posSimpan');
+function cariItemPOS_(kode) {
+  for (var i = 0; i < POS.items.length; i++) if (POS.items[i].kode === kode) return POS.items[i];
+  return null;
+}
+
+/** Ambil harga otoritatif dari server TANPA menulis apa pun (pos.cekTotal).
+    pos_checkout tetap menghitung ulang sendiri, jadi ini murni pencegahan:
+    kasir tahu total sebenarnya sebelum uang diterima. */
+function cekHargaOtoritatif_() {
+  return api('pos.cekTotal', {
+    tipe_customer: document.getElementById('posTipe').value,
+    items: POS.items.map(function (it) { return { kode: it.kode, qty: it.qty }; })
+  }).then(function (r) {
+    if (r.tidak_ada && r.tidak_ada.length) {
+      throw new Error('Barang ini tidak ditemukan atau nonaktif: ' + r.tidak_ada.join(', ') +
+        '. Hapus dari keranjang sebelum menyimpan.');
+    }
+    var beda = [];
+    (r.items || []).forEach(function (x) {
+      var it = cariItemPOS_(x.kode);
+      if (it && Number(x.harga) !== Number(it.harga)) {
+        beda.push({ kode: x.kode, nama: x.nama, lama: Number(it.harga), baru: Number(x.harga) });
+      }
+    });
+    return { beda: beda, subtotal: Number(r.subtotal || 0) };
+  });
+}
+
+/** Kupon/paket divalidasi ulang memakai subtotal otoritatif, bukan subtotal layar. */
+function sinkronPromoOtoritatif_(sub) {
+  var tipe = document.getElementById('posTipe').value;
+  if (POS.bundle) {
+    return promoApi('bundleValidate', { code: POS.bundle.code, tipe_customer: tipe,
+      items: POS.items.map(function (it) { return { kode: it.kode, qty: it.qty }; }) })
+      .then(function (r) { POS.bundle = r; })
+      .catch(function () { POS.bundle = null; var i = document.getElementById('posBundle'); if (i) i.value = ''; });
+  }
+  if (POS.coupon && POS.customer && POS.customer.terdaftar) {
+    return promoApi('validate', { code: POS.coupon.code, nomor_wa: POS.customer.wa,
+      tipe_customer: tipe, subtotal: sub })
+      .then(function (r) { r._sub = sub; POS.coupon = r; })
+      .catch(function () { POS.coupon = null; var i = document.getElementById('posCoupon'); if (i) i.value = ''; });
+  }
+  return Promise.resolve();
+}
+
+/** Tampilkan selisih harga dan minta kasir memastikan sebelum nota tersimpan. */
+function konfirmasiHargaBerubah_(beda, totalLama, totalBaru, btn) {
+  var bayar = POS.bayar || 0;
+  var kembaliLama = Math.max(0, bayar - totalLama);
+  var kembaliBaru = Math.max(0, bayar - totalBaru);
+  var html = '<p class="pos-diff-lead">Harga master berubah sejak item masuk keranjang. ' +
+    'Periksa uang tunai dan kembalian sebelum menyimpan.</p>' +
+    '<div class="pos-diff">' + beda.map(function (d) {
+      return '<div class="pos-diff-row"><span class="pos-diff-nama">' + esc(d.kode) + ' · ' + esc(d.nama) + '</span>' +
+        '<span class="pos-diff-lama">' + rupiah(d.lama) + '</span>' +
+        '<span class="pos-diff-baru">' + rupiah(d.baru) + '</span></div>';
+    }).join('') + '</div>' +
+    '<div class="pos-diff-total">' +
+      '<div class="pos-diff-baris"><span>Total di layar</span><span>' + rupiah(totalLama) + '</span></div>' +
+      '<div class="pos-diff-baris"><span>Total sekarang</span><strong>' + rupiah(totalBaru) + '</strong></div>' +
+    '</div>' +
+    '<div class="pos-diff-kembali"><span>Kembalian: ' + rupiah(kembaliLama) + ' <b>→ ' + rupiah(kembaliBaru) + '</b></span>' +
+      '<span>Selisih ' + rupiah(Math.abs(totalBaru - totalLama)) + '</span></div>';
+  modalBuka('Harga berubah sebelum simpan', html, [
+    { label: 'Batal', aksi: function () {
+        modalTutup();
+        btn.disabled = false; btn.textContent = 'Simpan & cetak struk';
+        gambarKeranjang();
+      } },
+    { label: 'Sesuaikan & bayar', kelas: 'btn-primary', aksi: function () {
+        modalTutup();
+        var total = totalBayarPOS();
+        if ((POS.bayar || 0) < total) {
+          btn.disabled = false; btn.textContent = 'Simpan & cetak struk';
+          gambarKeranjang();
+          toast('Uang tunai belum mencukupi total baru ' + rupiah(total) + '. Tambahkan dulu.', true);
+          return;
+        }
+        kirimTransaksi_(total, btn);
+      } }
+  ]);
+}
+
+function kirimTransaksi_(totalLayar, btn) {
   btn.disabled = true; btn.textContent = 'Menyimpan…';
   var payload = {
     nomor_wa: document.getElementById('posWA').value.trim(),
@@ -737,9 +992,21 @@ function simpanTransaksi() {
     reward_id: POS.reward ? POS.reward.id : null,
     bayar: POS.bayar || 0
   };
-  var request = POS.bundle ? promoApi('bundleCheckout', Object.assign({}, payload, { bundle_code: POS.bundle.code })) : (POS.coupon ? promoApi('checkout', Object.assign({}, payload, { coupon_code: POS.coupon.code })) : api('pos.simpanTransaksi', payload));
-  request.then(function (nota) {
+  var request = POS.bundle ? promoApi('bundleCheckout', Object.assign({}, payload, { bundle_code: POS.bundle.code }))
+    : (POS.coupon ? promoApi('checkout', Object.assign({}, payload, { coupon_code: POS.coupon.code }))
+    : api('pos.simpanTransaksi', payload));
+  return request.then(function (nota) {
+    var totalNota = Number(nota.Harga_Akhir);
     toast('Nota ' + nota.No_Nota + ' tersimpan.');
+    // Jaring terakhir: harga bisa berubah tepat di antara pemeriksaan dan simpan.
+    // Kalau total nota berbeda dari layar, kasir harus tahu untuk cek kembalian.
+    if (isFinite(totalNota) && Math.abs(totalNota - Number(totalLayar)) >= 1) {
+      if (window.console && console.warn) console.warn('[POS] total nota tidak sama dengan total layar', { nota: totalNota, layar: totalLayar });
+      setTimeout(function () {
+        toast('Nota tersimpan dengan total ' + rupiah(totalNota) + ' (layar ' + rupiah(totalLayar) +
+          '). Periksa kembalian: ' + rupiah(Number(nota.Kembalian) || 0) + '.', true);
+      }, 2600);
+    }
     cetakStruk(nota);
     kosongkanKeranjang();
     if (!layarSentuh()) document.getElementById('posCari').focus();
@@ -749,6 +1016,34 @@ function simpanTransaksi() {
   }).then(function () {
     btn.textContent = 'Simpan & cetak struk';
     gambarRingkasan();
+  });
+}
+
+function simpanTransaksi() {
+  if (!POS.items.length) { toast('Keranjang masih kosong.', true); return; }
+  var total = totalBayarPOS();
+  if ((POS.bayar || 0) < total) { toast('Uang tunai belum mencukupi total belanja.', true); return; }
+  var btn = document.getElementById('posSimpan');
+  btn.disabled = true; btn.textContent = 'Memeriksa harga…';
+  cekHargaOtoritatif_().then(function (hasil) {
+    if (!hasil.beda.length) return kirimTransaksi_(total, btn);
+    // Pakai harga server lebih dulu, baru minta konfirmasi kasir.
+    hasil.beda.forEach(function (d) {
+      var it = cariItemPOS_(d.kode);
+      if (it) { it.harga = d.baru; it.perluCek = false; }
+    });
+    if (POS.coupon) POS.coupon._sub = hasil.subtotal;
+    return sinkronPromoOtoritatif_(hasil.subtotal).then(function () {
+      gambarKeranjang();
+      var totalBaru = totalBayarPOS();
+      if (totalBaru === total) return kirimTransaksi_(totalBaru, btn);
+      return konfirmasiHargaBerubah_(hasil.beda, total, totalBaru, btn);
+    });
+  }).catch(function (e) {
+    btn.disabled = false;
+    btn.textContent = 'Simpan & cetak struk';
+    gambarRingkasan();
+    toast(e.message, true);
   });
 }
 

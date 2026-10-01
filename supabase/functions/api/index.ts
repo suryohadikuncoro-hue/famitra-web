@@ -45,6 +45,8 @@ var rangeOf = (f) => {
 var qsRange = (r, dateField) => `?${dateField}=gte.${r.from}&${dateField}=lte.${r.to}`;
 var PERM = {
   "pos.cariBarang": ["Owner", "Apoteker", "Kasir"],
+  "pos.seringDibeli": ["Owner", "Apoteker", "Kasir"],
+  "pos.cekTotal": ["Owner", "Apoteker", "Kasir"],
   "pos.cariCustomer": ["Owner", "Apoteker", "Kasir"],
   "pos.suggestCustomer": ["Owner", "Apoteker", "Kasir"],
   "pos.daftarCustomer": ["Owner", "Apoteker", "Kasir"],
@@ -258,6 +260,73 @@ async function action(name, data, s) {
       const first = bs[0];
       return { Kode_Obat: b.kode_obat, Nama_Obat: b.nama_obat, Satuan: b.satuan, Barcode: b.barcode, harga: Number(b[price] || b.harga_jual_umum || 0), stok: bs.reduce((n, x) => n + Number(x.stok_real || 0), 0), batch_terdekat: first?.kode_batch || "", expired: first?.expired_date || "", sisa_hari: first ? daysUntil(first.expired_date) : null, exact: b.kode_obat.toLowerCase() === q.toLowerCase() || b.barcode === q };
     });
+  }
+  if (name === "pos.seringDibeli") {
+    // Akses cepat "Sering dibeli": 12 produk dengan qty terjual terbanyak di
+    // cabang sesi selama N hari terakhir. Hanya agregat produk — tanpa data
+    // pelanggan sama sekali. Produk stok 0 tetap dikembalikan (kasir melihat
+    // badge "habis"), yang dibuang hanya produk nonaktif/tak ada di master.
+    const cab = cabangSesi(s);
+    const hari = Math.min(180, Math.max(7, Number(data.hari) || 30));
+    const batas = new Date(Date.now() - hari * 864e5).toISOString().slice(0, 10);
+    const limit = Math.min(24, Math.max(4, Number(data.limit) || 12));
+    // View analitik teragregasi per (cabang, tanggal, kode) → jumlahkan di sini.
+    const qtyPerKode = /* @__PURE__ */ new Map();
+    const HALAMAN = 1e3;
+    for (let i = 0; i < 8; i++) {
+      const r = await db("v_analitik_produk", `?cabang_id=eq.${encodeURIComponent(cab)}&tanggal=gte.${batas}&select=kode_obat,qty&limit=${HALAMAN}&offset=${i * HALAMAN}`);
+      if (!r.ok) throw new Error(await r.text());
+      const rows = await r.json();
+      rows.forEach((x) => {
+        const k = String(x.kode_obat || "").toUpperCase();
+        if (k) qtyPerKode.set(k, (qtyPerKode.get(k) || 0) + Number(x.qty || 0));
+      });
+      if (rows.length < HALAMAN) break;
+    }
+    const urut = [...qtyPerKode.entries()].filter(([, q]) => q > 0).sort((a, b) => b[1] - a[1]).slice(0, limit);
+    if (!urut.length) return [];
+    const kodeList = urut.map((x) => x[0]);
+    const r2 = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&aktif=eq.YA&kode_obat=in.(${kodeList.map(encodeURIComponent).join(",")})&select=kode_obat,nama_obat,satuan,stok_batch(stok_real,kode_batch,expired_date,cabang_id)`);
+    if (!r2.ok) throw new Error(await r2.text());
+    const info = /* @__PURE__ */ new Map((await r2.json()).map((b) => [String(b.kode_obat).toUpperCase(), b]));
+    return urut.filter(([k]) => info.has(k)).map(([k, qty]) => {
+      const b = info.get(k);
+      const bs = (b.stok_batch || []).filter((x) => x.cabang_id === cab && Number(x.stok_real) > 0).sort((a, z) => String(a.expired_date).localeCompare(String(z.expired_date)));
+      const first = bs[0];
+      return { Kode_Obat: k, Nama_Obat: b.nama_obat, Satuan: b.satuan, terjual: qty, stok: bs.reduce((n, x) => n + Number(x.stok_real || 0), 0), batch_terdekat: first?.kode_batch || "", expired: first?.expired_date || "", sisa_hari: first ? daysUntil(first.expired_date) : null };
+    });
+  }
+  if (name === "pos.cekTotal") {
+    // Hitung ulang total secara otoritatif TANPA menulis apa pun. Dipakai kasir
+    // sebelum menyimpan: kalau harga master berubah sejak item masuk keranjang,
+    // layar dan nota bisa berbeda. pos_checkout tetap menghitung sendiri, jadi
+    // ini murni pencegahan agar kasir menyesuaikan uang sebelum uang diterima.
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) throw new Error("Keranjang kosong.");
+    const cab = cabangSesi(s);
+    const tipe = data.tipe_customer || "Umum";
+    const price = tipe === "Tenaga Kesehatan" ? "harga_khusus" : tipe === "Apotek Lain" ? "harga_jual_mutasi" : "harga_jual_umum";
+    const kodeList = [...new Set(items.map((x) => String(x.kode || "").toUpperCase()).filter(Boolean))];
+    if (!kodeList.length) throw new Error("Keranjang kosong.");
+    const r = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&kode_obat=in.(${kodeList.map(encodeURIComponent).join(",")})&select=kode_obat,nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi`);
+    if (!r.ok) throw new Error(await r.text());
+    const map = /* @__PURE__ */ new Map((await r.json()).map((b) => [String(b.kode_obat).toUpperCase(), b]));
+    const tidakAda = [];
+    const hasil = [];
+    let subtotal = 0;
+    for (const it of items) {
+      const k = String(it.kode || "").toUpperCase();
+      const qty = Math.max(0, Number(it.qty) || 0);
+      const b = map.get(k);
+      if (!b || b.aktif !== "YA" || qty <= 0) {
+        if (!tidakAda.includes(k)) tidakAda.push(k);
+        continue;
+      }
+      const harga = Number(b[price] || b.harga_jual_umum || 0);
+      subtotal += harga * qty;
+      hasil.push({ kode: k, nama: b.nama_obat, qty, harga, subtotal: harga * qty });
+    }
+    return { tidak_ada: tidakAda, items: hasil, subtotal };
   }
   if (name === "refill.list") {
     const r = await db("refill_programs", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&status=eq.ACTIVE&select=*,master_customer(nama,nomor_wa)&order=next_reminder_date.asc&limit=200`);
