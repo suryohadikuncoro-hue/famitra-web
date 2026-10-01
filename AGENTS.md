@@ -104,6 +104,34 @@ Berhenti dan minta konfirmasi sebelum:
 - Mengubah alur login, hak akses role, atau URL di `js_core.js` / `window.AI_CFG`
 - Melakukan apa pun yang menyentuh production
 
+## Kanal Akses Baca Analitik (read-only)
+
+Untuk analisis data (meja INS/OPS/MKT), asisten **tidak** memakai kredensial aplikasi
+dan tidak memakai `service_role`. Kanalnya: satu user Supabase Auth khusus analitik
+yang hanya boleh `SELECT` dari view `v_analitik_*`.
+
+- View dibuat lewat migrasi `supabase/migrations/20261001010000_view_analitik_readonly.sql`.
+  Tabel dasar tidak di-grant, jadi kanal ini tidak bisa membaca tabel mentah.
+  Role `anon` tidak diberi akses apa pun.
+- Alat baca: `node tools/analitik.cjs daftar` untuk melihat view yang tersedia, dan
+  `node tools/analitik.cjs <nama-view> "<query-string PostgREST>"` untuk mengambil data.
+  Alat itu menolak nama selain view dalam daftar putihnya.
+- Kredensial dibaca dari `supabase/.temp/analitik-auth.json` (folder itu sudah
+  di-`.gitignore`). Isinya tidak boleh ditampilkan, disalin ke berkas lain, atau
+  di-commit — termasuk tidak ditempel ke percakapan.
+- User Auth analitik hanya untuk membaca. Jangan menambah grant tulis, dan jangan
+  memakai `service_role` untuk analisis rutin.
+- Data pribadi: view nota (`v_analitik_nota`, `v_analitik_nota_minus`) sengaja tidak
+  memuat nomor WA maupun nama pelanggan. `v_analitik_pelanggan` memuat identitas
+  sesuai keputusan pemilik, jadi hanya dipakai untuk keperluan CRM/retensi dan
+  hasilnya tidak dipublikasikan.
+- Hasil query dipakai untuk keperluan kerja saja: jangan ditempel ke berkas frontend
+  yang publik, dan jangan dikirim ke luar tim.
+- Mencabut akses: hapus user Auth analitik, lalu jalankan perintah rollback di kepala
+  berkas migrasi.
+- Setiap perubahan daftar view adalah perubahan skema: butuh persetujuan pemilik,
+  PR, dan (setelah merge) penerapan migrasi ke production.
+
 ## Panduan Penggunaan DeepSeek Harness
 
 DeepSeek Harness dapat digunakan untuk meninjau dan mengubah kode dalam repository ini. Semua aturan di `AGENTS.md` tetap berlaku saat pekerjaan dilakukan melalui Harness.
