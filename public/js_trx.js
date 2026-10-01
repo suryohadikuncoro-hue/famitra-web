@@ -943,6 +943,17 @@ var RIWAYAT_NOTA_OPTIONS_UI = {
   Apoteker: ['penjualan', 'pembelian', 'retur_jual'],
   Kasir: ['penjualan', 'retur_jual']
 };
+var RIWAYAT_NOTA_SHIFT_TYPES_UI = { penjualan: true, retur_jual: true };
+
+function aturFilterShiftRiwayat() {
+  var jenis = val('rnJenis') || RIWAYAT_NOTA_UI.jenis;
+  var field = document.getElementById('rnShiftWrap');
+  var select = document.getElementById('rnShift');
+  if (!field || !select) return;
+  var aktif = !!RIWAYAT_NOTA_SHIFT_TYPES_UI[jenis];
+  field.hidden = !aktif;
+  if (!aktif) select.value = '';
+}
 
 VIEWS.riwayat = {
   title: 'Riwayat Nota',
@@ -961,18 +972,23 @@ VIEWS.riwayat = {
           '<label class="field"><span>Nomor nota / faktur / retur</span><input id="rnCari" class="inp" placeholder="Ketik nomor dokumen"></label>' +
           '<label class="field"><span>Dari tanggal</span><input id="rnDari" class="inp" type="date"></label>' +
           '<label class="field"><span>Sampai tanggal</span><input id="rnSampai" class="inp" type="date"></label>' +
+          '<label class="field" id="rnShiftWrap"><span>Shift</span><select id="rnShift" class="inp">' +
+            '<option value="">Semua shift</option><option value="Pagi">Pagi</option><option value="Sore">Sore</option>' +
+            '<option value="Luar Jam">Luar Jam</option></select></label>' +
         '</div>' +
         '<button id="rnFilter" class="btn btn-primary">Cari riwayat</button>' +
       '</div>' +
       '<div class="card"><div class="card-head"><h3 id="rnJudul">Daftar nota</h3><span id="rnJumlah" class="kpi-sub"></span></div>' +
         '<div class="table-wrap"><table><thead><tr><th>Nomor dokumen</th><th>Tanggal</th><th>Referensi asal</th>' +
-          '<th>Pelanggan / supplier</th><th>Petugas</th><th class="r">Total</th><th>Status / kategori</th><th>Aksi</th>' +
+          '<th>Pelanggan / supplier</th><th>Petugas</th><th>Shift</th><th class="r">Total</th><th>Status / kategori</th><th>Aksi</th>' +
         '</tr></thead><tbody id="rnBody"></tbody></table></div>' +
         '<div class="c" style="padding-top:12px"><button id="rnMore" class="btn" hidden>Muat lebih banyak</button></div>' +
       '</div>';
 
     var sel = document.getElementById('rnJenis');
-    sel.onchange = function () { muatRiwayatNota(true); };
+    sel.onchange = function () { aturFilterShiftRiwayat(); muatRiwayatNota(true); };
+    document.getElementById('rnShift').onchange = function () { muatRiwayatNota(true); };
+    aturFilterShiftRiwayat();
     document.getElementById('rnFilter').onclick = function () { muatRiwayatNota(true); };
     document.getElementById('rnCari').addEventListener('keydown', function (e) { if (e.key === 'Enter') muatRiwayatNota(true); });
     document.getElementById('rnMore').onclick = function () { muatRiwayatNota(false); };
@@ -997,12 +1013,13 @@ function muatRiwayatNota(reset) {
   var request = ++RIWAYAT_NOTA_UI.request;
   RIWAYAT_NOTA_UI.busy = true;
   var tb = document.getElementById('rnBody');
-  if (tb && reset) tb.innerHTML = tabelKosong('Memuat riwayat nota…', 8);
+  if (tb && reset) tb.innerHTML = tabelKosong('Memuat riwayat nota…', 9);
   var more = document.getElementById('rnMore');
   if (more) { more.disabled = true; more.hidden = true; }
   var limit = 50;
   api('riwayat.notaList', {
     jenis: jenis, q: val('rnCari'), dari: val('rnDari'), sampai: val('rnSampai'),
+    shift: RIWAYAT_NOTA_SHIFT_TYPES_UI[jenis] ? val('rnShift') : '',
     limit: limit, offset: reset ? 0 : RIWAYAT_NOTA_UI.offset
   }).then(function (result) {
     if (request !== RIWAYAT_NOTA_UI.request) return;
@@ -1026,15 +1043,15 @@ function gambarRiwayatNota() {
   var tb = document.getElementById('rnBody');
   if (!tb) return;
   var rows = RIWAYAT_NOTA_UI.rows;
-  if (RIWAYAT_NOTA_UI.error) tb.innerHTML = tabelKosong(RIWAYAT_NOTA_UI.error, 8);
-  else if (!rows.length) tb.innerHTML = tabelKosong('Tidak ada nota yang cocok.', 8);
+  if (RIWAYAT_NOTA_UI.error) tb.innerHTML = tabelKosong(RIWAYAT_NOTA_UI.error, 9);
+  else if (!rows.length) tb.innerHTML = tabelKosong('Tidak ada nota yang cocok.', 9);
   else tb.innerHTML = rows.map(function (r, i) {
     var referensi = r.No_Asal ? esc(r.No_Asal) : '—';
     var tanggal = tglIndo(r.Tanggal) + (r.Jam ? ' ' + esc(r.Jam) : '');
     return '<tr>' +
       '<td><strong>' + esc(r.No_Dokumen) + '</strong></td>' +
       '<td>' + tanggal + '</td><td>' + referensi + '</td>' +
-      '<td>' + esc(r.Pihak || '—') + '</td><td>' + esc(r.Petugas || '—') + '</td>' +
+      '<td>' + esc(r.Pihak || '—') + '</td><td>' + esc(r.Petugas || '—') + '</td><td>' + esc(r.Shift || '—') + '</td>' +
       '<td class="r num">' + rupiah(r.Total) + '</td><td>' + esc(r.Status || '—') + '</td>' +
       '<td><button type="button" class="btn btn-sm btn-primary" data-rn-detail="' + i + '" aria-label="Lihat detail ' + esc(r.No_Dokumen) + '">Detail</button></td>' +
     '</tr>';

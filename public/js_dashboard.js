@@ -632,7 +632,7 @@ function gambarDashboard(d) {
     '</div>';
 
   var kartuNota =
-    '<div class="dkartu db-nota">' +
+    '<div class="dkartu db-nota" id="dbNotaCard" role="link" tabindex="0" title="Buka riwayat nota penjualan">' +
       '<div class="dk-judul">Nota terjual' +
         '<svg class="dk-ikon" viewBox="0 0 24 24"><path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg></div>' +
       '<div class="dk-flex"><div>' +
@@ -824,6 +824,17 @@ function pasangEventDashboard(d) {
       var f = document.getElementById('dbFold');
       f.open = true;
       f.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  }
+
+  // Kartu Nota Terjual membuka daftar Riwayat Nota yang default-nya Penjualan.
+  var notaCard = document.getElementById('dbNotaCard');
+  if (notaCard) {
+    notaCard.onclick = function () {
+      if (typeof gantiHalaman === 'function' && typeof VIEWS !== 'undefined' && VIEWS.riwayat) gantiHalaman('riwayat');
+    };
+    notaCard.onkeydown = function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); notaCard.click(); }
     };
   }
 
