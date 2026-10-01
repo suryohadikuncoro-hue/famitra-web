@@ -536,6 +536,96 @@ tbody tr:last-child td{border-bottom:0}
   border-radius:var(--r-xs); cursor:pointer; font-weight:700; line-height:1}
 .qty button:hover{background:#454545}
 
+/* ---- Akses cepat "Sering dibeli" — satu kartu dengan keranjang ----
+   Tile sengaja TIDAK menampilkan harga: harga bergantung tipe pembeli dan harga
+   master bisa berubah. Harga hanya muncul setelah item diambil ulang dari server
+   saat masuk keranjang, jadi kasir tidak pernah menyebut harga yang salah. */
+.pos-quick{margin-top:14px; padding-top:13px; border-top:1px solid rgba(255,255,255,.09)}
+.pos-quick-head{display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:11px}
+.pos-quick-head h3{font-size:15px}
+.pos-quick-head .sub{margin:3px 0 0; font-size:11.5px}
+.pq-grid{display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:9px}
+.pq-muat{padding:14px 0; color:#8E9299; font-size:12.5px}
+.pq-tile{
+  display:flex; flex-direction:column; justify-content:space-between; gap:8px;
+  min-height:84px; padding:10px 11px; border-radius:13px; text-align:left;
+  background:#25272C; border:1px solid #34363C; color:#E7E8EA; cursor:pointer;
+  transition:background .15s, border-color .15s, transform .1s;
+}
+.pq-tile:hover{background:#2C2F35; border-color:var(--brand)}
+.pq-tile:active{transform:translateY(1px)}
+.pq-tile.is-habis{border-color:rgba(206,44,43,.45)}
+.pq-nama{font-size:12.5px; font-weight:600; line-height:1.32; display:-webkit-box;
+  -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+.pq-meta{display:flex; align-items:center; gap:5px; flex-wrap:wrap; font-size:10.5px}
+.pq-tile .chip{font-size:10px; padding:2px 7px}
+.pos-dark .pq-tile .chip-bad{background:rgba(206,44,43,.2); color:#FF8A80}
+.pos-dark .pq-tile .chip-warn{background:rgba(245,165,36,.16); color:#F5C66B}
+.pq-more{display:none}
+@media (max-width:1600px){.pq-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:1300px){.pq-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:980px){.pq-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Layar pendek (mis. laptop 1366×768 dengan penskalaan 150%): 12 tile tidak muat,
+   jadi tampilkan 6 teratas dalam bentuk padat + tautan "Lihat semua". */
+@media (max-height:880px){
+  .pos-quick{margin-top:10px; padding-top:10px}
+  .pos-quick .pq-grid .pq-tile:nth-child(n+7){display:none}
+  .pos-quick-head{margin-bottom:8px; align-items:center}
+  .pos-quick-head > div{display:flex; align-items:baseline; gap:9px; min-width:0}
+  .pos-quick-head .pq-hint{display:none}
+  .pos-quick .pq-more{display:inline-block}
+  .pos-quick .pq-tile{min-height:56px; padding:8px 10px; gap:5px}
+  .pos-quick .pq-nama{-webkit-line-clamp:1; font-size:12px; line-height:1.25}
+  .pos-quick .pq-meta{font-size:10px}
+  .pos-quick .pq-tile .chip{font-size:9.5px; padding:1px 6px}
+}
+/* "Lihat semua" membatalkan batas 6 tile di layar pendek. */
+.pos-quick.is-penuh .pq-grid .pq-tile{display:flex}
+.pos-quick.is-penuh .pq-more{display:none}
+
+/* Keranjang panjang: daftar dibatasi + scroll internal supaya bagian Sering
+   dibeli tetap terlihat tanpa harus menggulir seluruh halaman. */
+.pos-cart-scroll{max-height:290px; overflow-y:auto; overscroll-behavior:contain; padding-right:4px}
+.pos-cart-scroll::-webkit-scrollbar{width:8px}
+.pos-cart-scroll::-webkit-scrollbar-thumb{background:#454545; border-radius:99px}
+@media (max-height:820px){.pos-cart-scroll{max-height:210px}}
+
+/* Saat keranjang sudah berisi, bagian Sering dibeli melipat jadi satu baris
+   supaya ruang daftar item tidak terganggu. Klik untuk membuka lagi. */
+.pq-toggle{display:none; width:100%; align-items:center; gap:9px; padding:0;
+  background:transparent; border:0; color:inherit; font:inherit; text-align:left; cursor:pointer}
+.pq-toggle strong{font-size:13px; color:#F5F6F7}
+.pq-toggle .sub{font-size:11px}
+.pq-chev{width:16px; height:16px; margin-left:auto; color:#8E9299; transition:transform .18s}
+.pos-quick.is-lipat{margin-top:11px; padding-top:11px}
+.pos-quick.is-lipat .pq-toggle{display:flex}
+.pos-quick.is-lipat .pos-quick-head,
+.pos-quick.is-lipat .pq-grid{display:none}
+.pos-quick.is-lipat.is-buka .pos-quick-head{display:flex}
+.pos-quick.is-lipat.is-buka .pq-grid{display:grid}
+.pos-quick.is-lipat.is-buka .pq-chev{transform:rotate(180deg)}
+.pos-quick.is-lipat .pq-toggle:hover strong{color:#fff}
+
+/* Harga yang belum dikonfirmasi server ditandai, bukan ditampilkan seolah final. */
+.pos-dark .chip-cek{background:rgba(245,165,36,.16); color:#F5C66B; border:1px dashed rgba(245,165,36,.55)}
+.cart-sub.is-cek{color:#F5C66B; border-bottom:1px dashed rgba(245,165,36,.6)}
+
+/* Modal konfirmasi selisih harga (mode terang, seperti modal POS lain). */
+.pos-diff-lead{margin:0 0 12px; font-size:13px; color:var(--muted)}
+.pos-diff{display:grid; gap:6px; margin:0 0 14px}
+.pos-diff-row{display:grid; grid-template-columns:1fr auto auto; gap:10px; align-items:center;
+  padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#FAFBFC}
+.pos-diff-nama{font-size:13px; font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.pos-diff-lama{font-size:12.5px; color:var(--muted); text-decoration:line-through}
+.pos-diff-baru{font-size:13px; font-weight:700; color:var(--brand-dark); min-width:88px; text-align:right}
+.pos-diff-total{border-top:1px solid var(--line); padding-top:10px; display:grid; gap:7px}
+.pos-diff-baris{display:flex; justify-content:space-between; font-size:13.5px}
+.pos-diff-baris strong{font-size:15px}
+.pos-diff-kembali{display:flex; justify-content:space-between; align-items:baseline; margin-top:12px;
+  background:var(--warn-soft); border-radius:10px; padding:9px 12px; font-size:13px; color:#8A4B04}
+.pos-diff-kembali b{font-size:16px}
+
 .pay-row{display:flex; justify-content:space-between; align-items:baseline;
   padding:7px 0; font-size:14px}
 .pay-row.total{border-top:1px solid #3D3D3D; margin-top:7px; padding-top:12px}
