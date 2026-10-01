@@ -60,6 +60,23 @@ function bacaFilter(prefix) {
   };
 }
 
+function dataStatusAktivitasKasir_(d) {
+  var pj = d.pj_shift || {};
+  var liveSales = Array.isArray(d.live_sales) ? d.live_sales : [];
+  var jumlah = Number((d.kpi || {}).nota) || liveSales.length;
+  if (pj.role === 'Kasir') {
+    return { mode: 'jaga', nama: pj.petugas || '', login_at: pj.login_at || '-' };
+  }
+  if (pj.petugas_jaga) {
+    return {
+      mode: 'penanggung_jawab', nama: pj.petugas_jaga,
+      sumber: pj.sumber_aktivitas || 'Aktivitas', jam: pj.aktivitas_jam || '-'
+    };
+  }
+  if (jumlah > 0) return { mode: 'aktivitas', jumlah: jumlah, terakhir: liveSales[0] || null };
+  return { mode: 'kosong', petugas: pj.petugas || '-' };
+}
+
 /* ------------------------------------------------------------- Dashboard */
 
 VIEWS.dashboard = {
@@ -715,11 +732,18 @@ function gambarDashboard(d) {
 
   /* 4. Widget gelap: penanggung jawab, omzet per shift, segmen pelanggan */
   var pj = d.pj_shift || {};
-  var infoPJ = pj.role === 'Kasir'
-    ? '<b>' + esc(pj.petugas) + '</b><span>Anda sedang jaga · sejak ' + esc(pj.login_at || '-') + '</span>'
-    : (pj.petugas_jaga
-      ? '<b>' + esc(pj.petugas_jaga) + '</b><span>' + esc(pj.sumber_aktivitas || 'Aktivitas') + ' terakhir pukul ' + esc(pj.aktivitas_jam || '-') + '</span>'
-      : '<b>Belum ada aktivitas kasir</b><span>Anda login sebagai ' + esc(pj.petugas || '-') + '</span>');
+  var statusPJ = dataStatusAktivitasKasir_(d);
+  var terakhirPJ = statusPJ.terakhir;
+  var detailAktivitasPJ = terakhirPJ && terakhirPJ.Jam
+    ? ' · terakhir pukul ' + esc(terakhirPJ.Jam) + (terakhirPJ.Shift ? ' (' + esc(terakhirPJ.Shift) + ')' : '')
+    : '';
+  var infoPJ = statusPJ.mode === 'jaga'
+    ? '<b>' + esc(statusPJ.nama) + '</b><span>Anda sedang jaga · sejak ' + esc(statusPJ.login_at) + '</span>'
+    : (statusPJ.mode === 'penanggung_jawab'
+      ? '<b>' + esc(statusPJ.nama) + '</b><span>' + esc(statusPJ.sumber) + ' terakhir pukul ' + esc(statusPJ.jam) + '</span>'
+      : (statusPJ.mode === 'aktivitas'
+        ? '<b>Ada aktivitas penjualan</b><span>' + angka(statusPJ.jumlah) + ' nota pada rentang ini' + detailAktivitasPJ + '</span>'
+        : '<b>Belum ada aktivitas kasir</b><span>Anda login sebagai ' + esc(statusPJ.petugas) + '</span>'));
   var sc = d.shift_chart || {};
   var shiftList = [['Pagi · 07–14', sc.Pagi || 0], ['Sore · 14–21', sc.Sore || 0]].concat(sc['Luar Jam'] ? [['Di luar jam', sc['Luar Jam']]] : []);
   var maxShift = Math.max.apply(null, shiftList.map(function (x) { return x[1]; })) || 1;
@@ -832,9 +856,15 @@ function pasangEventDashboard(d) {
   var lencana = document.getElementById('dbPJ');
   var pj = d.pj_shift || {};
   if (lencana) {
-    var nama = pj.role === 'Kasir' ? pj.petugas : pj.petugas_jaga;
+    var statusPJ = dataStatusAktivitasKasir_(d);
+    var nama = statusPJ.mode === 'jaga' || statusPJ.mode === 'penanggung_jawab' ? statusPJ.nama : '';
+    var labelPJ = nama
+      ? 'Jaga: <b>' + esc(nama) + '</b>'
+      : (statusPJ.mode === 'aktivitas'
+        ? 'Aktivitas: <b>' + angka(statusPJ.jumlah) + ' nota</b>'
+        : 'Belum ada aktivitas');
     lencana.innerHTML = '<span class="dot' + (pj.di_luar_jam ? ' mati' : '') + '"></span>' +
-      (nama ? 'Jaga: <b>' + esc(nama) + '</b>' : 'Belum ada yang jaga') +
+      labelPJ +
       ' · ' + (pj.di_luar_jam ? 'di luar jam' : esc(pj.shift || '-'));
     lencana.hidden = false;
   }
