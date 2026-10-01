@@ -931,3 +931,173 @@ function cetakLaporan(d) {
       }).join('') + '</table>' : '');
   setTimeout(function () { window.print(); }, 120);
 }
+
+
+/* ------------------------------------------- Riwayat Nota (read-only) --- */
+var RIWAYAT_NOTA_UI = { jenis: 'penjualan', rows: [], offset: 0, hasMore: false, request: 0, busy: false, error: '' };
+var RIWAYAT_NOTA_LABEL_UI = {
+  penjualan: 'Penjualan', pembelian: 'Pembelian', retur_jual: 'Retur Penjualan', retur_beli: 'Retur Pembelian'
+};
+var RIWAYAT_NOTA_OPTIONS_UI = {
+  Owner: ['penjualan', 'pembelian', 'retur_jual', 'retur_beli'],
+  Apoteker: ['penjualan', 'pembelian', 'retur_jual'],
+  Kasir: ['penjualan', 'retur_jual']
+};
+
+VIEWS.riwayat = {
+  title: 'Riwayat Nota',
+  render: function (el) {
+    var role = SESSION && SESSION.user ? SESSION.user.role : '';
+    var jenis = RIWAYAT_NOTA_OPTIONS_UI[role] || [];
+    RIWAYAT_NOTA_UI = { jenis: jenis[0] || 'penjualan', rows: [], offset: 0, hasMore: false, request: 0, busy: false, error: '' };
+    el.innerHTML =
+      '<div class="card"><div class="card-head"><div><h3>Riwayat Nota</h3>' +
+        '<p class="kpi-sub">Cari nota penjualan, faktur pembelian, atau retur. Detail hanya-baca dan mengikuti cabang akun Anda.</p></div>' +
+        '<span class="chip">Cabang ' + esc(SESSION.user.cabang_id || '—') + '</span></div>' +
+        '<div class="grid g4">' +
+          '<label class="field"><span>Jenis dokumen</span><select id="rnJenis" class="inp">' +
+            jenis.map(function (x) { return '<option value="' + esc(x) + '">' + esc(RIWAYAT_NOTA_LABEL_UI[x]) + '</option>'; }).join('') +
+          '</select></label>' +
+          '<label class="field"><span>Nomor nota / faktur / retur</span><input id="rnCari" class="inp" placeholder="Ketik nomor dokumen"></label>' +
+          '<label class="field"><span>Dari tanggal</span><input id="rnDari" class="inp" type="date"></label>' +
+          '<label class="field"><span>Sampai tanggal</span><input id="rnSampai" class="inp" type="date"></label>' +
+        '</div>' +
+        '<button id="rnFilter" class="btn btn-primary">Cari riwayat</button>' +
+      '</div>' +
+      '<div class="card"><div class="card-head"><h3 id="rnJudul">Daftar nota</h3><span id="rnJumlah" class="kpi-sub"></span></div>' +
+        '<div class="table-wrap"><table><thead><tr><th>Nomor dokumen</th><th>Tanggal</th><th>Referensi asal</th>' +
+          '<th>Pelanggan / supplier</th><th>Petugas</th><th class="r">Total</th><th>Status / kategori</th><th>Aksi</th>' +
+        '</tr></thead><tbody id="rnBody"></tbody></table></div>' +
+        '<div class="c" style="padding-top:12px"><button id="rnMore" class="btn" hidden>Muat lebih banyak</button></div>' +
+      '</div>';
+
+    var sel = document.getElementById('rnJenis');
+    sel.onchange = function () { muatRiwayatNota(true); };
+    document.getElementById('rnFilter').onclick = function () { muatRiwayatNota(true); };
+    document.getElementById('rnCari').addEventListener('keydown', function (e) { if (e.key === 'Enter') muatRiwayatNota(true); });
+    document.getElementById('rnMore').onclick = function () { muatRiwayatNota(false); };
+    document.getElementById('rnBody').onclick = function (e) {
+      var b = e.target.closest('[data-rn-detail]');
+      if (!b) return;
+      var r = RIWAYAT_NOTA_UI.rows[Number(b.dataset.rnDetail)];
+      if (r) bukaDetailRiwayatNota(r);
+    };
+    muatRiwayatNota(true);
+  }
+};
+
+function muatRiwayatNota(reset) {
+  var jenis = val('rnJenis') || RIWAYAT_NOTA_UI.jenis;
+  if (reset) {
+    RIWAYAT_NOTA_UI.jenis = jenis;
+    RIWAYAT_NOTA_UI.rows = [];
+    RIWAYAT_NOTA_UI.offset = 0;
+    RIWAYAT_NOTA_UI.error = '';
+  }
+  var request = ++RIWAYAT_NOTA_UI.request;
+  RIWAYAT_NOTA_UI.busy = true;
+  var tb = document.getElementById('rnBody');
+  if (tb && reset) tb.innerHTML = tabelKosong('Memuat riwayat nota…', 8);
+  var more = document.getElementById('rnMore');
+  if (more) { more.disabled = true; more.hidden = true; }
+  var limit = 50;
+  api('riwayat.notaList', {
+    jenis: jenis, q: val('rnCari'), dari: val('rnDari'), sampai: val('rnSampai'),
+    limit: limit, offset: reset ? 0 : RIWAYAT_NOTA_UI.offset
+  }).then(function (result) {
+    if (request !== RIWAYAT_NOTA_UI.request) return;
+    RIWAYAT_NOTA_UI.jenis = jenis;
+    RIWAYAT_NOTA_UI.rows = (reset ? [] : RIWAYAT_NOTA_UI.rows).concat(result.rows || []);
+    RIWAYAT_NOTA_UI.offset = Number(result.next_offset || 0);
+    RIWAYAT_NOTA_UI.hasMore = !!result.has_more;
+    RIWAYAT_NOTA_UI.error = '';
+  }).catch(function (e) {
+    if (request !== RIWAYAT_NOTA_UI.request) return;
+    RIWAYAT_NOTA_UI.error = e.message || 'Riwayat nota gagal dimuat.';
+    if (reset) RIWAYAT_NOTA_UI.rows = [];
+  }).then(function () {
+    if (request !== RIWAYAT_NOTA_UI.request) return;
+    RIWAYAT_NOTA_UI.busy = false;
+    gambarRiwayatNota();
+  });
+}
+
+function gambarRiwayatNota() {
+  var tb = document.getElementById('rnBody');
+  if (!tb) return;
+  var rows = RIWAYAT_NOTA_UI.rows;
+  if (RIWAYAT_NOTA_UI.error) tb.innerHTML = tabelKosong(RIWAYAT_NOTA_UI.error, 8);
+  else if (!rows.length) tb.innerHTML = tabelKosong('Tidak ada nota yang cocok.', 8);
+  else tb.innerHTML = rows.map(function (r, i) {
+    var referensi = r.No_Asal ? esc(r.No_Asal) : '—';
+    var tanggal = tglIndo(r.Tanggal) + (r.Jam ? ' ' + esc(r.Jam) : '');
+    return '<tr>' +
+      '<td><strong>' + esc(r.No_Dokumen) + '</strong></td>' +
+      '<td>' + tanggal + '</td><td>' + referensi + '</td>' +
+      '<td>' + esc(r.Pihak || '—') + '</td><td>' + esc(r.Petugas || '—') + '</td>' +
+      '<td class="r num">' + rupiah(r.Total) + '</td><td>' + esc(r.Status || '—') + '</td>' +
+      '<td><button type="button" class="btn btn-sm btn-primary" data-rn-detail="' + i + '" aria-label="Lihat detail ' + esc(r.No_Dokumen) + '">Detail</button></td>' +
+    '</tr>';
+  }).join('');
+  var title = document.getElementById('rnJudul');
+  if (title) title.textContent = 'Riwayat ' + (RIWAYAT_NOTA_LABEL_UI[RIWAYAT_NOTA_UI.jenis] || 'Nota');
+  var count = document.getElementById('rnJumlah');
+  if (count) count.textContent = rows.length ? angka(rows.length) + ' nota dimuat' : '';
+  var more = document.getElementById('rnMore');
+  if (more) {
+    more.hidden = !RIWAYAT_NOTA_UI.hasMore;
+    more.disabled = RIWAYAT_NOTA_UI.busy;
+    more.textContent = RIWAYAT_NOTA_UI.busy ? 'Memuat…' : 'Muat lebih banyak';
+  }
+}
+
+function bukaDetailRiwayatNota(row) {
+  var jenis = RIWAYAT_NOTA_UI.jenis;
+  var judul = 'Detail ' + (RIWAYAT_NOTA_LABEL_UI[jenis] || 'Nota') + ' · ' + row.No_Dokumen;
+  modalBuka(judul, '<div class="empty">Memuat rincian nota…</div>', [{ label: 'Tutup', aksi: modalTutup }]);
+  api('riwayat.notaDetail', { jenis: jenis, no: row.No_Dokumen }).then(function (nota) {
+    if (document.getElementById('modal').hidden) return;
+    document.getElementById('modalBody').innerHTML = htmlDetailRiwayatNota(nota);
+  }).catch(function (e) {
+    if (document.getElementById('modal').hidden) return;
+    document.getElementById('modalBody').innerHTML = '<div class="empty">' + esc(e.message || 'Detail nota gagal dimuat.') + '</div>';
+  });
+}
+
+function htmlDetailRiwayatNota(nota) {
+  var h = nota.header || {}, meta = [];
+  function tambah(label, value, formatted) {
+    if (value === null || value === undefined || String(value) === '') return;
+    meta.push('<div class="rn-meta-item"><span>' + esc(label) + '</span><strong>' + esc(formatted === undefined ? value : formatted) + '</strong></div>');
+  }
+  tambah('Nomor dokumen', h.No_Dokumen);
+  if (nota.jenis === 'retur_jual' || nota.jenis === 'retur_beli') tambah('Nota / faktur asal', h.No_Asal);
+  tambah('Tanggal', tglIndo(h.Tanggal) + (h.Jam ? ' ' + h.Jam : ''));
+  tambah(nota.jenis === 'pembelian' || nota.jenis === 'retur_beli' ? 'Supplier' : 'Pelanggan', h.Pihak);
+  tambah('Petugas', h.Petugas);
+  tambah('Shift', h.Shift);
+  tambah('Kategori', h.Kategori);
+  tambah('No. faktur PBF', nota.jenis === 'pembelian' ? h.No_Asal : '');
+  tambah('Jatuh tempo', h.Jatuh_Tempo ? tglIndo(h.Jatuh_Tempo) : '');
+  tambah('Jumlah item', h.Jumlah_Item, h.Jumlah_Item === undefined ? undefined : angka(h.Jumlah_Item));
+  tambah('Status', h.Status);
+  tambah('Disetujui oleh', h.Disetujui_Oleh);
+  tambah('Tanggal persetujuan', h.Tanggal_Approval ? tglIndo(h.Tanggal_Approval) : '');
+  tambah('Alasan', h.Alasan);
+  if (h.Subtotal !== undefined) tambah('Subtotal', h.Subtotal, rupiah(h.Subtotal));
+  if (h.Diskon !== undefined) tambah('Diskon', h.Diskon, rupiah(h.Diskon));
+  if (h.Total !== undefined) tambah(nota.jenis.indexOf('retur_') === 0 ? 'Total refund' : 'Total', h.Total, rupiah(h.Total));
+  var items = (nota.items || []).map(function (it) {
+    var harga = it.Harga_Satuan === null || it.Harga_Satuan === undefined ? '—' : rupiah(it.Harga_Satuan);
+    var subtotal = it.Subtotal === null || it.Subtotal === undefined ? '—' : rupiah(it.Subtotal);
+    return '<tr><td>' + esc(it.Kode_Obat || '—') + '</td><td>' + esc(it.Nama_Obat || '—') + '</td>' +
+      '<td>' + esc(it.Kode_Batch || '—') + '</td><td class="c num">' + esc(angka(it.Qty)) + '</td>' +
+      '<td class="r num">' + esc(harga) + '</td><td class="r num">' + esc(subtotal) + '</td>' +
+      '<td>' + esc(it.Kondisi || '—') + '</td></tr>';
+  }).join('');
+  return '<div class="riwayat-nota-detail"><div class="rn-meta">' + meta.join('') + '</div>' +
+    '<h4>Rincian barang (' + angka((nota.items || []).length) + ' baris)</h4>' +
+    '<div class="table-wrap"><table><thead><tr><th>Kode</th><th>Nama barang</th><th>Batch</th><th class="c">Qty</th>' +
+      '<th class="r">Harga / unit</th><th class="r">Subtotal</th><th>Kondisi</th></tr></thead><tbody>' +
+      (items || tabelKosong('Tidak ada rincian barang pada nota ini.', 7)) + '</tbody></table></div></div>';
+}

@@ -288,6 +288,7 @@ var IKON_MENU = {
   opname: '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/>',
   laporan: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   retur: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/>',
+  riwayat: '<path d="M3 12a9 9 0 109-9 9.5 9.5 0 00-6.7 2.8L3 7"/><path d="M3 3v4h4M12 7v5l3 2"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/>'
 };
 

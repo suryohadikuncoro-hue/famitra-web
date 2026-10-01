@@ -80,9 +80,62 @@ var PERM = {
   "cabang.list": ["Owner", "Apoteker"],
   "retur.jualList": ["Owner", "Apoteker", "Kasir"],
   "retur.jualSimpan": ["Owner", "Apoteker", "Kasir"],
+  "riwayat.notaList": ["Owner", "Apoteker", "Kasir"],
+  "riwayat.notaDetail": ["Owner", "Apoteker", "Kasir"],
   "retur.beliList": ["Owner"],
   "retur.beliSimpan": ["Owner"],
   "retur.beliApprove": ["Owner"]
+};
+var RIWAYAT_NOTA_ROLE = {
+  Owner: ["penjualan", "pembelian", "retur_jual", "retur_beli"],
+  Apoteker: ["penjualan", "pembelian", "retur_jual"],
+  Kasir: ["penjualan", "retur_jual"]
+};
+var RIWAYAT_NOTA_CFG = {
+  penjualan: {
+    label: "Penjualan", table: "trx_penjualan", detailTable: "trx_penjualan_detail", key: "no_nota", tanggal: "tanggal",
+    order: "timestamp.desc,no_nota.desc",
+    searchFields: ["no_nota"],
+    listSelect: "no_nota,tanggal,jam,nama_pelanggan,petugas_transaksi,shift,harga_akhir",
+    headerSelect: "no_nota,tanggal,jam,nama_pelanggan,petugas_transaksi,shift,subtotal,diskon,harga_akhir",
+    detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_satuan,subtotal",
+    row: (x) => ({ No_Dokumen: x.no_nota, No_Asal: "", Tanggal: x.tanggal, Jam: x.jam, Pihak: x.nama_pelanggan || "Umum", Petugas: x.petugas_transaksi || "", Total: x.harga_akhir, Status: "" }),
+    header: (x) => ({ No_Dokumen: x.no_nota, Tanggal: x.tanggal, Jam: x.jam, Pihak: x.nama_pelanggan || "Umum", Petugas: x.petugas_transaksi || "", Shift: x.shift, Subtotal: x.subtotal, Diskon: x.diskon, Total: x.harga_akhir }),
+    item: (x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: x.nama_obat, Kode_Batch: x.kode_batch, Qty: x.qty, Harga_Satuan: x.harga_satuan, Subtotal: x.subtotal })
+  },
+  pembelian: {
+    label: "Pembelian", table: "trx_pembelian", detailTable: "trx_pembelian_detail", key: "no_faktur", tanggal: "tanggal_faktur",
+    order: "timestamp.desc,no_faktur.desc",
+    searchFields: ["no_faktur", "no_faktur_supplier"],
+    listSelect: "no_faktur,no_faktur_supplier,supplier,kategori,tanggal_faktur,jatuh_tempo,total_item,total_tagihan,petugas",
+    headerSelect: "no_faktur,no_faktur_supplier,supplier,kategori,tanggal_faktur,jatuh_tempo,total_item,total_tagihan,petugas",
+    detailSelect: "kode_obat,nama_obat,kode_batch,expired_date,qty,harga_netto,ppn,diskon,subtotal",
+    row: (x) => ({ No_Dokumen: x.no_faktur, No_Asal: x.no_faktur_supplier || "", Tanggal: x.tanggal_faktur, Jam: "", Pihak: x.supplier || "", Petugas: x.petugas || "", Total: x.total_tagihan, Status: x.kategori || "", Jumlah_Item: x.total_item }),
+    header: (x) => ({ No_Dokumen: x.no_faktur, No_Asal: x.no_faktur_supplier || "", Tanggal: x.tanggal_faktur, Pihak: x.supplier || "", Petugas: x.petugas || "", Kategori: x.kategori, Jatuh_Tempo: x.jatuh_tempo, Jumlah_Item: x.total_item, Total: x.total_tagihan }),
+    item: (x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: x.nama_obat, Kode_Batch: x.kode_batch, Expired_Date: x.expired_date, Qty: x.qty, Harga_Satuan: x.harga_netto, PPN: x.ppn, Diskon: x.diskon, Subtotal: x.subtotal })
+  },
+  retur_jual: {
+    label: "Retur Penjualan", table: "trx_retur_jual", detailTable: "trx_retur_jual_detail", key: "no_retur", tanggal: "tanggal",
+    order: "timestamp.desc,no_retur.desc",
+    searchFields: ["no_retur", "no_nota_asal"],
+    listSelect: "no_retur,no_nota_asal,tanggal,jam,nama_pelanggan,petugas,total_refund,alasan",
+    headerSelect: "no_retur,no_nota_asal,tanggal,jam,nama_pelanggan,petugas,shift,total_refund,alasan",
+    detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_satuan,subtotal,kondisi",
+    row: (x) => ({ No_Dokumen: x.no_retur, No_Asal: x.no_nota_asal || "", Tanggal: x.tanggal, Jam: x.jam, Pihak: x.nama_pelanggan || "Umum", Petugas: x.petugas || "", Total: x.total_refund, Status: "Retur", Keterangan: x.alasan || "" }),
+    header: (x) => ({ No_Dokumen: x.no_retur, No_Asal: x.no_nota_asal || "", Tanggal: x.tanggal, Jam: x.jam, Pihak: x.nama_pelanggan || "Umum", Petugas: x.petugas || "", Shift: x.shift, Total: x.total_refund, Alasan: x.alasan || "" }),
+    item: (x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: x.nama_obat, Kode_Batch: x.kode_batch, Qty: x.qty, Harga_Satuan: x.harga_satuan, Subtotal: x.subtotal, Kondisi: x.kondisi })
+  },
+  retur_beli: {
+    label: "Retur Pembelian", table: "trx_retur_beli", detailTable: "trx_retur_beli_detail", key: "no_retur", tanggal: "tanggal",
+    order: "timestamp.desc,no_retur.desc",
+    searchFields: ["no_retur", "no_faktur_asal"],
+    listSelect: "no_retur,no_faktur_asal,supplier,tanggal,status,created_by,approved_by,total_refund,alasan",
+    headerSelect: "no_retur,no_faktur_asal,supplier,tanggal,status,created_by,approved_by,tanggal_approval,total_refund,alasan",
+    detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_netto,subtotal,kondisi",
+    row: (x) => ({ No_Dokumen: x.no_retur, No_Asal: x.no_faktur_asal || "", Tanggal: x.tanggal, Jam: "", Pihak: x.supplier || "", Petugas: x.created_by || "", Total: x.total_refund, Status: x.status || "", Keterangan: x.alasan || "" }),
+    header: (x) => ({ No_Dokumen: x.no_retur, No_Asal: x.no_faktur_asal || "", Tanggal: x.tanggal, Pihak: x.supplier || "", Petugas: x.created_by || "", Disetujui_Oleh: x.approved_by || "", Tanggal_Approval: x.tanggal_approval, Status: x.status || "", Total: x.total_refund, Alasan: x.alasan || "" }),
+    item: (x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: x.nama_obat, Kode_Batch: x.kode_batch, Qty: x.qty, Harga_Satuan: x.harga_netto, Subtotal: x.subtotal, Kondisi: x.kondisi })
+  }
 };
 // Cabang WAJIB datang dari sesi. Tidak ada lagi fallback "KARLA": kalau cabang
 // tidak bisa ditentukan, permintaan GAGAL (bagian 2 dokumen rencana).
@@ -122,7 +175,9 @@ var menus = {
   Kasir: [{ id: "dashboard", label: "Dashboard" }, { id: "pos", label: "Kasir / POS" }, { id: "biaya", label: "Biaya Operasional" }, { id: "retur", label: "Retur" }]
 };
 function menuSaya(s) {
-  return { menu: menus[s.role] || [], user: { username: s.username, nama: s.nama, role: s.role, cabang_id: cabangSesi(s), login_at: s.login_at, shift: s.shift }, apotek: "Apotek Fa-Mitra", halamanAwal: s.role === "Kasir" ? "pos" : "dashboard" };
+  const menu = (menus[s.role] || []).slice();
+  if (RIWAYAT_NOTA_ROLE[s.role]) menu.push({ id: "riwayat", label: "Riwayat Nota" });
+  return { menu, user: { username: s.username, nama: s.nama, role: s.role, cabang_id: cabangSesi(s), login_at: s.login_at, shift: s.shift }, apotek: "Apotek Fa-Mitra", halamanAwal: s.role === "Kasir" ? "pos" : "dashboard" };
 }
 // Ambil SEMUA baris (PostgREST membatasi jumlah baris per request), 1000 per halaman.
 async function semua(table, query) {
@@ -401,6 +456,49 @@ async function action(name, data, s) {
     const r = await db("trx_pembelian", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_faktur,no_faktur_supplier,supplier,kategori,tanggal_faktur,jatuh_tempo,total_item,total_tagihan&order=timestamp.desc&limit=200`);
     const rows = await r.json();
     return rows.map((x) => ({ No_Faktur: x.no_faktur, No_Faktur_Supplier: x.no_faktur_supplier, Supplier: x.supplier, Kategori: x.kategori, Tanggal_Faktur: x.tanggal_faktur, Jatuh_Tempo: x.jatuh_tempo, Total_Item: x.total_item, Total_Tagihan: x.total_tagihan, jatuh_tempo_hari: x.jatuh_tempo ? daysUntil(x.jatuh_tempo) : null }));
+  }
+  if (name === "riwayat.notaList") {
+    const jenis = String(data.jenis || "");
+    const cfg = RIWAYAT_NOTA_CFG[jenis];
+    if (!cfg || !(RIWAYAT_NOTA_ROLE[s.role] || []).includes(jenis)) throw new Error("Akses riwayat nota ini tidak diizinkan.");
+    const tanggal = (value, label) => {
+      const d = String(value || "").trim();
+      if (!d) return "";
+      const ms = Date.parse(`${d}T00:00:00.000Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || !Number.isFinite(ms) || new Date(ms).toISOString().slice(0, 10) !== d) throw new Error(`Tanggal ${label} tidak valid.`);
+      return d;
+    };
+    const dari = tanggal(data.dari, "mulai"), sampai = tanggal(data.sampai, "akhir");
+    if (dari && sampai && dari > sampai) throw new Error("Tanggal mulai tidak boleh melewati tanggal akhir.");
+    const q = String(data.q || "").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 60);
+    const nLimit = Math.floor(Number(data.limit)), limit = Number.isFinite(nLimit) ? Math.max(1, Math.min(100, nLimit)) : 50;
+    const nOffset = Math.floor(Number(data.offset)), offset = Number.isFinite(nOffset) ? Math.max(0, Math.min(1000000, nOffset)) : 0;
+    let query = `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=${cfg.listSelect}`;
+    if (dari) query += `&${cfg.tanggal}=gte.${encodeURIComponent(dari)}`;
+    if (sampai) query += `&${cfg.tanggal}=lte.${encodeURIComponent(sampai)}`;
+    if (q) {
+      const filters = cfg.searchFields.map((field) => `${field}.ilike.*${encodeURIComponent(q)}*`);
+      query += filters.length === 1 ? `&${filters[0]}` : `&or=(${filters.join(",")})`;
+    }
+    query += `&order=${cfg.order}&limit=${limit + 1}&offset=${offset}`;
+    const r = await db(cfg.table, query);
+    if (!r.ok) throw new Error(await r.text());
+    const rows = await r.json();
+    return { jenis, rows: rows.slice(0, limit).map(cfg.row), has_more: rows.length > limit, next_offset: offset + Math.min(rows.length, limit) };
+  }
+  if (name === "riwayat.notaDetail") {
+    const jenis = String(data.jenis || ""), cfg = RIWAYAT_NOTA_CFG[jenis];
+    if (!cfg || !(RIWAYAT_NOTA_ROLE[s.role] || []).includes(jenis)) throw new Error("Akses riwayat nota ini tidak diizinkan.");
+    const noDokumen = String(data.no || "").trim().slice(0, 100);
+    if (!noDokumen) throw new Error("Nomor nota wajib diisi.");
+    const cabang = encodeURIComponent(cabangSesi(s)), no = encodeURIComponent(noDokumen);
+    const hr = await db(cfg.table, `?cabang_id=eq.${cabang}&${cfg.key}=eq.${no}&select=${cfg.headerSelect}&limit=1`);
+    if (!hr.ok) throw new Error(await hr.text());
+    const header = (await hr.json())[0];
+    if (!header) throw new Error("Nota tidak ditemukan pada cabang sesi ini.");
+    const dr = await db(cfg.detailTable, `?cabang_id=eq.${cabang}&${cfg.key}=eq.${no}&select=${cfg.detailSelect}&order=id.asc`);
+    if (!dr.ok) throw new Error(await dr.text());
+    return { jenis, label: cfg.label, header: cfg.header(header), items: (await dr.json()).map(cfg.item) };
   }
   if (name === "biaya.simpan") {
     const p = { cabang_id: cabangSesi(s), id: `BY-${Date.now()}-${Math.floor(Math.random() * 900 + 100)}`, tanggal: data.Tanggal || today(), keterangan: data.Keterangan, nominal: data.Nominal || 0, shift: shift(), petugas: s.username };
