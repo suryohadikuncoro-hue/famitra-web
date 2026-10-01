@@ -272,15 +272,16 @@ left join public.trx_penjualan t on t.no_nota = r.invoice_no and t.cabang_id = r
 create or replace view public.v_analitik_target as
 select
   kode_cabang,
-  nama,
+  nama_target,
   periode_mulai,
   periode_selesai,
   target_omset_idr,
   aktif
 from public.marketing_target_omsets;
 
+-- aktif dipakai untuk menyaring cabang yang masih beroperasi ('YA').
 create or replace view public.v_analitik_cabang as
-select kode_cabang, nama_cabang
+select kode_cabang, nama_cabang, aktif
 from public.master_cabang;
 
 -- ---------------------------------------------------------------- Hak akses
