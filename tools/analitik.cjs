@@ -60,10 +60,53 @@ async function ambilToken(kred) {
   });
   const j = await r.json().catch(function () { return {}; });
   if (!r.ok || !j.access_token) {
-    throw new Error('Gagal login user analitik (HTTP ' + r.status + '): ' +
-      (j.error_description || j.msg || j.error || 'penyebab tidak diketahui'));
+    // Tampilkan pesan asli dari Supabase supaya penyebabnya langsung terlihat.
+    // Isi berkas kredensial tidak pernah ikut ke pesan ini.
+    const pesan = j.error_description || j.msg || j.message || j.error || j.error_code ||
+      JSON.stringify(j).slice(0, 300) || 'penyebab tidak diketahui';
+    const petunjuk =
+      r.status === 401 ? ' Periksa "anon_key" (Project Settings -> API) dan "url".' :
+      r.status === 400 ? ' Periksa "email" dan "password" user analitik (harus sudah dikonfirmasi).' :
+      r.status === 422 ? ' User Auth mungkin belum dibuat atau provider email dimatikan.' : '';
+    throw new Error('Gagal login user analitik (HTTP ' + r.status + '): ' + pesan + petunjuk);
   }
   return j.access_token;
+}
+
+/* Periksa BENTUK berkas kredensial tanpa menampilkan isinya: panjang, jenis kunci,
+   dan spasi tersembunyi yang biasanya membuat Supabase menolak (Invalid API key). */
+function jenisKunci(k) {
+  if (k.indexOf('sb_publishable_') === 0) return 'publishable key (benar untuk kanal ini)';
+  if (k.indexOf('sb_secret_') === 0) return 'SECRET key (SALAH - kunci ini dilarang dipakai)';
+  if (k.indexOf('eyJ') === 0) return 'JWT lama (anon atau service_role)';
+  if (k.indexOf('http') === 0) return 'URL (SALAH - ini bukan kunci)';
+  return 'tidak dikenali Supabase';
+}
+
+function periksaBentuk(nilai) {
+  const s = String(nilai === undefined || nilai === null ? '' : nilai);
+  const catatan = [];
+  if (s !== s.trim()) catatan.push('ada spasi/baris kosong di ujung');
+  if (/^["']|["']$/.test(s)) catatan.push('ada tanda kutip ikut tersimpan');
+  return { panjang: s.length, catatan: catatan };
+}
+
+function diagnosa() {
+  const kred = bacaKredensial();
+  let host = '(url tidak valid)';
+  try { host = new URL(kred.url).host; } catch (e) { /* biarkan */ }
+  const kunci = periksaBentuk(kred.anon_key);
+  const sandi = periksaBentuk(kred.password);
+  const surel = String(kred.email);
+  const at = surel.indexOf('@');
+  const surelSamar = at > 0 ? surel.slice(0, 1) + '***' + surel.slice(at) : '(email tidak valid)';
+  console.log('Bentuk berkas kredensial (isi tidak ditampilkan):');
+  console.log('  url        : https://' + host);
+  console.log('  anon_key   : ' + kunci.panjang + ' karakter, ' + jenisKunci(String(kred.anon_key)) +
+    (kunci.catatan.length ? ' [' + kunci.catatan.join('; ') + ']' : ''));
+  console.log('  email      : ' + surelSamar + (surel !== surel.trim() ? ' [ada spasi di ujung]' : ''));
+  console.log('  password   : ' + sandi.panjang + ' karakter' +
+    (sandi.catatan.length ? ' [' + sandi.catatan.join('; ') + ']' : ''));
 }
 
 async function main() {
@@ -71,13 +114,18 @@ async function main() {
   const kueri = process.argv[3] || '';
 
   if (!aksi || aksi === '-h' || aksi === '--help') {
-    console.log('Pemakaian: node tools/analitik.cjs <nama-view|daftar> ["query-string PostgREST"]');
+    console.log('Pemakaian: node tools/analitik.cjs <nama-view|daftar|diagnosa> ["query-string PostgREST"]');
     console.log('Contoh  : node tools/analitik.cjs daftar');
+    console.log('          node tools/analitik.cjs diagnosa   (periksa bentuk berkas kredensial)');
     return;
   }
   if (aksi === 'daftar') {
     console.log('View yang tersedia untuk kanal analitik:');
     VIEW_DIIZINKAN.forEach(function (v) { console.log('  - ' + v); });
+    return;
+  }
+  if (aksi === 'diagnosa') {
+    diagnosa();
     return;
   }
   if (VIEW_DIIZINKAN.indexOf(aksi) < 0) {
