@@ -888,7 +888,9 @@ body{background:var(--shell)}
 .dk-gelap .dk-nilai{color:#fff}
 .db-omzet{cursor:pointer}
 .db-omzet:hover{transform:translateY(-2px)}
-.db-omzet:focus-visible,.db-stok:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+.db-nota[role="link"]{cursor:pointer}
+.db-nota[role="link"]:hover{transform:translateY(-2px)}
+.db-omzet:focus-visible,.db-stok:focus-visible,.db-nota[role="link"]:focus-visible{outline:2px solid var(--brand);outline-offset:3px}
 .dk-sub2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.1)}
 .dk-sub2 small{display:block;color:#8D9098;font-size:11.5px;font-weight:600}
 .dk-sub2 b{font-size:15px}.dk-sub2 b.minus{color:#FF8A80}

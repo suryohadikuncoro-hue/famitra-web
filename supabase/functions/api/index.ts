@@ -99,7 +99,7 @@ var RIWAYAT_NOTA_CFG = {
     listSelect: "no_nota,tanggal,jam,nama_pelanggan,petugas_transaksi,shift,harga_akhir",
     headerSelect: "no_nota,tanggal,jam,nama_pelanggan,petugas_transaksi,shift,subtotal,diskon,harga_akhir",
     detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_satuan,subtotal",
-    row: (x) => ({ No_Dokumen: x.no_nota, No_Asal: "", Tanggal: x.tanggal, Jam: x.jam, Pihak: x.nama_pelanggan || "Umum", Petugas: x.petugas_transaksi || "", Total: x.harga_akhir, Status: "" }),
+    row: (x) => ({ No_Dokumen: x.no_nota, No_Asal: "", Tanggal: x.tanggal, Jam: x.jam, Pihak: x.nama_pelanggan || "Umum", Petugas: x.petugas_transaksi || "", Shift: x.shift || "", Total: x.harga_akhir, Status: "" }),
     header: (x) => ({ No_Dokumen: x.no_nota, Tanggal: x.tanggal, Jam: x.jam, Pihak: x.nama_pelanggan || "Umum", Petugas: x.petugas_transaksi || "", Shift: x.shift, Subtotal: x.subtotal, Diskon: x.diskon, Total: x.harga_akhir }),
     item: (x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: x.nama_obat, Kode_Batch: x.kode_batch, Qty: x.qty, Harga_Satuan: x.harga_satuan, Subtotal: x.subtotal })
   },
@@ -118,10 +118,10 @@ var RIWAYAT_NOTA_CFG = {
     label: "Retur Penjualan", table: "trx_retur_jual", detailTable: "trx_retur_jual_detail", key: "no_retur", tanggal: "tanggal",
     order: "timestamp.desc,no_retur.desc",
     searchFields: ["no_retur", "no_nota_asal"],
-    listSelect: "no_retur,no_nota_asal,tanggal,jam,nama_pelanggan,petugas,total_refund,alasan",
+    listSelect: "no_retur,no_nota_asal,tanggal,jam,nama_pelanggan,petugas,shift,total_refund,alasan",
     headerSelect: "no_retur,no_nota_asal,tanggal,jam,nama_pelanggan,petugas,shift,total_refund,alasan",
     detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_satuan,subtotal,kondisi",
-    row: (x) => ({ No_Dokumen: x.no_retur, No_Asal: x.no_nota_asal || "", Tanggal: x.tanggal, Jam: x.jam, Pihak: x.nama_pelanggan || "Umum", Petugas: x.petugas || "", Total: x.total_refund, Status: "Retur", Keterangan: x.alasan || "" }),
+    row: (x) => ({ No_Dokumen: x.no_retur, No_Asal: x.no_nota_asal || "", Tanggal: x.tanggal, Jam: x.jam, Pihak: x.nama_pelanggan || "Umum", Petugas: x.petugas || "", Shift: x.shift || "", Total: x.total_refund, Status: "Retur", Keterangan: x.alasan || "" }),
     header: (x) => ({ No_Dokumen: x.no_retur, No_Asal: x.no_nota_asal || "", Tanggal: x.tanggal, Jam: x.jam, Pihak: x.nama_pelanggan || "Umum", Petugas: x.petugas || "", Shift: x.shift, Total: x.total_refund, Alasan: x.alasan || "" }),
     item: (x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: x.nama_obat, Kode_Batch: x.kode_batch, Qty: x.qty, Harga_Satuan: x.harga_satuan, Subtotal: x.subtotal, Kondisi: x.kondisi })
   },
@@ -535,6 +535,15 @@ async function action(name, data, s) {
     const jenis = String(data.jenis || "");
     const cfg = RIWAYAT_NOTA_CFG[jenis];
     if (!cfg || !(RIWAYAT_NOTA_ROLE[s.role] || []).includes(jenis)) throw new Error("Akses riwayat nota ini tidak diizinkan.");
+    const shiftSupported = jenis === "penjualan" || jenis === "retur_jual";
+    let shift = "";
+    if (Object.prototype.hasOwnProperty.call(data, "shift")) {
+      if (typeof data.shift !== "string") throw new Error("Filter shift tidak valid.");
+      shift = data.shift.trim();
+      if (data.shift !== "" && !shift) throw new Error("Filter shift tidak valid.");
+    }
+    if (shift && !shiftSupported) throw new Error("Filter shift hanya tersedia untuk penjualan dan retur penjualan.");
+    if (shift && shift !== "Semua" && !["Pagi", "Sore", "Luar Jam"].includes(shift)) throw new Error("Filter shift tidak valid.");
     const tanggal = (value, label) => {
       const d = String(value || "").trim();
       if (!d) return "";
@@ -550,6 +559,7 @@ async function action(name, data, s) {
     let query = `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=${cfg.listSelect}`;
     if (dari) query += `&${cfg.tanggal}=gte.${encodeURIComponent(dari)}`;
     if (sampai) query += `&${cfg.tanggal}=lte.${encodeURIComponent(sampai)}`;
+    if (shift && shift !== "Semua") query += `&shift=eq.${encodeURIComponent(shift)}`;
     if (q) {
       const filters = cfg.searchFields.map((field) => `${field}.ilike.*${encodeURIComponent(q)}*`);
       query += filters.length === 1 ? `&${filters[0]}` : `&or=(${filters.join(",")})`;
