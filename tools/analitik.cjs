@@ -12,6 +12,7 @@
  *   node tools/analitik.cjs v_analitik_penjualan_harian "select=cabang_id,tanggal,omzet&cabang_id=eq.KARLA&order=tanggal.desc&limit=5"
  *   node tools/analitik.cjs v_analitik_nota_minus "order=laba_kotor_bersih.asc&limit=20"
  *   node tools/analitik.cjs v_analitik_stok "sisa_hari_ed=lte.90&stok_real=gt.0&order=sisa_hari_ed.asc&limit=20"
+ *   node tools/analitik.cjs v_analitik_pembelian_detail "modal_di_atas_harga_umum=is.true&order=margin_umum_per_unit.asc&limit=20"
  *
  * Tanpa paket tambahan: hanya memakai fetch bawaan Node.
  */
@@ -31,6 +32,7 @@ const VIEW_DIIZINKAN = [
   'v_analitik_retur',
   'v_analitik_biaya',
   'v_analitik_hutang',
+  'v_analitik_pembelian_detail',
   'v_analitik_promo',
   'v_analitik_target',
   'v_analitik_cabang'
