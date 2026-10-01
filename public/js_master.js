@@ -105,8 +105,9 @@ function formStokBarang(info) {
   var kode = String(info.k || '');
   var nama = info.n || kode;
   modalBuka('Ubah stok ' + nama, '<p class="kpi-sub">Memuat…</p>', [{ label: 'Tutup', aksi: modalTutup }]);
-  api('stok.list', { q: kode, kritis: false }).then(function (rows) {
-    var batch = rows.filter(function (r) { return String(r.Kode_Obat || '') === kode; });
+  api('stok.list', { kode_obat: kode, semua: true, kritis: false }).then(function (res) {
+    var rows = res.rows || [];
+    var batch = rows.filter(function (r) { return !r.Belum_Ada_Batch && String(r.Kode_Obat || '') === kode; });
     if (!batch.length) {
       modalBuka('Ubah stok ' + nama,
         '<p class="kpi-sub">Barang ini belum punya batch, jadi stoknya 0. ' +
@@ -290,51 +291,75 @@ function konfirmasiNonaktif(kode) {
 
 /* ------------------------------------------------------- Stok & batch --- */
 
+var STOK_OFFSET = 0;
+var STOK_LIMIT = 50;
+
 VIEWS.stok = {
   title: 'Stok & Batch',
   render: function (el) {
     el.innerHTML =
       '<div class="card"><div class="card-head">' +
         '<h3>Stok per batch</h3>' +
-        '<input id="stCari" class="inp" style="max-width:220px" placeholder="Cari obat atau batch">' +
+        '<select id="stCariJenis" class="inp" aria-label="Jenis pencarian stok"><option value="barang">Nama/kode barang</option><option value="batch">Kode batch</option></select>' +
+        '<input id="stCari" class="inp" style="max-width:220px" placeholder="Cari nama atau kode barang">' +
         '<label class="chip" style="cursor:pointer"><input id="stKritis" type="checkbox" style="margin-right:5px">' +
           'Hanya yang mendesak</label>' +
         '<button id="stTambah" class="btn btn-primary">Tambah batch</button></div>' +
+      '<p class="kpi-sub" style="margin-top:0">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</p>' +
       '<div class="table-wrap"><table><thead><tr>' +
-        '<th>Obat</th><th>Kode batch</th><th>Kedaluwarsa</th><th>Sisa waktu</th>' +
+        '<th>Obat</th><th>Kode batch / status</th><th>Kedaluwarsa</th><th>Sisa waktu</th>' +
         '<th class="c">Stok</th><th class="r">Modal batch</th><th></th>' +
-      '</tr></thead><tbody id="stBody"></tbody></table></div></div>';
+      '</tr></thead><tbody id="stBody"></tbody></table></div><div id="stPager" class="pager"></div></div>';
 
     document.getElementById('stTambah').onclick = function () { formBatch(null); };
-    document.getElementById('stKritis').onchange = muatStok;
+    document.getElementById('stKritis').onchange = function () { muatStok(0); };
+    document.getElementById('stCariJenis').onchange = function () {
+      document.getElementById('stCari').placeholder = val('stCariJenis') === 'batch' ? 'Cari kode batch' : 'Cari nama atau kode barang';
+      muatStok(0);
+    };
     var t = null;
     document.getElementById('stCari').addEventListener('input', function () {
-      clearTimeout(t); t = setTimeout(muatStok, 250);
+      clearTimeout(t); t = setTimeout(function () { muatStok(0); }, 250);
     });
-    muatStok();
+    muatStok(0);
   }
 };
 
-function muatStok() {
+function muatStok(offset) {
+  if (typeof offset === 'number') STOK_OFFSET = Math.max(0, offset);
   var tb = document.getElementById('stBody');
   if (!tb) return;
   tb.innerHTML = '<tr><td colspan="7" class="empty">Memuat…</td></tr>';
-  api('stok.list', { q: val('stCari'), kritis: document.getElementById('stKritis').checked })
-    .then(function (rows) {
-      if (!rows.length) { tb.innerHTML = tabelKosong('Tidak ada batch yang cocok.', 7); return; }
-      tb.innerHTML = rows.map(function (s) {
+  api('stok.list', { q: val('stCari'), jenis: val('stCariJenis') || 'barang', kritis: document.getElementById('stKritis').checked, limit: STOK_LIMIT, offset: STOK_OFFSET })
+    .then(function (res) {
+      var rows = res.rows || [];
+      if (!rows.length && res.total > 0 && STOK_OFFSET >= res.total) {
+        muatStok(Math.floor((res.total - 1) / STOK_LIMIT) * STOK_LIMIT); return;
+      }
+      gambarPagerStok(res);
+      if (!rows.length) { tb.innerHTML = tabelKosong('Tidak ada barang atau batch yang cocok.', 7); return; }
+      tb.innerHTML = rows.map(function (s, i) {
+        var belumAdaBatch = s.Belum_Ada_Batch;
         return '<tr>' +
           '<td><strong>' + esc(s.Nama_Obat) + '</strong>' +
-            '<div class="cart-line-meta">' + esc(s.Kode_Obat) + '</div></td>' +
-          '<td>' + esc(s.Kode_Batch) + '</td>' +
-          '<td>' + tglIndo(s.Expired_Date) + '</td>' +
-          '<td>' + chipExpired(s.sisa_hari, s.Expired_Date) + '</td>' +
-          '<td class="c num">' + angka(s.Stok_Real) + '</td>' +
-          '<td class="r num">' + rupiah(s.Harga_Modal_Batch) + '</td>' +
-          '<td class="c"><button class="btn btn-sm" data-batch=\'' + esc(JSON.stringify(s)) + '\'>Ubah</button></td>' +
+            '<div class="cart-line-meta">' + esc(s.Kode_Obat) + (s.Aktif === 'TIDAK' ? ' · Nonaktif' : '') + '</div></td>' +
+          '<td>' + (belumAdaBatch ? '<span class="chip chip-warn">Belum ada batch</span>' : esc(s.Kode_Batch)) + '</td>' +
+          '<td>' + (belumAdaBatch ? '—' : tglIndo(s.Expired_Date)) + '</td>' +
+          '<td>' + (belumAdaBatch ? '—' : chipExpired(s.sisa_hari, s.Expired_Date)) + '</td>' +
+          '<td class="c num">' + angka(s.Stok_Real || 0) + '</td>' +
+          '<td class="r num">' + (belumAdaBatch ? '—' : rupiah(s.Harga_Modal_Batch)) + '</td>' +
+          '<td class="c">' + (belumAdaBatch
+            ? '<button class="btn btn-sm btn-primary" data-produk-index="' + i + '">Tambah batch</button>'
+            : '<button class="btn btn-sm" data-batch=\'' + esc(JSON.stringify(s)) + '\'>Ubah</button>') + '</td>' +
         '</tr>';
       }).join('');
       tb.onclick = function (e) {
+        var p = e.target.closest('[data-produk-index]');
+        if (p) {
+          var produk = rows[Number(p.dataset.produkIndex)];
+          if (produk) formBatch(null, { Kode_Obat: produk.Kode_Obat, Nama_Obat: produk.Nama_Obat });
+          return;
+        }
         var b = e.target.closest('[data-batch]');
         if (b) formBatch(JSON.parse(b.dataset.batch));
       };
@@ -343,13 +368,35 @@ function muatStok() {
     });
 }
 
-function formBatch(s) {
+function gambarPagerStok(res) {
+  var el = document.getElementById('stPager');
+  if (!el) return;
+  var total = Number(res.total) || 0, limit = Number(res.limit) || STOK_LIMIT, offset = Number(res.offset) || 0;
+  if (!total) { el.innerHTML = ''; return; }
+  var halaman = Math.floor(offset / limit) + 1, jumlahHalaman = Math.ceil(total / limit);
+  var jumlahDiHalaman = Number(res.page_count) || res.rows.length;
+  var awal = offset + 1, akhir = Math.min(offset + jumlahDiHalaman, total);
+  var label = res.pagination_unit === 'barang' ? 'barang' : 'hasil';
+  el.innerHTML = '<span class="sub">' + angka(awal) + '–' + angka(akhir) + ' dari ' + angka(total) + ' ' + label + '</span>' +
+    '<span class="pager-tombol"><button class="btn btn-sm" data-stoffset="' + Math.max(0, offset - limit) + '"' + (offset <= 0 ? ' disabled' : '') + '>‹ Sebelumnya</button>' +
+    '<span class="sub">Halaman ' + angka(halaman) + ' dari ' + angka(jumlahHalaman) + '</span>' +
+    '<button class="btn btn-sm" data-stoffset="' + Number(res.next_offset || offset + limit) + '"' + (!res.has_more ? ' disabled' : '') + '>Berikutnya ›</button></span>';
+  el.onclick = function (e) {
+    var b = e.target.closest('[data-stoffset]');
+    if (!b || b.disabled) return;
+    muatStok(Number(b.dataset.stoffset));
+  };
+}
+
+function formBatch(s, produk) {
   var edit = !!s;
   s = s || {};
-  modalBuka(edit ? 'Ubah batch ' + s.Kode_Batch : 'Tambah batch',
+  produk = produk || {};
+  var kodeAwal = edit ? (s.Kode_Obat || '') : (produk.Kode_Obat || '');
+  modalBuka(edit ? 'Ubah batch ' + s.Kode_Batch : (produk.Kode_Obat ? 'Tambah batch barang' : 'Tambah batch'),
     '<div class="grid g2">' +
       '<label class="field"><span>Kode obat</span><input id="fsKode" class="inp" value="' +
-        esc(s.Kode_Obat || '') + '"' + (edit ? ' readonly' : '') + '></label>' +
+        esc(kodeAwal) + '"' + (edit || produk.Kode_Obat ? ' readonly' : '') + '></label>' +
       '<label class="field"><span>Kode batch</span><input id="fsBatch" class="inp" value="' +
         esc(s.Kode_Batch || '') + '"' + (edit ? ' readonly' : '') + '></label>' +
       '<label class="field"><span>Tanggal kedaluwarsa</span><input id="fsExp" class="inp" type="date" value="' +

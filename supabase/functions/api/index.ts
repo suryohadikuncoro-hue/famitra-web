@@ -354,10 +354,84 @@ async function action(name, data, s) {
     return rows.map((b) => ({ ...b, Kode_Obat: b.kode_obat, Nama_Obat: b.nama_obat, Kategori: b.kategori, Satuan: b.satuan, Barcode: b.barcode, Harga_Modal: b.harga_modal, Harga_Jual_Umum: b.harga_jual_umum, Harga_Khusus: b.harga_khusus, Harga_Jual_Mutasi: b.harga_jual_mutasi, PPN: b.ppn, Stok_Min: b.stok_min, Aktif: b.aktif, stok: 0 }));
   }
   if (name === "stok.list") {
-    const q = String(data.q || "");
-    const r = await db("stok_batch", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=*,master_barang!inner(nama_obat)&or=(kode_obat.ilike.*${encodeURIComponent(q)}*,kode_batch.ilike.*${encodeURIComponent(q)}*)&order=expired_date&limit=200`);
-    const rows = await r.json();
-    return rows.filter((x) => !data.kritis || Number(x.stok_real) > 0 && daysUntil(x.expired_date) <= 90).map((x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: x.master_barang?.nama_obat, Kode_Batch: x.kode_batch, Expired_Date: x.expired_date, sisa_hari: daysUntil(x.expired_date), Stok_Real: x.stok_real, Harga_Modal_Batch: x.harga_modal_batch, ID_Batch: x.id_batch }));
+    const cabang = cabangSesi(s), cab = encodeURIComponent(cabang);
+    const q = String(data.q || "").trim().toLocaleLowerCase();
+    const exactKode = String(data.kode_obat || "").trim().toUpperCase();
+    const tampilkanSemuaBatch = data.semua === true;
+    if (tampilkanSemuaBatch && !exactKode) throw new Error("Permintaan semua batch harus menyertakan kode obat yang tepat.");
+    const nLimit = Math.floor(Number(data.limit)), limit = Number.isFinite(nLimit) ? Math.max(1, Math.min(200, nLimit)) : 50;
+    const nOffset = Math.floor(Number(data.offset)), offset = Number.isFinite(nOffset) ? Math.max(0, Math.min(1000000, nOffset)) : 0;
+    const kritis = !!data.kritis;
+    const cutoffDate = (() => {
+      const d = new Date(`${today()}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + 90);
+      return d.toISOString().slice(0, 10);
+    })();
+    const batchFields = "id_batch,kode_obat,kode_batch,expired_date,stok_real,harga_modal_batch";
+    const rowBatch = (m, b) => ({ Kode_Obat: m.kode_obat || b.kode_obat, Nama_Obat: m.nama_obat, Aktif: m.aktif, Kode_Batch: b.kode_batch, Expired_Date: b.expired_date, sisa_hari: daysUntil(b.expired_date), Stok_Real: b.stok_real, Harga_Modal_Batch: b.harga_modal_batch, ID_Batch: b.id_batch, Belum_Ada_Batch: false });
+    const rowTanpaBatch = (m) => ({ Kode_Obat: m.kode_obat, Nama_Obat: m.nama_obat, Aktif: m.aktif, Kode_Batch: "", Expired_Date: "", sisa_hari: null, Stok_Real: 0, Harga_Modal_Batch: null, ID_Batch: null, Belum_Ada_Batch: true });
+    const fromMaster = (m) => {
+      const batches = Array.isArray(m.stok_batch) ? m.stok_batch : [];
+      return batches.length ? batches.map((b) => rowBatch(m, b)) : kritis ? [] : [rowTanpaBatch(m)];
+    };
+    const totalFrom = (r) => Number(String(r.headers.get("content-range") || "").split("/")[1]) || 0;
+    const pageInfo = (rows, total, pageCount, unit) => ({ rows, total, limit, offset, page_count: pageCount, pagination_unit: unit, has_more: offset + pageCount < total, next_offset: offset + pageCount });
+    const criticalMasterFilter = kritis ? `&stok_batch.stok_real=gt.0&stok_batch.expired_date=lte.${cutoffDate}` : "";
+    const criticalBatchFilter = kritis ? `&stok_real=gt.0&expired_date=lte.${cutoffDate}` : "";
+
+    // Pemanggil Master Barang hanya perlu seluruh batch untuk satu SKU persis;
+    // jangan memindai inventaris seluruh cabang untuk membuka koreksi stok.
+    if (tampilkanSemuaBatch) {
+      const mr = await db("master_barang", `?cabang_id=eq.${cab}&kode_obat=eq.${encodeURIComponent(exactKode)}&select=kode_obat,nama_obat,aktif&limit=1`);
+      if (!mr.ok) throw new Error(await mr.text());
+      const master = (await mr.json())[0];
+      if (!master) return pageInfo([], 0, 0, "hasil");
+      const batches = await semua("stok_batch", `?cabang_id=eq.${cab}&kode_obat=eq.${encodeURIComponent(exactKode)}&select=${batchFields}&order=expired_date.asc,id_batch.asc`);
+      let rows = batches.length ? batches.map((b) => rowBatch(master, b)) : [rowTanpaBatch(master)];
+      if (q) rows = rows.filter((x) => String(x.Kode_Batch || "").toLocaleLowerCase().includes(q));
+      if (kritis) rows = rows.filter((x) => !x.Belum_Ada_Batch && Number(x.Stok_Real) > 0 && x.sisa_hari <= 90);
+      return pageInfo(rows, rows.length, rows.length, "hasil");
+    }
+
+    // Tampilan normal: database hanya mengirim halaman barang yang diminta;
+    // LEFT embed mempertahankan barang tanpa batch sebagai stok 0.
+    if (!q && !kritis) {
+      const r = await db("master_barang", `?cabang_id=eq.${cab}&select=kode_obat,nama_obat,aktif,stok_batch(${batchFields})&stok_batch.cabang_id=eq.${cab}&order=nama_obat.asc,kode_obat.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+      if (!r.ok) throw new Error(await r.text());
+      const masters = await r.json();
+      const rows = masters.flatMap(fromMaster);
+      return pageInfo(rows, totalFrom(r), masters.length, "barang");
+    }
+
+    // Mode mendesak dipaginasi langsung pada batch yang benar-benar mendesak.
+    if (!q && kritis) {
+      const r = await db("stok_batch", `?cabang_id=eq.${cab}&stok_real=gt.0&expired_date=lte.${cutoffDate}&select=${batchFields},master_barang!inner(nama_obat,aktif)&master_barang.cabang_id=eq.${cab}&order=expired_date.asc,id_batch.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+      if (!r.ok) throw new Error(await r.text());
+      const batches = await r.json();
+      const rows = batches.map((b) => rowBatch(b.master_barang || {}, b));
+      return pageInfo(rows, totalFrom(r), rows.length, "hasil");
+    }
+
+    // Escape ILIKE metacharacters in user text, then quote the whole PostgREST
+    // operand so reserved filter characters remain literal. Encoded % values
+    // around the term are the only intentional substring wildcards.
+    const qLike = q.replace(/[\\%_*]/g, "\\$&");
+    const quotedQ = qLike.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const encQ = encodeURIComponent(quotedQ).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    const pattern = `%22%25${encQ}%25%22`;
+    if (data.jenis !== "batch") {
+      const masterRelation = `stok_batch${kritis ? "!inner" : ""}(${batchFields})`;
+      const r = await db("master_barang", `?cabang_id=eq.${cab}&or=(kode_obat.ilike.${pattern},nama_obat.ilike.${pattern})&select=kode_obat,nama_obat,aktif,${masterRelation}&stok_batch.cabang_id=eq.${cab}${criticalMasterFilter}&order=nama_obat.asc,kode_obat.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+      if (!r.ok) throw new Error(await r.text());
+      const masters = await r.json();
+      const rows = masters.flatMap(fromMaster);
+      return pageInfo(rows, totalFrom(r), masters.length, "barang");
+    }
+    const r = await db("stok_batch", `?cabang_id=eq.${cab}&kode_batch=ilike.${pattern}${criticalBatchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif)&master_barang.cabang_id=eq.${cab}&order=kode_obat.asc,expired_date.asc,id_batch.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+    if (!r.ok) throw new Error(await r.text());
+    const batches = await r.json();
+    const rows = batches.map((b) => rowBatch(b.master_barang || {}, b));
+    return pageInfo(rows, totalFrom(r), rows.length, "hasil");
   }
   if (name === "stok.simpanBatch") {
     const cabang = String(cabangSesi(s)).trim().toUpperCase(), kodeObat = String(data.Kode_Obat || "").trim().toUpperCase(), kodeBatch = String(data.Kode_Batch || "").trim();
