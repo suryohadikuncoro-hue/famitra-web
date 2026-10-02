@@ -842,8 +842,11 @@ function cekHargaOtoritatif_() {
     items: POS.items.map(function (it) { return { kode: it.kode, qty: it.qty }; })
   }).then(function (r) {
     if (r.tidak_ada && r.tidak_ada.length) {
-      throw new Error('Barang ini tidak ditemukan atau nonaktif: ' + r.tidak_ada.join(', ') +
+      var err = new Error('Barang ini tidak ditemukan atau nonaktif: ' + r.tidak_ada.join(', ') +
         '. Hapus dari keranjang sebelum menyimpan.');
+      // Penanda: masalah datanya pasti, jadi penyimpanan harus dihentikan.
+      err.blokir = true;
+      throw err;
     }
     var beda = [];
     (r.items || []).forEach(function (x) {
@@ -912,6 +915,20 @@ function konfirmasiHargaBerubah_(beda, totalLama, totalBaru, btn) {
   ]);
 }
 
+/** Pemeriksaan harga gagal (jaringan / action belum tersedia) — kasir yang
+    memutuskan, bukan terkunci, supaya POS tetap bisa melayani pembeli. */
+function konfirmasiCekGagal_(e, total, btn) {
+  var pesan = (e && e.message) || 'Tidak bisa menghubungi server.';
+  modalBuka('Pemeriksaan harga gagal',
+    '<p class="pos-diff-lead">Harga tidak bisa diperiksa ke server: ' + esc(pesan) + '</p>' +
+    '<p class="sub">Total di layar <strong>' + rupiah(total) + '</strong>. Harga pada nota tetap dihitung ' +
+    'ulang oleh server, dan kalau berbeda kasir akan diberi peringatan setelah nota tersimpan.</p>',
+    [
+      { label: 'Batal', aksi: modalTutup },
+      { label: 'Tetap simpan', kelas: 'btn-primary', aksi: function () { modalTutup(); kirimTransaksi_(total, btn); } }
+    ]);
+}
+
 function kirimTransaksi_(totalLayar, btn) {
   btn.disabled = true; btn.textContent = 'Menyimpan…';
   var payload = {
@@ -971,10 +988,14 @@ function simpanTransaksi() {
       return konfirmasiHargaBerubah_(hasil.beda, total, totalBaru, btn);
     });
   }).catch(function (e) {
-    btn.disabled = false;
     btn.textContent = 'Simpan & cetak struk';
+    btn.disabled = false;
     gambarRingkasan();
-    toast(e.message, true);
+    if (e && e.blokir) { toast(e.message, true); return; }
+    // Pemeriksaan harga gagal (jaringan / action belum ter-deploy). Jangan sampai
+    // POS tidak bisa menyimpan sama sekali: pos_checkout tetap otoritatif dan
+    // total nota masih dibandingkan setelah tersimpan.
+    konfirmasiCekGagal_(e, total, btn);
   });
 }
 
