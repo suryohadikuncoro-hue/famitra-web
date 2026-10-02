@@ -301,11 +301,19 @@ VIEWS.stok = {
       '<div class="card"><div class="card-head">' +
         '<h3>Stok per batch</h3>' +
         '<select id="stCariJenis" class="inp" aria-label="Jenis pencarian stok"><option value="barang">Nama/kode barang</option><option value="batch">Kode batch</option></select>' +
-        '<input id="stCari" class="inp" style="max-width:220px" placeholder="Cari nama atau kode barang">' +
-        '<label class="chip" style="cursor:pointer"><input id="stKritis" type="checkbox" style="margin-right:5px">' +
-          'Hanya yang mendesak</label>' +
+        '<input id="stCari" class="inp st-filter-search" placeholder="Cari nama atau kode barang">' +
+        '<select id="stStatus" class="inp st-filter-select" aria-label="Filter status stok">' +
+          '<option value="semua">Semua status</option><option value="tersedia">Ada stok</option><option value="habis">Stok habis</option>' +
+        '</select>' +
+        '<select id="stUrut" class="inp st-filter-select" aria-label="Urutkan stok">' +
+          '<option value="nama">Nama A–Z</option><option value="stok_asc">Stok paling sedikit</option>' +
+          '<option value="stok_desc">Stok paling banyak</option><option value="expired_asc">Kedaluwarsa terdekat</option>' +
+          '<option value="terbaru">Batch terbaru</option>' +
+        '</select>' +
+        '<label class="chip st-filter-check" style="cursor:pointer"><input id="stKritis" type="checkbox" style="margin-right:5px">' +
+          'Segera kedaluwarsa</label>' +
         '<button id="stTambah" class="btn btn-primary">Tambah batch</button></div>' +
-      '<p class="kpi-sub" style="margin-top:0">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</p>' +
+      '<p id="stHint" class="kpi-sub st-filter-hint" style="margin-top:0">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</p>' +
       '<div class="table-wrap"><table><thead><tr>' +
         '<th>Obat</th><th>Kode batch / status</th><th>Kedaluwarsa</th><th>Sisa waktu</th>' +
         '<th class="c">Stok</th><th class="r">Modal batch</th><th></th>' +
@@ -313,6 +321,8 @@ VIEWS.stok = {
 
     document.getElementById('stTambah').onclick = function () { formBatch(null); };
     document.getElementById('stKritis').onchange = function () { muatStok(0); };
+    document.getElementById('stStatus').onchange = function () { muatStok(0); };
+    document.getElementById('stUrut').onchange = function () { muatStok(0); };
     document.getElementById('stCariJenis').onchange = function () {
       document.getElementById('stCari').placeholder = val('stCariJenis') === 'batch' ? 'Cari kode batch' : 'Cari nama atau kode barang';
       muatStok(0);
@@ -329,8 +339,13 @@ function muatStok(offset) {
   if (typeof offset === 'number') STOK_OFFSET = Math.max(0, offset);
   var tb = document.getElementById('stBody');
   if (!tb) return;
+  var status = val('stStatus') || 'semua', sort = val('stUrut') || 'nama';
+  var hint = document.getElementById('stHint');
+  if (hint) hint.textContent = sort === 'nama' && status === 'semua' && !document.getElementById('stKritis').checked
+    ? 'Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.'
+    : 'Filter dan urutan diterapkan pada seluruh hasil batch, bukan hanya halaman yang terlihat.';
   tb.innerHTML = '<tr><td colspan="7" class="empty">Memuat…</td></tr>';
-  api('stok.list', { q: val('stCari'), jenis: val('stCariJenis') || 'barang', kritis: document.getElementById('stKritis').checked, limit: STOK_LIMIT, offset: STOK_OFFSET })
+  api('stok.list', { q: val('stCari'), jenis: val('stCariJenis') || 'barang', kritis: document.getElementById('stKritis').checked, status: status, sort: sort, limit: STOK_LIMIT, offset: STOK_OFFSET })
     .then(function (res) {
       var rows = res.rows || [];
       if (!rows.length && res.total > 0 && STOK_OFFSET >= res.total) {
