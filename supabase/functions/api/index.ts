@@ -522,7 +522,12 @@ async function action(name, data, s) {
     const r = await db("rpc/purchase_save", "", { method: "POST", headers: { ...headers }, body: JSON.stringify({ p_username: s.username, p_no_faktur_supplier: data.No_Faktur, p_supplier: data.Supplier, p_kategori: data.Kategori, p_tanggal: data.Tanggal_Faktur, p_jatuh_tempo: data.Jatuh_Tempo || null, p_items: data.items || [], p_cabang_id: cabangSesi(s) }) });
     if (!r.ok) {
       const text = await r.text();
-      throw new Error(text || "Pembelian gagal.");
+      let detail = null;
+      try { detail = JSON.parse(text); } catch (_) { /* Keep non-JSON server response below. */ }
+      if (detail && detail.code === "23505" && /stok_batch_pkey/.test([detail.message, detail.details, detail.hint].filter(Boolean).join(" "))) {
+        throw new Error("ID batch bentrok saat menyimpan pembelian. Tidak ada perubahan yang tersimpan. Silakan coba sekali lagi; jika masih terjadi, hubungi admin.");
+      }
+      throw new Error(detail && (detail.message || detail.details) || text || "Pembelian gagal.");
     }
     return await r.json();
   }
