@@ -679,8 +679,6 @@ function muatItemFakturRetur() {
     return;
   }
   var sudah = f.sudah_retur || 0;
-  var totalNetto = f.items.reduce(function (a, it) { return a + it.Harga_Netto * it.Qty; }, 0);
-  var proporsi = totalNetto > 0 ? Math.min(1, sudah / totalNetto) : 0;
   area.innerHTML =
     '<div class="kpi-sub">Faktur <strong>' + esc(f.No_Faktur) + '</strong>' +
       (f.No_Faktur_Supplier ? ' · PBF: ' + esc(f.No_Faktur_Supplier) : '') + ' · ' +
@@ -699,7 +697,7 @@ function muatItemFakturRetur() {
     '<button id="rbSimpan" class="btn btn-primary btn-block">Simpan pengajuan retur</button>';
 
   document.getElementById('rbBody').innerHTML = f.items.map(function (it, i) {
-    var sisa = Math.round(it.Qty * (1 - proporsi));
+    var sisa = Math.max(0, Number(it.Qty || 0) - Number(it.Sudah_Retur_Qty || 0));
     return '<tr>' +
       '<td>' + esc(it.Kode_Obat) + '</td>' +
       '<td>' + esc(it.Nama_Obat) + '</td>' +
@@ -784,7 +782,7 @@ function muatRiwayatReturBeli() {
          r.Status === 'REJECTED' ? 'chip-bad' : 'chip-warn') +
         '">' + esc(r.Status.replace('_', ' ')) + '</span>';
       var aksi = '';
-      if (r.Status === 'PENDING_APPROVAL' && r.Created_By !== SESSION.user.nama) {
+      if (r.Status === 'PENDING_APPROVAL' && r.Created_By !== SESSION.user.username) {
         aksi = '<button class="btn btn-sm" data-acc="' + esc(r.No_Retur) + '">Setujui</button> ' +
                '<button class="btn btn-sm" data-rej="' + esc(r.No_Retur) + '">Tolak</button>';
       } else if (r.Status === 'PENDING_APPROVAL') {

@@ -758,7 +758,7 @@ async function action(name, data, s) {
     const out = [];
     for (const x of rows) {
       if (data.q && !(String(x.no_nota).toLowerCase().includes(String(data.q).toLowerCase()) || String(x.nama_pelanggan || "").toLowerCase().includes(String(data.q).toLowerCase()))) continue;
-      const d = await db("trx_penjualan_detail", `?no_nota=eq.${encodeURIComponent(x.no_nota)}&select=*`);
+      const d = await db("trx_penjualan_detail", `?no_nota=eq.${encodeURIComponent(x.no_nota)}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=*`);
       const sudah = await sudahDiretur(cabangSesi(s), x.no_nota);
       const items = (await d.json()).map((i) => ({ Kode_Obat: i.kode_obat, Nama_Obat: i.nama_obat, Kode_Batch: i.kode_batch, Qty: i.qty, Harga_Satuan: i.harga_satuan, Sudah_Retur_Qty: sudah.qty[`${i.kode_obat}|${i.kode_batch}`] || 0 }));
       out.push({ ...x, No_Nota: x.no_nota, Tanggal: x.tanggal, Jam: x.jam, Nama_Pelanggan: x.nama_pelanggan, sudah_retur: sudah.refund, items });
@@ -766,65 +766,50 @@ async function action(name, data, s) {
     return out;
   }
   if (name === "retur.jualSimpan") {
-    const orig = await one("trx_penjualan", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&no_nota=eq.${encodeURIComponent(data.No_Nota_Asal)}&select=*`);
-    if (!orig) throw new Error("Nota asal tidak ditemukan.");
-    const ds = await db("trx_penjualan_detail", `?no_nota=eq.${encodeURIComponent(data.No_Nota_Asal)}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=*`);
-    const refs = await ds.json();
-    // Refund mengikuti harga yang benar-benar dibayar: diskon nota dibagi
-    // proporsional ke setiap item (harga_akhir / subtotal).
-    const faktor = Number(orig.subtotal || 0) > 0 ? Number(orig.harga_akhir || 0) / Number(orig.subtotal) : 1;
-    const sudah = await sudahDiretur(cabangSesi(s), data.No_Nota_Asal);
-    const items = (data.items || []).map((i) => {
-      const ref = refs.find((x) => x.kode_obat === i.Kode_Obat && x.kode_batch === i.Kode_Batch);
-      if (!ref) throw new Error("Item retur tidak ada pada nota asal.");
-      const qty = Number(i.Qty || 0);
-      const kunci = `${ref.kode_obat}|${ref.kode_batch}`;
-      const terjual = refs.filter((x) => x.kode_obat === ref.kode_obat && x.kode_batch === ref.kode_batch).reduce((n, x) => n + Number(x.qty || 0), 0);
-      if (!(qty > 0)) throw new Error("Qty retur harus lebih dari 0.");
-      if (qty > terjual - (sudah.qty[kunci] || 0)) throw new Error(`Qty retur ${ref.nama_obat} melebihi sisa yang bisa diretur (${terjual - (sudah.qty[kunci] || 0)}).`);
-      sudah.qty[kunci] = (sudah.qty[kunci] || 0) + qty;
-      return { ...i, Qty: qty, ref, subtotal: Math.round(qty * Number(ref.harga_satuan || 0) * faktor) };
-    });
-    const no = `RJ${today().replaceAll("-", "")}-${Date.now().toString().slice(-4)}`, total = items.reduce((n, i) => n + i.subtotal, 0);
-    let r = await db("trx_retur_jual", "", { method: "POST", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ cabang_id: cabangSesi(s), no_retur: no, no_nota_asal: data.No_Nota_Asal, tanggal: today(), jam: clock(), nomor_wa: orig.nomor_wa, nama_pelanggan: orig.nama_pelanggan, petugas: s.username, shift: shift(), alasan: data.Alasan, total_refund: total }) });
+    const r = await db("rpc/retur_jual_simpan", "", { method: "POST", headers: { ...headers, Prefer: "return=representation" }, body: JSON.stringify({ p_username: s.username, p_cabang_id: cabangSesi(s), p_no_nota: data.No_Nota_Asal, p_alasan: data.Alasan, p_items: (data.items || []).map((i) => ({ kode_obat: i.Kode_Obat, kode_batch: i.Kode_Batch, qty: i.Qty, kondisi: i.Kondisi || "Baik" })) }) });
     if (!r.ok) throw new Error(await r.text());
-    for (const i of items) {
-      r = await db("trx_retur_jual_detail", "", { method: "POST", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ cabang_id: cabangSesi(s), no_retur: no, kode_obat: i.ref.kode_obat, nama_obat: i.ref.nama_obat, kode_batch: i.ref.kode_batch, qty: i.Qty, harga_satuan: i.ref.harga_satuan, subtotal: i.subtotal, kondisi: i.Kondisi || "Baik" }) });
-      if (!r.ok) throw new Error(await r.text());
-      const b = await one("stok_batch", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&kode_obat=eq.${encodeURIComponent(i.ref.kode_obat)}&kode_batch=eq.${encodeURIComponent(i.ref.kode_batch)}&select=stok_real`);
-      if (b) await db("stok_batch", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&kode_obat=eq.${encodeURIComponent(i.ref.kode_obat)}&kode_batch=eq.${encodeURIComponent(i.ref.kode_batch)}`, { method: "PATCH", body: JSON.stringify({ stok_real: Number(b.stok_real) + Number(i.Qty) }) });
-    }
-    return { No_Retur: no, Total_Refund: total };
+    const x = await r.json();
+    return Array.isArray(x) ? x[0] : x;
   }
   if (name === "retur.beliList") {
     const r = await db("trx_pembelian", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_faktur,no_faktur_supplier,supplier,tanggal_faktur,total_tagihan&order=timestamp.desc&limit=200`);
     if (!r.ok) throw new Error(await r.text());
+    const rh = await db("trx_retur_beli", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&status=in.(PENDING_APPROVAL,APPROVED)&select=no_retur,no_faktur_asal&limit=1000`);
+    if (!rh.ok) throw new Error(await rh.text());
+    const headersRetur = await rh.json();
+    const noRetur = headersRetur.map((x) => encodeURIComponent(x.no_retur));
+    const rd = noRetur.length ? await db("trx_retur_beli_detail", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&no_retur=in.(${noRetur.join(",")})&select=no_retur,kode_obat,kode_batch,qty&limit=5000`) : null;
+    if (rd && !rd.ok) throw new Error(await rd.text());
+    const sudahRetur = {};
+    for (const x of rd ? await rd.json() : []) {
+      const h = headersRetur.find((y) => y.no_retur === x.no_retur);
+      if (!h) continue;
+      const k = `${h.no_faktur_asal}|${x.kode_obat}|${x.kode_batch}`;
+      sudahRetur[k] = (sudahRetur[k] || 0) + Number(x.qty || 0);
+    }
     const faktur = [];
     for (const x of await r.json()) {
-      const d = await db("trx_pembelian_detail", `?no_faktur=eq.${encodeURIComponent(x.no_faktur)}&select=*`);
-      faktur.push({ No_Faktur: x.no_faktur, No_Faktur_Supplier: x.no_faktur_supplier, Supplier: x.supplier, Tanggal_Faktur: x.tanggal_faktur, Total_Tagihan: x.total_tagihan, sudah_retur: 0, items: (await d.json()).map((i) => ({ Kode_Obat: i.kode_obat, Nama_Obat: i.nama_obat, Kode_Batch: i.kode_batch, Qty: i.qty, Harga_Netto: i.harga_netto })) });
+      const d = await db("trx_pembelian_detail", `?no_faktur=eq.${encodeURIComponent(x.no_faktur)}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=*`);
+      const details = await d.json();
+      faktur.push({ No_Faktur: x.no_faktur, No_Faktur_Supplier: x.no_faktur_supplier, Supplier: x.supplier, Tanggal_Faktur: x.tanggal_faktur, Total_Tagihan: x.total_tagihan, sudah_retur: details.reduce((n, i) => n + Number(sudahRetur[`${x.no_faktur}|${i.kode_obat}|${i.kode_batch}`] || 0) * Number(i.harga_netto || 0), 0), items: details.map((i) => ({ Kode_Obat: i.kode_obat, Nama_Obat: i.nama_obat, Kode_Batch: i.kode_batch, Qty: i.qty, Sudah_Retur_Qty: Number(sudahRetur[`${x.no_faktur}|${i.kode_obat}|${i.kode_batch}`] || 0), Harga_Netto: i.harga_netto })) });
     }
     const q = `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}` + (data.status ? `&status=eq.${encodeURIComponent(data.status)}` : "") + "&order=timestamp.desc&limit=200";
     const rr = await db("trx_retur_beli", q);
-    return { faktur, retur: rr.ok ? (await rr.json()).map((x) => ({ No_Retur: x.no_retur, No_Faktur: x.no_faktur_asal, Supplier: x.supplier, Tanggal: x.tanggal, Status: x.status, Created_By: x.created_by, Approved_By: x.approved_by, Total_Refund: x.total_refund, Alasan: x.alasan })) : [] };
+    return { faktur, retur: rr.ok ? (await rr.json()).map((x) => ({ No_Retur: x.no_retur, No_Faktur: x.no_faktur_asal, Supplier: x.supplier, Tanggal: x.tanggal, Status: x.status, Created_By: x.created_by, Approved_By: x.approved_by, Tanggal_Approval: x.tanggal_approval, Total_Refund: x.total_refund, Alasan: x.alasan })) : [] };
   }
   if (name === "retur.beliSimpan") {
-    const f = await one("trx_pembelian", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&no_faktur=eq.${encodeURIComponent(data.No_Faktur_Asal)}&select=*`);
-    if (!f) throw new Error("Faktur asal tidak ditemukan.");
-    const items = (data.items || []).map((i) => ({ ...i, subtotal: Number(i.Qty || 0) * Number(i.Harga_Netto || 0) })), no = `RB${today().replaceAll("-", "")}-${Date.now().toString().slice(-4)}`, total = items.reduce((n, i) => n + i.subtotal, 0);
-    let r = await db("trx_retur_beli", "", { method: "POST", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ cabang_id: cabangSesi(s), no_retur: no, no_faktur_asal: f.no_faktur, supplier: f.supplier, tanggal: today(), created_by: s.username, status: "PENDING_APPROVAL", alasan: data.Alasan, total_refund: total }) });
+    const r = await db("rpc/retur_beli_simpan", "", { method: "POST", headers: { ...headers, Prefer: "return=representation" }, body: JSON.stringify({ p_username: s.username, p_cabang_id: cabangSesi(s), p_no_faktur: data.No_Faktur_Asal, p_alasan: data.Alasan, p_items: (data.items || []).map((i) => ({ kode_obat: i.Kode_Obat, kode_batch: i.Kode_Batch, qty: i.Qty, kondisi: i.Kondisi || "Baik" })) }) });
     if (!r.ok) throw new Error(await r.text());
-    for (const i of items) {
-      r = await db("trx_retur_beli_detail", "", { method: "POST", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ cabang_id: cabangSesi(s), no_retur: no, kode_obat: i.Kode_Obat, nama_obat: i.Nama_Obat || "", kode_batch: i.Kode_Batch, qty: i.Qty, harga_netto: i.Harga_Netto, subtotal: i.subtotal, kondisi: i.Kondisi || "Baik" }) });
-      if (!r.ok) throw new Error(await r.text());
-    }
-    return { No_Retur: no, Total_Refund: total, Status: "PENDING_APPROVAL" };
+    const x = await r.json();
+    return Array.isArray(x) ? x[0] : x;
   }
   if (name === "retur.beliApprove") {
     if (s.role !== "Owner") throw new Error("Hanya Owner yang dapat menyetujui retur beli.");
-    const r = await db("trx_retur_beli", `?no_retur=eq.${encodeURIComponent(data.No_Retur)}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&status=eq.PENDING_APPROVAL`, { method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ status: data.keputusan === "APPROVE" ? "APPROVED" : "REJECTED", approved_by: s.username, tanggal_approval: today() }) });
+    if (data.keputusan !== "APPROVE" && data.keputusan !== "SETUJU" && data.keputusan !== "REJECT" && data.keputusan !== "TOLAK") throw new Error("Keputusan approval tidak valid.");
+    const r = await db("rpc/retur_beli_approve", "", { method: "POST", headers: { ...headers, Prefer: "return=representation" }, body: JSON.stringify({ p_username: s.username, p_cabang_id: cabangSesi(s), p_no_retur: data.No_Retur, p_keputusan: data.keputusan === "APPROVE" || data.keputusan === "SETUJU" ? "APPROVE" : "REJECT" }) });
     if (!r.ok) throw new Error(await r.text());
-    return true;
+    const x = await r.json();
+    return Array.isArray(x) ? x[0] : x;
   }
   if (name === "opname.list") {
     const r = await db("stok_opname", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=*&order=tanggal.desc&limit=200`);
