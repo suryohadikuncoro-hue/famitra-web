@@ -50,9 +50,10 @@ function tataLetakPOS() {
       /* Pelanggan — satu baris ringkas, mengembang saat nomor WA diisi. */
       '<div class="card">' +
         '<div class="pos-cust">' +
-          '<input id="posWA" class="inp" type="tel" inputmode="numeric" ' +
-            'placeholder="Nomor WhatsApp, lalu Enter">' +
-          '<input id="posNama" class="inp" type="text" placeholder="Nama pembeli (Umum)">' +
+          '<div class="pos-cust-field"><input id="posWA" class="inp" type="tel" inputmode="numeric" autocomplete="off" ' +
+            'placeholder="Nomor WhatsApp"><div id="posWASuggest" class="suggest pos-cust-suggest" hidden></div></div>' +
+          '<div class="pos-cust-field"><input id="posNama" class="inp" type="text" autocomplete="off" placeholder="Nama pembeli (Umum)">' +
+            '<div id="posNamaSuggest" class="suggest pos-cust-suggest" hidden></div></div>' +
           '<select id="posTipe" class="inp" style="max-width:190px">' +
             '<option>Umum</option><option>Tenaga Kesehatan</option><option>Apotek Lain</option>' +
           '</select>' +
@@ -262,11 +263,78 @@ function pasangEventPOS() {
       var s = document.getElementById('posSuggest');
       if (s) s.hidden = true;
     }
+    if (!e.target.closest('.pos-cust-field')) {
+      ['posWASuggest', 'posNamaSuggest'].forEach(function (id) {
+        var box = document.getElementById(id);
+        if (box) box.hidden = true;
+      });
+    }
   });
 
   var wa = document.getElementById('posWA');
   wa.addEventListener('keydown', function (e) { if (e.key === 'Enter') cariPelanggan(); });
   wa.addEventListener('blur', function () { if (wa.value.trim()) cariPelanggan(); });
+  wa.addEventListener('input', function () { POS.customer.terdaftar = false; });
+
+  function pasangSuggestCustomer(inputId, boxId, mode) {
+    var input = document.getElementById(inputId), box = document.getElementById(boxId);
+    var customerTimer = null, customerCursor = -1, customerRows = [], requestNo = 0;
+    function tutup() { box.hidden = true; customerCursor = -1; customerRows = []; }
+    function pilih(row) {
+      if (!row) return;
+      wa.value = row.Nomor_WA || '';
+      document.getElementById('posNama').value = row.Nama || '';
+      document.getElementById('posTipe').value = row.Tipe_Customer || 'Umum';
+      tutup();
+      if (row.Nomor_WA) {
+        cariPelanggan();
+      } else {
+        POS.customer = { wa: '', nama: row.Nama || '', tipe: row.Tipe_Customer || 'Umum', terdaftar: true };
+        document.getElementById('posSegmen').innerHTML = '';
+        document.getElementById('posInfoCust').innerHTML = '<span>Pelanggan terdaftar, tetapi belum memiliki nomor WA.</span>';
+        muatPromoPOS();
+      }
+    }
+    function tampil(rows) {
+      customerRows = rows;
+      if (!rows.length) { tutup(); return; }
+      box.innerHTML = rows.map(function (row, i) {
+        return '<button type="button" data-customer-i="' + i + '">' +
+          '<div class="s-name">' + esc(row.Nama || 'Tanpa nama') + '</div>' +
+          '<div class="s-meta">' + esc(row.Nomor_WA || 'Nomor WA belum diisi') + ' · ' + esc(row.Tipe_Customer || 'Umum') + '</div></button>';
+      }).join('');
+      box.hidden = false;
+    }
+    input.addEventListener('input', function () {
+      clearTimeout(customerTimer);
+      var q = input.value.trim(), current = ++requestNo;
+      if (q.length < 1) { tutup(); return; }
+      customerTimer = setTimeout(function () {
+        api('pos.suggestCustomer', { q: q, mode: mode }).then(function (rows) {
+          if (current === requestNo && input.value.trim() === q) tampil(rows || []);
+        }).catch(function (e) { if (current === requestNo) toast(e.message, true); });
+      }, 160);
+    });
+    input.addEventListener('keydown', function (e) {
+      var buttons = box.querySelectorAll('button[data-customer-i]');
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        if (box.hidden || !buttons.length) return;
+        e.preventDefault();
+        customerCursor += e.key === 'ArrowDown' ? 1 : -1;
+        if (customerCursor < 0) customerCursor = buttons.length - 1;
+        if (customerCursor >= buttons.length) customerCursor = 0;
+        buttons.forEach(function (b, i) { b.classList.toggle('is-cursor', i === customerCursor); });
+      } else if (e.key === 'Enter' && !box.hidden && buttons.length) {
+        e.preventDefault(); pilih(customerRows[customerCursor >= 0 ? customerCursor : 0]);
+      } else if (e.key === 'Escape') { tutup(); }
+    });
+    box.addEventListener('mousedown', function (e) {
+      var button = e.target.closest('button[data-customer-i]');
+      if (button) { e.preventDefault(); pilih(customerRows[Number(button.dataset.customerI)]); }
+    });
+  }
+  pasangSuggestCustomer('posWA', 'posWASuggest', 'wa');
+  pasangSuggestCustomer('posNama', 'posNamaSuggest', 'nama');
 
   document.getElementById('posTipe').addEventListener('change', function () {
     POS.customer.tipe = this.value;
@@ -275,6 +343,7 @@ function pasangEventPOS() {
   });
   document.getElementById('posNama').addEventListener('input', function () {
     POS.customer.nama = this.value.trim();
+    POS.customer.terdaftar = false;
   });
   document.getElementById('posRewardClear').onclick = function () { POS.reward = null; POS.rewardDiscount = 0; gambarRingkasan(); };
   document.getElementById('posDiskonOpen').onclick = bukaDiskonPOS;
