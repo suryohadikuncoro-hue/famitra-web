@@ -372,6 +372,8 @@ async function action(name, data, s) {
     const nLimit = Math.floor(Number(data.limit)), limit = Number.isFinite(nLimit) ? Math.max(1, Math.min(200, nLimit)) : 50;
     const nOffset = Math.floor(Number(data.offset)), offset = Number.isFinite(nOffset) ? Math.max(0, Math.min(1000000, nOffset)) : 0;
     const kritis = !!data.kritis;
+    const sort = ["nama", "stok_asc", "stok_desc", "expired_asc", "terbaru"].includes(data.sort) ? data.sort : "nama";
+    const status = ["semua", "tersedia", "habis"].includes(data.status) ? data.status : "semua";
     const cutoffDate = (() => {
       const d = new Date(`${today()}T00:00:00Z`);
       d.setUTCDate(d.getUTCDate() + 90);
@@ -388,6 +390,11 @@ async function action(name, data, s) {
     const pageInfo = (rows, total, pageCount, unit) => ({ rows, total, limit, offset, page_count: pageCount, pagination_unit: unit, has_more: offset + pageCount < total, next_offset: offset + pageCount });
     const criticalMasterFilter = kritis ? `&stok_batch.stok_real=gt.0&stok_batch.expired_date=lte.${cutoffDate}` : "";
     const criticalBatchFilter = kritis ? `&stok_real=gt.0&expired_date=lte.${cutoffDate}` : "";
+    // Escape ILIKE metacharacters in user text, then quote the whole operand.
+    const qLike = q.replace(/[\\%_*]/g, "\\$&");
+    const quotedQ = qLike.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const encQ = encodeURIComponent(quotedQ).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    const pattern = `%22%25${encQ}%25%22`;
 
     // Pemanggil Master Barang hanya perlu seluruh batch untuk satu SKU persis;
     // jangan memindai inventaris seluruh cabang untuk membuka koreksi stok.
@@ -403,6 +410,21 @@ async function action(name, data, s) {
       return pageInfo(rows, rows.length, rows.length, "hasil");
     }
 
+    // Sort/filter inventaris langsung pada batch agar urutan tidak hanya berlaku
+    // pada halaman yang sedang terlihat. Mode ini sengaja memakai unit "hasil":
+    // barang tanpa batch tidak memiliki baris batch untuk diurutkan.
+    if (!q && (sort !== "nama" || status !== "semua")) {
+      const statusFilter = status === "tersedia" ? "&stok_real=gt.0" : status === "habis" ? "&stok_real=eq.0" : "";
+      const order = sort === "stok_asc" ? "stok_real.asc,expired_date.asc,id_batch.asc" :
+        sort === "stok_desc" ? "stok_real.desc,expired_date.asc,id_batch.asc" :
+        sort === "terbaru" ? "id_batch.desc" : "expired_date.asc,id_batch.asc";
+      const r = await db("stok_batch", `?cabang_id=eq.${cab}${statusFilter}${criticalBatchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif)&master_barang.cabang_id=eq.${cab}&order=${order}&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+      if (!r.ok) throw new Error(await r.text());
+      const batches = await r.json();
+      const rows = batches.map((b) => rowBatch(b.master_barang || {}, b));
+      return pageInfo(rows, totalFrom(r), rows.length, "hasil");
+    }
+
     // Tampilan normal: database hanya mengirim halaman barang yang diminta;
     // LEFT embed mempertahankan barang tanpa batch sebagai stok 0.
     if (!q && !kritis) {
@@ -411,6 +433,21 @@ async function action(name, data, s) {
       const masters = await r.json();
       const rows = masters.flatMap(fromMaster);
       return pageInfo(rows, totalFrom(r), masters.length, "barang");
+    }
+
+    if (q && (sort !== "nama" || status !== "semua")) {
+      const statusFilter = status === "tersedia" ? "&stok_real=gt.0" : status === "habis" ? "&stok_real=eq.0" : "";
+      const searchFilter = data.jenis === "batch"
+        ? `&kode_batch=ilike.${pattern}`
+        : `&master_barang.or=(kode_obat.ilike.${pattern},nama_obat.ilike.${pattern})`;
+      const order = sort === "stok_asc" ? "stok_real.asc,expired_date.asc,id_batch.asc" :
+        sort === "stok_desc" ? "stok_real.desc,expired_date.asc,id_batch.asc" :
+        sort === "terbaru" ? "id_batch.desc" : "expired_date.asc,id_batch.asc";
+      const r = await db("stok_batch", `?cabang_id=eq.${cab}${statusFilter}${criticalBatchFilter}${searchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif)&master_barang.cabang_id=eq.${cab}&order=${order}&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+      if (!r.ok) throw new Error(await r.text());
+      const batches = await r.json();
+      const rows = batches.map((b) => rowBatch(b.master_barang || {}, b));
+      return pageInfo(rows, totalFrom(r), rows.length, "hasil");
     }
 
     // Mode mendesak dipaginasi langsung pada batch yang benar-benar mendesak.
@@ -422,13 +459,7 @@ async function action(name, data, s) {
       return pageInfo(rows, totalFrom(r), rows.length, "hasil");
     }
 
-    // Escape ILIKE metacharacters in user text, then quote the whole PostgREST
-    // operand so reserved filter characters remain literal. Encoded % values
-    // around the term are the only intentional substring wildcards.
-    const qLike = q.replace(/[\\%_*]/g, "\\$&");
-    const quotedQ = qLike.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    const encQ = encodeURIComponent(quotedQ).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-    const pattern = `%22%25${encQ}%25%22`;
+    // Encoded % values around the term are the only intentional substring wildcards.
     if (data.jenis !== "batch") {
       const masterRelation = `stok_batch${kritis ? "!inner" : ""}(${batchFields})`;
       const r = await db("master_barang", `?cabang_id=eq.${cab}&or=(kode_obat.ilike.${pattern},nama_obat.ilike.${pattern})&select=kode_obat,nama_obat,aktif,${masterRelation}&stok_batch.cabang_id=eq.${cab}${criticalMasterFilter}&order=nama_obat.asc,kode_obat.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
