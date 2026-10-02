@@ -46,6 +46,7 @@ var qsRange = (r, dateField) => `?${dateField}=gte.${r.from}&${dateField}=lte.${
 var PERM = {
   "pos.cariBarang": ["Owner", "Apoteker", "Kasir"],
   "pos.cariCustomer": ["Owner", "Apoteker", "Kasir"],
+  "pos.suggestCustomer": ["Owner", "Apoteker", "Kasir"],
   "pos.daftarCustomer": ["Owner", "Apoteker", "Kasir"],
   "pos.notaTerakhir": ["Owner", "Apoteker", "Kasir"],
   "pos.simpanTransaksi": ["Owner", "Apoteker", "Kasir"],
@@ -311,6 +312,15 @@ async function action(name, data, s) {
     const wa = normWA(data.wa);
     const c = await one("master_customer", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&nomor_wa=eq.${encodeURIComponent(wa)}&select=*`);
     return c ? { found: true, Nomor_WA: c.nomor_wa, Nama: c.nama, Tipe_Customer: c.tipe_customer, Alamat: c.alamat, Total_Belanja: c.total_belanja, Jumlah_Transaksi: c.jumlah_transaksi, Tanggal_Terakhir_Beli: c.tanggal_terakhir_beli, Segment_CRM: c.segment_crm, Tier: c.tier, Total_Points: c.total_points, Total_Spend_MTD: c.total_spend_mtd, Consent_Marketing: c.consent_marketing } : { found: false, Nomor_WA: wa };
+  }
+  if (name === "pos.suggestCustomer") {
+    const q = String(data.q || "").trim().slice(0, 80);
+    if (!q) return [];
+    const needle = data.mode === "wa" ? normWA(q) : q;
+    const filter = `or=(nama.ilike.*${encodeURIComponent(needle)}*,nomor_wa.ilike.*${encodeURIComponent(needle)}*)`;
+    const r = await db("master_customer", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&${filter}&select=id,nomor_wa,nama,tipe_customer&order=nama.asc&limit=12`);
+    if (!r.ok) throw new Error(await r.text());
+    return (await r.json()).map((c) => ({ ID: c.id, Nomor_WA: c.nomor_wa, Nama: c.nama, Tipe_Customer: c.tipe_customer }));
   }
   if (name === "pos.daftarCustomer" || name === "crm.simpan") {
     const wa = normWA(data.wa || data.Nomor_WA);
