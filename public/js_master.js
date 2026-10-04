@@ -407,25 +407,27 @@ function formBatch(s, produk) {
   var edit = !!s;
   s = s || {};
   produk = produk || {};
+  var kodeBatchKosong = edit && !String(s.Kode_Batch || '').trim();
   var kodeAwal = edit ? (s.Kode_Obat || '') : (produk.Kode_Obat || '');
   modalBuka(edit ? 'Ubah batch ' + s.Kode_Batch : (produk.Kode_Obat ? 'Tambah batch barang' : 'Tambah batch'),
     '<div class="grid g2">' +
       '<label class="field"><span>Kode obat</span><input id="fsKode" class="inp" value="' +
         esc(kodeAwal) + '"' + (edit || produk.Kode_Obat ? ' readonly' : '') + '></label>' +
       '<label class="field"><span>Kode batch</span><input id="fsBatch" class="inp" value="' +
-        esc(s.Kode_Batch || '') + '"' + (edit ? ' readonly' : '') + '></label>' +
+        esc(s.Kode_Batch || '') + '"' + (edit && !kodeBatchKosong ? ' readonly' : '') + '></label>' +
       '<label class="field"><span>Tanggal kedaluwarsa</span><input id="fsExp" class="inp" type="date" value="' +
         esc(s.Expired_Date || '') + '"></label>' +
       '<label class="field"><span>Stok fisik</span><input id="fsStok" class="inp num" type="number" value="' +
         (s.Stok_Real || 0) + '"></label>' +
     '</div>' +
+    (kodeBatchKosong ? '<p class="kpi-sub" style="margin:0 0 12px">Kode batch pada data ini kosong. Isi kode batch yang benar untuk memperbaiki data.</p>' : '') +
     '<label class="field"><span>Harga modal batch ini</span><input id="fsModal" class="inp num" type="number" value="' +
       (s.Harga_Modal_Batch || 0) + '"></label>',
     [
       { label: 'Batal', aksi: modalTutup },
       { label: 'Simpan batch', kelas: 'btn-primary', aksi: function () {
           var kodeObat = val('fsKode').toUpperCase();
-          var kodeBatch = val('fsBatch');
+          var kodeBatch = val('fsBatch').trim();
           var expired = val('fsExp');
           var stok = numVal('fsStok');
           var modal = numVal('fsModal');
