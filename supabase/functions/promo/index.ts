@@ -14,7 +14,7 @@ const cabangSesi = (s: any) => {
   return c;
 };
 function segment(c: any) { const days = c.tanggal_terakhir_beli ? Math.floor((Date.now() - new Date(String(c.tanggal_terakhir_beli).slice(0,10) + "T00:00:00").getTime()) / 86400000) : null; if (!c.tanggal_terakhir_beli || Number(c.jumlah_transaksi || 0) === 0) return "Baru"; if ((days || 0) > 180) return "Dormant"; if ((days || 0) > 60) return "At-Risk"; if (Number(c.total_belanja || 0) >= 2000000 || Number(c.jumlah_transaksi || 0) >= 8) return "VIP"; return "Active Routine"; }
-function allowed(role: string, name: string) { if (name === "dashboardAktif") return role === "Owner" || role === "Apoteker"; const owner = ["rewardList","rewardSave","rewardStatus","redemptionList","campaignList","campaignSave","campaignStatus","couponList","couponSave","report","bundleList","bundleSave","bundleStatus","poinSettingGet","poinSettingSave","poinSimulasi"]; if (owner.includes(name)) return role === "Owner"; return ["Owner","Apoteker","Kasir"].includes(role); }
+function allowed(role: string, name: string) { if (name === "dashboardAktif") return role === "Owner" || role === "Apoteker"; const owner = ["rewardList","rewardSave","rewardStatus","redemptionList","campaignList","campaignSave","campaignStatus","couponList","couponSave","report","bundleList","bundleSave","bundleStatus","poinSettingGet","poinSettingSave","poinSimulasi","poinKedaluwarsaRingkasan"]; if (owner.includes(name)) return role === "Owner"; return ["Owner","Apoteker","Kasir"].includes(role); }
 async function validate(data: any, s: any) {
   const code = String(data.code || "").trim().toUpperCase(); const wa = normWA(data.nomor_wa || "");
   if (!code) throw new Error("Kode kupon wajib diisi."); if (!wa) throw new Error("Pilih pelanggan terlebih dahulu.");
@@ -188,6 +188,12 @@ function validasiPoinSetting(d: any) {
     if (o.mulai && o.selesai && o.selesai < o.mulai) throw new Error(`Tanggal selesai pengganda “${nama}” tidak boleh sebelum tanggal mulai.`);
     return o;
   });
+  // Masa berlaku poin (PR 2). Bila belum dikirim (undefined, "", atau null),
+  // dipakai bawaan 'bulan' 12 - sama dengan perilaku lama, sehingga pemanggil
+  // lama tetap bekerja. Kedua kolom diperlakukan sama.
+  const kosongMasa = (v: any) => v === undefined || v === "" || v === null;
+  const masaMode = kosongMasa(d.masa_berlaku_mode) ? "bulan" : d.masa_berlaku_mode;
+  const masaBulan = kosongMasa(d.masa_berlaku_bulan) ? 12 : d.masa_berlaku_bulan;
   return {
     aktif: bool(d.aktif, "Status program"),
     basis_hitung: pilih(d.basis_hitung, ["harga_akhir", "subtotal"], "Dasar hitung"),
@@ -199,7 +205,9 @@ function validasiPoinSetting(d: any) {
     faktor_tipe,
     gabung_pengganda: pilih(d.gabung_pengganda, ["tertinggi", "kali", "jumlah"], "Cara gabung pengganda"),
     pengganda,
-    retur_kurangi_poin: bool(d.retur_kurangi_poin, "Pengaturan retur")
+    retur_kurangi_poin: bool(d.retur_kurangi_poin, "Pengaturan retur"),
+    masa_berlaku_mode: pilih(masaMode, ["bulan", "selamanya", "akhir_tahun"], "Masa berlaku poin"),
+    masa_berlaku_bulan: angkaPoin(masaBulan, "Masa berlaku (bulan)", 1, 120, true)
   };
 }
 async function poinGagal(r: Response): Promise<never> {
@@ -297,6 +305,32 @@ async function action(name: string, data: any, s: any) {
     const r = await db("rpc/loyalty_hitung_poin_detail", "", { method: "POST", body: JSON.stringify({ cfg, p_tipe: tipe, p_subtotal: subtotal, p_harga_akhir: harga, p_tanggal: tanggal, p_retur: data.retur === true }) });
     if (!r.ok) await poinGagal(r);
     return await r.json();
+  }
+  if (name === "poinKedaluwarsaRingkasan") {
+    // Uji kering: melihat siapa dan berapa poin yang AKAN hangus, tanpa
+    // mengubah apa pun. Penghangusan sungguhan hanya lewat expire_loyalty_points
+    // yang dijalankan otomatis saat CRM dibuka.
+    const cfgRingkas = (await poinCfg(branch)).cfg;
+    const r = await db("rpc/loyalty_poin_akan_hangus", "", { method: "POST", body: JSON.stringify({ p_cabang_id: branch }) });
+    if (!r.ok) await poinGagal(r);
+    const rows = await r.json();
+    const akan = rows.reduce((n: number, x: any) => n + Number(x.akan_hangus || 0), 0);
+    return {
+      mode: String(cfgRingkas.masa_berlaku_mode || "bulan"),
+      bulan: Number(cfgRingkas.masa_berlaku_bulan || 12),
+      total_akan_hangus: akan,
+      jumlah_pelanggan: rows.length,
+      jumlah_saldo_kurang: rows.filter((x: any) => x.saldo_cukup !== true).length,
+      baris: rows.map((x: any) => ({
+        nama: x.nama || "Tanpa nama",
+        nomor_wa: x.nomor_wa || "",
+        saldo: Number(x.total_points || 0),
+        akan_hangus: Number(x.akan_hangus || 0),
+        perolehan: Number(x.jumlah_perolehan || 0),
+        kedaluwarsa_terawal: x.kedaluwarsa_terawal,
+        saldo_cukup: x.saldo_cukup === true
+      }))
+    };
   }
   if (name === "redemptionList") {
     const cab = encodeURIComponent(branch);

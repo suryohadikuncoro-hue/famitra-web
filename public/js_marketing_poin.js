@@ -15,6 +15,8 @@
 
   var NAMA_BULAT = { bawah: 'ke bawah', atas: 'ke atas', terdekat: 'ke terdekat' };
   var NAMA_BASIS = { harga_akhir: 'harga akhir setelah diskon', subtotal: 'subtotal sebelum diskon' };
+  var NAMA_MASA = { bulan: 'X bulan sejak diperoleh', selamanya: 'tidak pernah hangus', akhir_tahun: 'hangus 31 Desember tahun berikutnya' };
+  var NAMA_MASA_PENDEK = { bulan: 'X bulan', selamanya: 'tidak pernah hangus', akhir_tahun: 'akhir tahun berikutnya' };
   var NAMA_GABUNG = { tertinggi: 'Ambil yang tertinggi', kali: 'Dikalikan', jumlah: 'Dijumlahkan (dua pengganda 2x menjadi 3x)' };
   var TIPE_POIN = ['Umum', 'Tenaga Kesehatan', 'Apotek Lain'];
   var NAMA_HARI = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -54,6 +56,10 @@
     if (c.maks_poin_per_transaksi) teks += ' Maksimal ' + angka(c.maks_poin_per_transaksi) + ' poin per transaksi.';
     if (aktifPg) teks += ' ' + aktifPg + ' pengganda aktif.';
     if (!c.retur_kurangi_poin) teks += ' Retur tidak mengurangi poin.';
+    var modeMasa = String(c.masa_berlaku_mode || 'bulan');
+    teks += ' Masa berlaku poin: ' + esc(modeMasa === 'bulan'
+      ? angka(c.masa_berlaku_bulan || 12) + ' bulan sejak diperoleh'
+      : (NAMA_MASA_PENDEK[modeMasa] || modeMasa)) + '.';
     return teks;
   }
 
@@ -130,7 +136,9 @@
       faktor_tipe: { 'Umum': Number(val('mpFUmum')), 'Tenaga Kesehatan': Number(val('mpFNakes')), 'Apotek Lain': Number(val('mpFApotek')) },
       gabung_pengganda: val('mpGabung'),
       pengganda: bacaPengganda(),
-      retur_kurangi_poin: val('mpRetur') === '1'
+      retur_kurangi_poin: val('mpRetur') === '1',
+      masa_berlaku_mode: val('mpMasa'),
+      masa_berlaku_bulan: Number(val('mpMasaBulan') || 12)
     };
   }
 
@@ -176,6 +184,14 @@
       '<div id="mpPgList"></div><button type="button" id="mpPgTambah" class="btn btn-sm">+ Tambah pengganda</button>' +
       '<h4 style="margin:12px 0 8px">Retur</h4>' +
       '<label class="field"><span>Retur mengurangi poin</span><select id="mpRetur" class="inp">' + opsiPilihan({ '1': 'Ya', '0': 'Tidak' }, c.retur_kurangi_poin ? '1' : '0') + '</select></label>' +
+      '<h4 style="margin:12px 0 8px">Masa berlaku poin</h4>' +
+      '<p class="sub">Poin hangus dengan urutan <strong>FIFO</strong>: poin yang paling dulu diperoleh dipakai lebih dulu, ' +
+        'sehingga poin yang sudah ditukar reward <strong>tidak</strong> ikut hangus.</p>' +
+      '<label class="field"><span>Masa berlaku</span><select id="mpMasa" class="inp">' + opsiPilihan(NAMA_MASA, c.masa_berlaku_mode || 'bulan') + '</select></label>' +
+      '<label class="field"><span>Lama berlaku (bulan, hanya bila memilih X bulan)</span><input id="mpMasaBulan" class="inp" type="number" min="1" max="120" step="1" value="' + esc(c.masa_berlaku_bulan || 12) + '"></label>' +
+      '<p class="sub">Perubahan pengaturan ini berlaku untuk pemeriksaan berikutnya. Poin yang sudah diperoleh pelanggan tidak berubah saat menyimpan.</p>' +
+      '<button type="button" id="mpDryBtn" class="btn btn-sm">Lihat uji kering kedaluwarsa</button>' +
+      '<div id="mpDryHasil" class="sub" style="margin-top:8px"></div>' +
       '<h4 style="margin:12px 0 8px">Simulasi</h4>' +
       '<p class="sub">Coba contoh belanja dengan pengaturan di atas (belum disimpan).</p>' +
       '<label class="field"><span>Tipe pelanggan</span><select id="mpSimTipe" class="inp">' + opsiTipe + '</select></label>' +
@@ -204,6 +220,36 @@
       }
       var h = e.target.closest('.mp-pg-hapus');
       if (h) { var kartu = h.closest('.mp-pg'); if (kartu) kartu.remove(); return; }
+      if (e.target.closest('#mpDryBtn')) {
+        // Uji kering: hanya membaca, tidak mengubah saldo siapa pun.
+        var boxDry = document.getElementById('mpDryHasil');
+        if (!boxDry) return;
+        boxDry.textContent = 'Menghitung…';
+        promoApi('poinKedaluwarsaRingkasan', {}).then(function (d) {
+          var modeTeks = d.mode === 'bulan' ? angka(d.bulan) + ' bulan sejak diperoleh' : (NAMA_MASA[d.mode] || d.mode);
+          if (!d.baris || !d.baris.length) {
+            boxDry.innerHTML = '<strong>Tidak ada poin yang akan hangus.</strong> Masa berlaku sekarang: ' + esc(modeTeks) + '.';
+            return;
+          }
+          var baris = d.baris.slice(0, 20).map(function (x) {
+            return '<tr><td>' + esc(x.nama) + (x.saldo_cukup ? '' : ' <span class="chip chip-bad">saldo tidak sinkron</span>') + '</td>' +
+              '<td class="r num">' + angka(x.saldo) + '</td>' +
+              '<td class="r num">' + angka(x.akan_hangus) + '</td>' +
+              '<td>' + (x.kedaluwarsa_terawal ? tglIndo(x.kedaluwarsa_terawal) : '—') + '</td></tr>';
+          }).join('');
+          boxDry.innerHTML = '<strong>Uji kering:</strong> ' + angka(d.total_akan_hangus) + ' poin dari ' +
+            angka(d.jumlah_pelanggan) + ' pelanggan akan hangus. Masa berlaku: ' + esc(modeTeks) + '.' +
+            (d.jumlah_saldo_kurang ? '<br><span style="color:#b00020">' + angka(d.jumlah_saldo_kurang) +
+              ' pelanggan saldonya tidak sinkron dengan buku mutasi. Saldonya TIDAK akan diubah dan perlu pemeriksaan manual.</span>' : '') +
+            '<div class="table-wrap" style="margin-top:6px"><table><thead><tr><th>Pelanggan</th><th class="r">Saldo</th>' +
+            '<th class="r">Akan hangus</th><th>Hangus sejak</th></tr></thead><tbody>' + baris + '</tbody></table></div>' +
+            (d.baris.length > 20 ? '<p style="margin:6px 0 0">Menampilkan 20 teratas dari ' + angka(d.baris.length) + ' pelanggan.</p>' : '') +
+            '<p style="margin:6px 0 0"><strong>Tidak ada data yang diubah.</strong> Penghangusan berjalan otomatis saat halaman Pelanggan dibuka, dan dicatat di buku mutasi poin.</p>';
+        }).catch(function (er) {
+          boxDry.innerHTML = '<span style="color:#b00020">' + esc(er.message) + '</span>';
+        });
+        return;
+      }
       if (e.target.closest('#mpSimBtn')) {
         var hasil = document.getElementById('mpSimHasil');
         hasil.textContent = 'Menghitung…';
