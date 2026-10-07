@@ -14,7 +14,7 @@ const cabangSesi = (s: any) => {
   return c;
 };
 function segment(c: any) { const days = c.tanggal_terakhir_beli ? Math.floor((Date.now() - new Date(String(c.tanggal_terakhir_beli).slice(0,10) + "T00:00:00").getTime()) / 86400000) : null; if (!c.tanggal_terakhir_beli || Number(c.jumlah_transaksi || 0) === 0) return "Baru"; if ((days || 0) > 180) return "Dormant"; if ((days || 0) > 60) return "At-Risk"; if (Number(c.total_belanja || 0) >= 2000000 || Number(c.jumlah_transaksi || 0) >= 8) return "VIP"; return "Active Routine"; }
-function allowed(role: string, name: string) { if (name === "dashboardAktif") return role === "Owner" || role === "Apoteker"; const owner = ["rewardList","rewardSave","rewardStatus","redemptionList","campaignList","campaignSave","campaignStatus","couponList","couponSave","report","bundleList","bundleSave","bundleStatus"]; if (owner.includes(name)) return role === "Owner"; return ["Owner","Apoteker","Kasir"].includes(role); }
+function allowed(role: string, name: string) { if (name === "dashboardAktif") return role === "Owner" || role === "Apoteker"; const owner = ["rewardList","rewardSave","rewardStatus","redemptionList","campaignList","campaignSave","campaignStatus","couponList","couponSave","report","bundleList","bundleSave","bundleStatus","poinSettingGet","poinSettingSave","poinSimulasi"]; if (owner.includes(name)) return role === "Owner"; return ["Owner","Apoteker","Kasir"].includes(role); }
 async function validate(data: any, s: any) {
   const code = String(data.code || "").trim().toUpperCase(); const wa = normWA(data.nomor_wa || "");
   if (!code) throw new Error("Kode kupon wajib diisi."); if (!wa) throw new Error("Pilih pelanggan terlebih dahulu.");
@@ -151,6 +151,72 @@ async function dashboardAktif(branch: string) {
       margin: omzet ? laba / omzet * 100 : null, roas: diskon ? omzet / diskon : null, pelanggan_unik: pelanggan.size } };
 }
 
+// ---- Pengaturan perolehan poin (per cabang) ----
+const POIN_TIPE = ["Umum", "Tenaga Kesehatan", "Apotek Lain"];
+const POIN_MIGRASI = "Migrasi pengaturan poin belum diterapkan di database (supabase/migrations/20260929020000_loyalty_pengaturan_perolehan.sql). Minta pengelola menjalankannya lebih dulu.";
+const tglValid = (v: any) => { if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false; const d = new Date(v + "T00:00:00Z"); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v; };
+function angkaPoin(v: any, nama: string, min: number, max: number, bulat = false, desimal2 = false) {
+  const n = typeof v === "string" && v.trim() !== "" ? Number(v) : v;
+  if (typeof n !== "number" || !Number.isFinite(n)) throw new Error(`${nama} harus berupa angka.`);
+  if (bulat && !Number.isInteger(n)) throw new Error(`${nama} harus bilangan bulat.`);
+  if (desimal2 && Math.round(n * 100) / 100 !== n) throw new Error(`${nama} paling banyak 2 angka di belakang koma.`);
+  if (n < min || n > max) throw new Error(`${nama} harus antara ${min} dan ${max}.`);
+  return n;
+}
+function validasiPoinSetting(d: any) {
+  if (!d || typeof d !== "object" || Array.isArray(d)) throw new Error("Data pengaturan poin tidak valid.");
+  const pilih = (v: any, daftar: string[], nama: string) => { if (!daftar.includes(v)) throw new Error(`${nama} tidak valid.`); return v; };
+  const bool = (v: any, nama: string) => { if (typeof v !== "boolean") throw new Error(`${nama} tidak valid.`); return v; };
+  const ft = d.faktor_tipe;
+  if (!ft || typeof ft !== "object" || Array.isArray(ft)) throw new Error("Faktor tipe pelanggan wajib diisi.");
+  const faktor_tipe: any = {};
+  for (const t of POIN_TIPE) faktor_tipe[t] = angkaPoin(ft[t], `Faktor ${t}`, 0, 100, false, true);
+  const kosong = d.maks_poin_per_transaksi === null || d.maks_poin_per_transaksi === undefined || d.maks_poin_per_transaksi === "";
+  if (!Array.isArray(d.pengganda)) throw new Error("Daftar pengganda tidak valid.");
+  if (d.pengganda.length > 50) throw new Error("Pengganda maksimal 50 aturan.");
+  const pengganda = d.pengganda.map((it: any, i: number) => {
+    if (!it || typeof it !== "object") throw new Error(`Pengganda #${i + 1} tidak valid.`);
+    const nama = String(it.nama ?? "").trim();
+    if (nama.length < 1 || nama.length > 60) throw new Error(`Nama pengganda #${i + 1} wajib diisi (maksimal 60 karakter).`);
+    const o: any = { nama, aktif: bool(it.aktif, `Status pengganda “${nama}”`), faktor: angkaPoin(it.faktor, `Faktor pengganda “${nama}”`, 0.01, 100, false, true) };
+    if (Array.isArray(it.hari) && it.hari.length) {
+      const hs = [...new Set(it.hari.map((h: any) => Number(h)))] as number[];
+      if (hs.some((h) => !Number.isInteger(h) || h < 0 || h > 6)) throw new Error(`Hari pengganda “${nama}” tidak valid.`);
+      o.hari = hs.sort((a, b) => a - b);
+    }
+    for (const k of ["mulai", "selesai"]) if (it[k]) { if (!tglValid(it[k])) throw new Error(`Tanggal ${k} pengganda “${nama}” tidak valid.`); o[k] = it[k]; }
+    if (o.mulai && o.selesai && o.selesai < o.mulai) throw new Error(`Tanggal selesai pengganda “${nama}” tidak boleh sebelum tanggal mulai.`);
+    return o;
+  });
+  return {
+    aktif: bool(d.aktif, "Status program"),
+    basis_hitung: pilih(d.basis_hitung, ["harga_akhir", "subtotal"], "Dasar hitung"),
+    rupiah_per_kelipatan: angkaPoin(d.rupiah_per_kelipatan, "Belanja per kelipatan", 1, 1000000000, false, true),
+    poin_per_kelipatan: angkaPoin(d.poin_per_kelipatan, "Poin per kelipatan", 1, 1000, true),
+    pembulatan: pilih(d.pembulatan, ["bawah", "atas", "terdekat"], "Pembulatan"),
+    min_belanja: angkaPoin(d.min_belanja, "Minimal belanja", 0, 1000000000, false, true),
+    maks_poin_per_transaksi: kosong ? null : angkaPoin(d.maks_poin_per_transaksi, "Batas poin per transaksi", 1, 1000000, true),
+    faktor_tipe,
+    gabung_pengganda: pilih(d.gabung_pengganda, ["tertinggi", "kali", "jumlah"], "Cara gabung pengganda"),
+    pengganda,
+    retur_kurangi_poin: bool(d.retur_kurangi_poin, "Pengaturan retur")
+  };
+}
+async function poinGagal(r: Response): Promise<never> {
+  const t = await r.text();
+  throw new Error(r.status === 404 || /PGRST20[25]|42P01|42883/.test(t) ? POIN_MIGRASI : t);
+}
+async function poinCfg(branch: string) {
+  const [r, d] = await Promise.all([
+    db("loyalty_settings", `?cabang_id=eq.${encodeURIComponent(branch)}&select=*&limit=1`),
+    db("rpc/loyalty_cfg_default", "", { method: "POST", body: "{}" })
+  ]);
+  if (!r.ok) await poinGagal(r);
+  if (!d.ok) await poinGagal(d);
+  const rows = await r.json(), def = await d.json();
+  return { tersimpan: rows.length > 0, cfg: rows[0] || def };
+}
+
 async function action(name: string, data: any, s: any) {
   if (!allowed(s.role, name)) throw new Error(`Akses ditolak untuk role ${s.role}.`);
   const branch = cabangSesi(s);
@@ -204,6 +270,33 @@ async function action(name: string, data: any, s: any) {
     if (!r.ok) throw new Error(await r.text());
     if (!(await r.json()).length) throw new Error("Reward tidak ditemukan di cabang ini.");
     return true;
+  }
+  if (name === "poinSettingGet") {
+    const { tersimpan, cfg } = await poinCfg(branch);
+    const h = await db("loyalty_settings_riwayat", `?cabang_id=eq.${encodeURIComponent(branch)}&select=disimpan_oleh,disimpan_pada&order=disimpan_pada.desc&limit=20`);
+    if (!h.ok) await poinGagal(h);
+    return { tersimpan, cfg, riwayat: await h.json() };
+  }
+  if (name === "poinSettingSave") {
+    const p = validasiPoinSetting(data);
+    const r = await db("loyalty_settings", "?on_conflict=cabang_id", { method: "POST", headers: { ...headers, Prefer: "resolution=merge-duplicates,return=representation" }, body: JSON.stringify({ ...p, cabang_id: branch, updated_by: s.username || null, updated_at: new Date().toISOString() }) });
+    if (!r.ok) await poinGagal(r);
+    const saved = (await r.json())[0];
+    const h = await db("loyalty_settings_riwayat", "", { method: "POST", body: JSON.stringify({ cabang_id: branch, disimpan_oleh: s.username || null, snapshot: saved }) });
+    if (!h.ok) throw new Error("Pengaturan tersimpan, tetapi riwayat perubahan gagal dicatat: " + await h.text());
+    return { tersimpan: true, cfg: saved };
+  }
+  if (name === "poinSimulasi") {
+    const tipe = String(data.tipe_customer || "Umum");
+    if (!POIN_TIPE.includes(tipe)) throw new Error("Tipe pelanggan tidak valid.");
+    const harga = angkaPoin(data.harga_akhir, "Harga akhir", 0, 10000000000);
+    const subtotal = data.subtotal === undefined || data.subtotal === "" ? harga : angkaPoin(data.subtotal, "Subtotal", 0, 10000000000);
+    const tanggal = data.tanggal ? String(data.tanggal) : today();
+    if (!tglValid(tanggal)) throw new Error("Tanggal simulasi tidak valid (format YYYY-MM-DD).");
+    const cfg = data.cfg ? validasiPoinSetting(data.cfg) : (await poinCfg(branch)).cfg;
+    const r = await db("rpc/loyalty_hitung_poin_detail", "", { method: "POST", body: JSON.stringify({ cfg, p_tipe: tipe, p_subtotal: subtotal, p_harga_akhir: harga, p_tanggal: tanggal, p_retur: data.retur === true }) });
+    if (!r.ok) await poinGagal(r);
+    return await r.json();
   }
   if (name === "redemptionList") {
     const cab = encodeURIComponent(branch);
