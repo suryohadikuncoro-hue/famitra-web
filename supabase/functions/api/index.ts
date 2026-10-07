@@ -43,6 +43,24 @@ var rangeOf = (f) => {
   return { from: d, to: d, label: "Hari ini" };
 };
 var qsRange = (r, dateField) => `?${dateField}=gte.${r.from}&${dateField}=lte.${r.to}`;
+// PostgREST memakai koma sebagai pemisah kondisi di dalam or=(...), sehingga
+// nilai pencarian yang mengandung koma membuat SELURUH query ditolak HTTP 400.
+// Ini nyata terjadi: kode obat seperti "MOL-0,75" dan nama pelanggan seperti
+// "Budi, Siti". Operandnya harus dibungkus tanda kutip ganda, dan metakarakter
+// ILIKE di-escape lebih dulu. Logika yang sama sudah dipakai pencarian
+// Stok & Batch (lihat `pattern` di stok.list); sekarang dipakai bersama.
+var polaCari = (nilai) => {
+  const teks = String(nilai == null ? "" : nilai);
+  const qLike = teks.replace(/[\\%_*]/g, "\\$&");
+  const quoted = qLike.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  const enc = encodeURIComponent(quoted).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `%22%25${enc}%25%22`;
+};
+// Daftar nilai untuk in.(...) juga memakai koma sebagai pemisah, jadi setiap
+// nilai wajib dibungkus tanda kutip ganda. Tanpa itu kode seperti "MOL-0,75"
+// terpecah menjadi dua kode yang tidak ada: barang dianggap tidak ditemukan dan
+// penjualannya ditolak "Barang ini tidak ditemukan atau nonaktif".
+var daftarIn = (arr) => arr.map((nilai) => encodeURIComponent(`"${String(nilai == null ? "" : nilai).replace(/"/g, '\\"')}"`)).join(",");
 var PERM = {
   "pos.cariBarang": ["Owner", "Apoteker", "Kasir"],
   "pos.seringDibeli": ["Owner", "Apoteker", "Kasir"],
@@ -255,7 +273,7 @@ async function action(name, data, s) {
     const tipe = data.tipe || "Umum";
     const cab = cabangSesi(s);
     const price = tipe === "Tenaga Kesehatan" ? "harga_khusus" : tipe === "Apotek Lain" ? "harga_jual_mutasi" : "harga_jual_umum";
-    const r = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&aktif=eq.YA&or=(kode_obat.ilike.*${encodeURIComponent(q)}*,nama_obat.ilike.*${encodeURIComponent(q)}*,barcode.ilike.*${encodeURIComponent(q)}*)&select=*%2Cstok_batch(stok_real%2Ckode_batch%2Cexpired_date%2Ccabang_id)&limit=25`);
+    const r = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&aktif=eq.YA&or=(kode_obat.ilike.${polaCari(q)},nama_obat.ilike.${polaCari(q)},barcode.ilike.${polaCari(q)})&select=*%2Cstok_batch(stok_real%2Ckode_batch%2Cexpired_date%2Ccabang_id)&limit=25`);
     const rows = await r.json();
     return rows.map((b) => {
       const bs = (b.stok_batch || []).filter((x) => x.cabang_id === cab && Number(x.stok_real) > 0).sort((a, z) => String(a.expired_date).localeCompare(String(z.expired_date)));
@@ -292,7 +310,7 @@ async function action(name, data, s) {
     const urut = [...qtyPerKode.entries()].filter(([, q]) => q > 0).sort((a, b) => b[1] - a[1]).slice(0, limit);
     if (!urut.length) return [];
     const kodeList = urut.map((x) => x[0]);
-    const r2 = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&aktif=eq.YA&kode_obat=in.(${kodeList.map(encodeURIComponent).join(",")})&select=kode_obat,nama_obat,satuan,stok_batch(stok_real,kode_batch,expired_date,cabang_id)`);
+    const r2 = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&aktif=eq.YA&kode_obat=in.(${daftarIn(kodeList)})&select=kode_obat,nama_obat,satuan,stok_batch(stok_real,kode_batch,expired_date,cabang_id)`);
     if (!r2.ok) throw new Error(await r2.text());
     const info = /* @__PURE__ */ new Map((await r2.json()).map((b) => [String(b.kode_obat).toUpperCase(), b]));
     return urut.filter(([k]) => info.has(k)).map(([k, qty]) => {
@@ -314,7 +332,7 @@ async function action(name, data, s) {
     const price = tipe === "Tenaga Kesehatan" ? "harga_khusus" : tipe === "Apotek Lain" ? "harga_jual_mutasi" : "harga_jual_umum";
     const kodeList = [...new Set(items.map((x) => String(x.kode || "").toUpperCase()).filter(Boolean))];
     if (!kodeList.length) throw new Error("Keranjang kosong.");
-    const r = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&kode_obat=in.(${kodeList.map(encodeURIComponent).join(",")})&select=kode_obat,nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi`);
+    const r = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&kode_obat=in.(${daftarIn(kodeList)})&select=kode_obat,nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi`);
     if (!r.ok) throw new Error(await r.text());
     const map = /* @__PURE__ */ new Map((await r.json()).map((b) => [String(b.kode_obat).toUpperCase(), b]));
     const tidakAda = [];
@@ -373,7 +391,7 @@ async function action(name, data, s) {
     const q = String(data.q || "").trim();
     const tipe = String(data.tipe || "Semua");
     const parts = [`select=*`, `order=nama.asc`, `limit=500`];
-    if (q) parts.push(`or=(nama.ilike.*${encodeURIComponent(q)}*,nomor_wa.ilike.*${encodeURIComponent(q)}*)`);
+    if (q) parts.push(`or=(nama.ilike.${polaCari(q)},nomor_wa.ilike.${polaCari(q)})`);
     if (tipe && tipe !== "Semua") parts.push(`tipe_customer=eq.${encodeURIComponent(tipe)}`);
     const r = await db("master_customer", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&${parts.join("&")}`);
     if (!r.ok) throw new Error(await r.text());
@@ -394,7 +412,7 @@ async function action(name, data, s) {
     const q = String(data.q || "").trim().slice(0, 80);
     if (!q) return [];
     const needle = data.mode === "wa" ? normWA(q) : q;
-    const filter = `or=(nama.ilike.*${encodeURIComponent(needle)}*,nomor_wa.ilike.*${encodeURIComponent(needle)}*)`;
+    const filter = `or=(nama.ilike.${polaCari(needle)},nomor_wa.ilike.${polaCari(needle)})`;
     const r = await db("master_customer", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&${filter}&select=id,nomor_wa,nama,tipe_customer&order=nama.asc&limit=12`);
     if (!r.ok) throw new Error(await r.text());
     return (await r.json()).map((c) => ({ ID: c.id, Nomor_WA: c.nomor_wa, Nama: c.nama, Tipe_Customer: c.tipe_customer }));
@@ -409,7 +427,7 @@ async function action(name, data, s) {
   if (name === "barang.list") {
     const q = String(data.q || "");
     const cab = encodeURIComponent(cabangSesi(s));
-    const filterBarang = `?cabang_id=eq.${cab}&or=(kode_obat.ilike.*${encodeURIComponent(q)}*,nama_obat.ilike.*${encodeURIComponent(q)}*,kategori.ilike.*${encodeURIComponent(q)}*)`;
+    const filterBarang = `?cabang_id=eq.${cab}&or=(kode_obat.ilike.${polaCari(q)},nama_obat.ilike.${polaCari(q)},kategori.ilike.${polaCari(q)})`;
     // Mode halaman (dipakai halaman Master Barang): 100 barang per halaman + total,
     // stok dijumlah dari SEMUA batch barang di halaman itu. Tanpa `halaman`,
     // perilaku lama dipertahankan (dipakai pencarian barang di Pembelian).
