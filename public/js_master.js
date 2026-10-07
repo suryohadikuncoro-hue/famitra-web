@@ -252,9 +252,19 @@ function formBarang(b) {
         (b.Harga_Jual_Mutasi || 0) + '"></label>' +
     '</div>' +
     '<label class="field"><span>PPN (%)</span><input id="fbPPN" class="inp num" type="number" value="' + (b.PPN || 0) + '"></label>' +
-    '<p class="kpi-sub">Harga khusus dan harga mutasi hanya berubah dari halaman ini — ' +
-      'faktur pembelian tidak menimpanya.</p>' +
-    (edit && b.Aktif !== 'TIDAK' ? '<button type="button" class="btn btn-sm btn-danger" id="fbNonaktif" style="margin-top:6px">Nonaktifkan barang</button>' : ''),
+    '<p class="kpi-sub">Harga khusus dan harga mutasi juga bisa diisi dari faktur pembelian — ' +
+      'nilainya hanya ditimpa bila kolom itu diisi (lebih dari 0) pada faktur.</p>' +
+    (edit ? '<p class="kpi-sub">Status barang: ' +
+      (b.Aktif === 'TIDAK'
+        ? '<span class="chip chip-bad">Nonaktif</span> — tidak muncul di kasir.'
+        : '<span class="chip chip-ok">Aktif</span> — muncul di kasir.') +
+      ' Menyimpan perubahan <strong>tidak</strong> mengubah status ini.</p>' : '') +
+    (edit ? '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">' +
+      (b.Aktif === 'TIDAK'
+        ? '<button type="button" class="btn btn-sm" id="fbAktifkan">Aktifkan kembali</button>'
+        : '<button type="button" class="btn btn-sm btn-danger" id="fbNonaktif">Nonaktifkan barang</button>') +
+      '<button type="button" class="btn btn-sm btn-danger" id="fbHapus">Hapus permanen</button>' +
+      '</div>' : ''),
     [
       { label: 'Batal', aksi: modalTutup },
       { label: edit ? 'Simpan perubahan' : 'Simpan barang', kelas: 'btn-primary', aksi: function () {
@@ -273,6 +283,39 @@ function formBarang(b) {
     ]);
   var nonaktif = document.getElementById('fbNonaktif');
   if (nonaktif) nonaktif.onclick = function () { modalTutup(); konfirmasiNonaktif(b.Kode_Obat); };
+  var aktifkan = document.getElementById('fbAktifkan');
+  if (aktifkan) aktifkan.onclick = function () { modalTutup(); konfirmasiAktifkan(b.Kode_Obat, b.Nama_Obat); };
+  var hapus = document.getElementById('fbHapus');
+  if (hapus) hapus.onclick = function () { modalTutup(); konfirmasiHapusPermanen(b.Kode_Obat, b.Nama_Obat); };
+}
+
+function konfirmasiAktifkan(kode, nama) {
+  modalBuka('Aktifkan kembali barang',
+    '<p>Barang <strong>' + esc(nama || kode) + '</strong> akan muncul kembali di katalog dan kasir.</p>',
+    [
+      { label: 'Batal', aksi: modalTutup },
+      { label: 'Aktifkan', kelas: 'btn-primary', aksi: function () {
+          api('barang.aktifkan', { Kode_Obat: kode }).then(function () {
+            modalTutup(); toast('Barang diaktifkan kembali.'); muatBarang();
+          }).catch(function (e) { toast(e.message, true); });
+        } }
+    ]);
+}
+
+function konfirmasiHapusPermanen(kode, nama) {
+  modalBuka('Hapus permanen',
+    '<p>Barang <strong>' + esc(nama || kode) + '</strong> akan <strong>dihapus dari master</strong>, bukan sekadar dinonaktifkan.</p>' +
+    '<p class="kpi-sub">Hanya bisa dilakukan kalau barang belum pernah dipakai: tidak ada stok, ' +
+      'tidak ada riwayat penjualan, pembelian, retur, paket promo, maupun program refill. ' +
+      'Kalau sudah dipakai, pakai <strong>Nonaktifkan</strong> supaya catatan lama tetap utuh.</p>',
+    [
+      { label: 'Batal', aksi: modalTutup },
+      { label: 'Hapus permanen', kelas: 'btn-danger', aksi: function () {
+          api('barang.hapusPermanen', { Kode_Obat: kode }).then(function () {
+            modalTutup(); toast('Barang dihapus permanen.'); muatBarang();
+          }).catch(function (e) { toast(e.message, true); });
+        } }
+    ]);
 }
 
 function konfirmasiNonaktif(kode) {

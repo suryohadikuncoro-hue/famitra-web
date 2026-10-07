@@ -55,6 +55,8 @@ var PERM = {
   "barang.list": ["Owner", "Apoteker"],
   "barang.simpan": ["Owner", "Apoteker"],
   "barang.hapus": ["Owner", "Apoteker"],
+  "barang.aktifkan": ["Owner", "Apoteker"],
+  "barang.hapusPermanen": ["Owner", "Apoteker"],
   "stok.list": ["Owner", "Apoteker"],
   "stok.simpanBatch": ["Owner", "Apoteker"],
   "opname.list": ["Owner", "Apoteker"],
@@ -587,8 +589,16 @@ async function action(name, data, s) {
   if (name === "barang.simpan") {
     // Harga per cabang (keputusan 2): cabang_id SELALU dari sesi, tidak dari payload.
     const cabang = cabangSesi(s);
-    const p = { cabang_id: cabang, kode_obat: String(data.Kode_Obat).toUpperCase(), nama_obat: data.Nama_Obat, kategori: data.Kategori || "", golongan: data.Golongan || data.golongan || "Bebas", satuan: data.Satuan || "Pcs", barcode: data.Barcode || null, stok_min: data.Stok_Min || 10, harga_modal: data.Harga_Modal || 0, harga_jual_umum: data.Harga_Jual_Umum || 0, harga_khusus: data.Harga_Khusus || 0, harga_jual_mutasi: data.Harga_Jual_Mutasi || 0, ppn: data.PPN || 0, aktif: "YA" };
-    const r = await db("master_barang", data.mode === "edit" ? `?kode_obat=eq.${encodeURIComponent(p.kode_obat)}&cabang_id=eq.${encodeURIComponent(cabang)}` : "", { method: data.mode === "edit" ? "PATCH" : "POST", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify(p) });
+    const dasar = { cabang_id: cabang, kode_obat: String(data.Kode_Obat).toUpperCase(), nama_obat: data.Nama_Obat, kategori: data.Kategori || "", golongan: data.Golongan || data.golongan || "Bebas", satuan: data.Satuan || "Pcs", barcode: data.Barcode || null, stok_min: data.Stok_Min || 10, harga_modal: data.Harga_Modal || 0, harga_jual_umum: data.Harga_Jual_Umum || 0, harga_khusus: data.Harga_Khusus || 0, harga_jual_mutasi: data.Harga_Jual_Mutasi || 0, ppn: data.PPN || 0 };
+    const baru = data.mode !== "edit";
+    // Catatan penting: saat MENGEDIT, kolom `aktif` sengaja TIDAK ikut dikirim
+    // kecuali diminta eksplisit lewat data.Aktif. Sebelumnya selalu ditulis "YA"
+    // sehingga setiap penyuntingan menghidupkan kembali barang yang sudah
+    // dinonaktifkan — barang nonaktif muncul lagi di pencarian kasir.
+    const p = baru ? { ...dasar, aktif: "YA" }
+      : (data.Aktif === "YA" || data.Aktif === "TIDAK") ? { ...dasar, aktif: data.Aktif }
+      : dasar;
+    const r = await db("master_barang", baru ? "" : `?kode_obat=eq.${encodeURIComponent(p.kode_obat)}&cabang_id=eq.${encodeURIComponent(cabang)}`, { method: baru ? "POST" : "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify(p) });
     if (!r.ok) throw new Error(await r.text());
     return true;
   }
@@ -596,6 +606,62 @@ async function action(name, data, s) {
     const r = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&kode_obat=eq.${encodeURIComponent(data.Kode_Obat)}`, { method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ aktif: "TIDAK", updated_at: (/* @__PURE__ */ new Date()).toISOString() }) });
     if (!r.ok) throw new Error(await r.text());
     return true;
+  }
+  if (name === "barang.aktifkan") {
+    // Kebalikan dari barang.hapus: mengembalikan barang nonaktif ke katalog POS.
+    const r = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&kode_obat=eq.${encodeURIComponent(data.Kode_Obat)}`, { method: "PATCH", headers: { ...headers, Prefer: "return=minimal" }, body: JSON.stringify({ aktif: "YA", updated_at: (/* @__PURE__ */ new Date()).toISOString() }) });
+    if (!r.ok) throw new Error(await r.text());
+    return true;
+  }
+  if (name === "barang.hapusPermanen") {
+    // Menghapus barang dari master. Hanya boleh kalau barang itu benar-benar
+    // belum pernah dipakai: tidak ada stok, tidak ada riwayat penjualan,
+    // pembelian, retur, paket promo, maupun program refill. Kalau ada riwayat,
+    // pakai "Nonaktifkan" supaya catatan lama tetap utuh.
+    const cab = cabangSesi(s);
+    const kode = String(data.Kode_Obat || "").trim().toUpperCase();
+    if (!kode) throw new Error("Kode obat wajib diisi.");
+    const master = await one("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&kode_obat=eq.${encodeURIComponent(kode)}&select=kode_obat,nama_obat,aktif`);
+    if (!master) throw new Error("Barang tidak ditemukan di cabang ini.");
+
+    const batch = await semua("stok_batch", `?cabang_id=eq.${encodeURIComponent(cab)}&kode_obat=eq.${encodeURIComponent(kode)}&select=id_batch,stok_real`);
+    const adaStok = batch.filter((b) => Number(b.stok_real || 0) > 0);
+    if (adaStok.length) {
+      const total = adaStok.reduce((n, b) => n + Number(b.stok_real || 0), 0);
+      throw new Error(`Masih ada stok ${total} unit. Kosongkan stoknya (atau pakai Stokopname) sebelum menghapus permanen.`);
+    }
+
+    // Tabel yang menyimpan riwayat per barang. Tidak semuanya punya foreign key
+    // ke master_barang, jadi diperiksa di sini supaya tidak meninggalkan data
+    // menggantung.
+    const riwayat = [
+      ["trx_penjualan_detail", "penjualan"],
+      ["trx_pembelian_detail", "pembelian"],
+      ["trx_retur_jual_detail", "retur penjualan"],
+      ["trx_retur_beli_detail", "retur pembelian"],
+      ["promo_bundle_items", "paket promo"],
+      ["refill_programs", "program refill"]
+    ];
+    const dipakai = [];
+    for (const pasangan of riwayat) {
+      const tabel = pasangan[0], label = pasangan[1];
+      const r = await db(tabel, `?kode_obat=eq.${encodeURIComponent(kode)}&select=kode_obat&limit=1`);
+      if (!r.ok) continue; // tabel tidak ada di project ini: lewati
+      const rows = await r.json();
+      if (Array.isArray(rows) && rows.length) dipakai.push(label);
+    }
+    if (dipakai.length) {
+      throw new Error(`Tidak bisa dihapus permanen: barang ini sudah dipakai di ${dipakai.join(", ")}. Pakai "Nonaktifkan" supaya riwayat lama tetap utuh.`);
+    }
+
+    // Batch bersaldo nol ikut dibersihkan supaya foreign key ke master_barang
+    // tidak menghalangi penghapusan.
+    const hapusBatch = await db("stok_batch", `?cabang_id=eq.${encodeURIComponent(cab)}&kode_obat=eq.${encodeURIComponent(kode)}`, { method: "DELETE", headers: { ...headers, Prefer: "return=minimal" } });
+    if (!hapusBatch.ok) throw new Error(await hapusBatch.text());
+
+    const hapus = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&kode_obat=eq.${encodeURIComponent(kode)}`, { method: "DELETE", headers: { ...headers, Prefer: "return=minimal" } });
+    if (!hapus.ok) throw new Error(await hapus.text());
+    return { Kode_Obat: kode, Nama_Obat: master.nama_obat };
   }
   if (name === "pos.notaTerakhir") {
     const r = await db("trx_penjualan", `?tanggal=eq.${today()}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_nota,tanggal,jam,nama_pelanggan,harga_akhir&order=timestamp.desc&limit=15`);
