@@ -96,7 +96,7 @@ var RIWAYAT_NOTA_CFG = {
   penjualan: {
     label: "Penjualan", table: "trx_penjualan", detailTable: "trx_penjualan_detail", key: "no_nota", tanggal: "tanggal",
     order: "timestamp.desc,no_nota.desc",
-    searchFields: ["no_nota"],
+    searchFields: ["no_nota"], detailSearchField: "nama_obat",
     listSelect: "no_nota,tanggal,jam,nama_pelanggan,petugas_transaksi,shift,harga_akhir",
     headerSelect: "no_nota,tanggal,jam,nama_pelanggan,petugas_transaksi,shift,subtotal,diskon,harga_akhir",
     detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_satuan,subtotal",
@@ -107,7 +107,7 @@ var RIWAYAT_NOTA_CFG = {
   pembelian: {
     label: "Pembelian", table: "trx_pembelian", detailTable: "trx_pembelian_detail", key: "no_faktur", tanggal: "tanggal_faktur",
     order: "timestamp.desc,no_faktur.desc",
-    searchFields: ["no_faktur", "no_faktur_supplier"],
+    searchFields: ["no_faktur", "no_faktur_supplier"], detailSearchField: "nama_obat",
     listSelect: "no_faktur,no_faktur_supplier,supplier,kategori,tanggal_faktur,jatuh_tempo,total_item,total_tagihan,petugas",
     headerSelect: "no_faktur,no_faktur_supplier,supplier,kategori,tanggal_faktur,jatuh_tempo,total_item,total_tagihan,petugas",
     detailSelect: "kode_obat,nama_obat,kode_batch,expired_date,qty,harga_netto,ppn,diskon,subtotal",
@@ -118,7 +118,7 @@ var RIWAYAT_NOTA_CFG = {
   retur_jual: {
     label: "Retur Penjualan", table: "trx_retur_jual", detailTable: "trx_retur_jual_detail", key: "no_retur", tanggal: "tanggal",
     order: "timestamp.desc,no_retur.desc",
-    searchFields: ["no_retur", "no_nota_asal"],
+    searchFields: ["no_retur", "no_nota_asal"], detailSearchField: "nama_obat",
     listSelect: "no_retur,no_nota_asal,tanggal,jam,nama_pelanggan,petugas,shift,total_refund,alasan",
     headerSelect: "no_retur,no_nota_asal,tanggal,jam,nama_pelanggan,petugas,shift,total_refund,alasan",
     detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_satuan,subtotal,kondisi",
@@ -129,7 +129,7 @@ var RIWAYAT_NOTA_CFG = {
   retur_beli: {
     label: "Retur Pembelian", table: "trx_retur_beli", detailTable: "trx_retur_beli_detail", key: "no_retur", tanggal: "tanggal",
     order: "timestamp.desc,no_retur.desc",
-    searchFields: ["no_retur", "no_faktur_asal"],
+    searchFields: ["no_retur", "no_faktur_asal"], detailSearchField: "nama_obat",
     listSelect: "no_retur,no_faktur_asal,supplier,tanggal,status,created_by,approved_by,total_refund,alasan",
     headerSelect: "no_retur,no_faktur_asal,supplier,tanggal,status,created_by,approved_by,tanggal_approval,total_refund,alasan",
     detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_netto,subtotal,kondisi",
@@ -599,9 +599,9 @@ async function action(name, data, s) {
     };
     const dari = tanggal(data.dari, "mulai"), sampai = tanggal(data.sampai, "akhir");
     if (dari && sampai && dari > sampai) throw new Error("Tanggal mulai tidak boleh melewati tanggal akhir.");
-    // Kolom ini mencari nomor dokumen, bukan teks bebas. Pencocokan tepat
-    // mencegah nomor seperti INV-001 ikut muncul saat pengguna mencari INV-01.
-    const q = String(data.q || "").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 60);
+    // Nomor dokumen dicari secara tepat; nama obat dicari sebagian melalui
+    // tabel rincian agar nomor lain yang mirip tidak ikut muncul.
+    const q = String(data.q || "").trim().replace(/[^A-Za-z0-9À-ÿ _-]/g, "").replace(/\s+/g, " ").slice(0, 80);
     const nLimit = Math.floor(Number(data.limit)), limit = Number.isFinite(nLimit) ? Math.max(1, Math.min(100, nLimit)) : 50;
     const nOffset = Math.floor(Number(data.offset)), offset = Number.isFinite(nOffset) ? Math.max(0, Math.min(1000000, nOffset)) : 0;
     let query = `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=${cfg.listSelect}`;
@@ -610,6 +610,10 @@ async function action(name, data, s) {
     if (shift && shift !== "Semua") query += `&shift=eq.${encodeURIComponent(shift)}`;
     if (q) {
       const filters = cfg.searchFields.map((field) => `${field}.ilike.${encodeURIComponent(q)}`);
+      const detail = await db(cfg.detailTable, `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&${cfg.detailSearchField}=ilike.*${encodeURIComponent(q)}*&select=${cfg.key}&limit=1000`);
+      if (!detail.ok) throw new Error(await detail.text());
+      const itemKeys = [...new Set((await detail.json()).map((x) => x[cfg.key]).filter(Boolean))];
+      if (itemKeys.length) filters.push(`${cfg.key}.in.(${itemKeys.map((key) => encodeURIComponent(key)).join(",")})`);
       query += filters.length === 1 ? `&${filters[0]}` : `&or=(${filters.join(",")})`;
     }
     query += `&order=${cfg.order}&limit=${limit + 1}&offset=${offset}`;

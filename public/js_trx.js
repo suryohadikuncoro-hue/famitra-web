@@ -967,7 +967,7 @@ VIEWS.riwayat = {
           '<label class="field"><span>Jenis dokumen</span><select id="rnJenis" class="inp">' +
             jenis.map(function (x) { return '<option value="' + esc(x) + '">' + esc(RIWAYAT_NOTA_LABEL_UI[x]) + '</option>'; }).join('') +
           '</select></label>' +
-          '<label class="field"><span>Nomor nota / faktur / retur</span><input id="rnCari" class="inp" placeholder="Ketik nomor dokumen"></label>' +
+          '<label class="field"><span>Nomor dokumen / nama obat</span><input id="rnCari" class="inp" placeholder="Ketik nomor atau nama obat"></label>' +
           '<label class="field"><span>Dari tanggal</span><input id="rnDari" class="inp" type="date"></label>' +
           '<label class="field"><span>Sampai tanggal</span><input id="rnSampai" class="inp" type="date"></label>' +
           '<label class="field" id="rnShiftWrap"><span>Shift</span><select id="rnShift" class="inp">' +
