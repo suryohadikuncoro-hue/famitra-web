@@ -599,6 +599,8 @@ async function action(name, data, s) {
     };
     const dari = tanggal(data.dari, "mulai"), sampai = tanggal(data.sampai, "akhir");
     if (dari && sampai && dari > sampai) throw new Error("Tanggal mulai tidak boleh melewati tanggal akhir.");
+    // Kolom ini mencari nomor dokumen, bukan teks bebas. Pencocokan tepat
+    // mencegah nomor seperti INV-001 ikut muncul saat pengguna mencari INV-01.
     const q = String(data.q || "").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 60);
     const nLimit = Math.floor(Number(data.limit)), limit = Number.isFinite(nLimit) ? Math.max(1, Math.min(100, nLimit)) : 50;
     const nOffset = Math.floor(Number(data.offset)), offset = Number.isFinite(nOffset) ? Math.max(0, Math.min(1000000, nOffset)) : 0;
@@ -607,7 +609,7 @@ async function action(name, data, s) {
     if (sampai) query += `&${cfg.tanggal}=lte.${encodeURIComponent(sampai)}`;
     if (shift && shift !== "Semua") query += `&shift=eq.${encodeURIComponent(shift)}`;
     if (q) {
-      const filters = cfg.searchFields.map((field) => `${field}.ilike.*${encodeURIComponent(q)}*`);
+      const filters = cfg.searchFields.map((field) => `${field}.ilike.${encodeURIComponent(q)}`);
       query += filters.length === 1 ? `&${filters[0]}` : `&or=(${filters.join(",")})`;
     }
     query += `&order=${cfg.order}&limit=${limit + 1}&offset=${offset}`;
