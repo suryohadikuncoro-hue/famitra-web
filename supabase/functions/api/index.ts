@@ -608,20 +608,27 @@ async function action(name, data, s) {
     if (dari) query += `&${cfg.tanggal}=gte.${encodeURIComponent(dari)}`;
     if (sampai) query += `&${cfg.tanggal}=lte.${encodeURIComponent(sampai)}`;
     if (shift && shift !== "Semua") query += `&shift=eq.${encodeURIComponent(shift)}`;
+    let itemKeys = [];
     if (q) {
-      const filters = cfg.searchFields.map((field) => `${field}.ilike.${encodeURIComponent(q)}`);
+      // Nomor dokumen harus benar-benar sama; jangan gunakan ILIKE tanpa
+      // wildcard karena perilakunya mudah berubah ketika query di-encode.
+      const filters = cfg.searchFields.map((field) => `${field}.eq.${encodeURIComponent(q)}`);
       const detail = await db(cfg.detailTable, `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&${cfg.detailSearchField}=ilike.*${encodeURIComponent(q)}*&select=${cfg.key}&limit=1000`);
       if (!detail.ok) throw new Error(await detail.text());
-      const itemKeys = [...new Set((await detail.json()).map((x) => x[cfg.key]).filter(Boolean))];
+      itemKeys = [...new Set((await detail.json()).map((x) => x[cfg.key]).filter(Boolean))];
       if (itemKeys.length) filters.push(`${cfg.key}.in.(${itemKeys.map((key) => encodeURIComponent(key)).join(",")})`);
       query += filters.length === 1 ? `&${filters[0]}` : `&or=(${filters.join(",")})`;
     }
     query += `&order=${cfg.order}&limit=${limit + 1}&offset=${offset}`;
     const r = await db(cfg.table, query);
     if (!r.ok) throw new Error(await r.text());
-    const rows = await r.json();
+    let rows = await r.json();
+    // Defense in depth: only return rows that match the exact document number
+    // or a detail row containing the searched medicine name.
+    if (q) {
+      rows = rows.filter((row) => cfg.searchFields.some((field) => String(row[field] || "") === q) || itemKeys.includes(row[cfg.key]));
+    }
     return { jenis, rows: rows.slice(0, limit).map(cfg.row), has_more: rows.length > limit, next_offset: offset + Math.min(rows.length, limit) };
-  }
   if (name === "riwayat.notaDetail") {
     const jenis = String(data.jenis || ""), cfg = RIWAYAT_NOTA_CFG[jenis];
     if (!cfg || !(RIWAYAT_NOTA_ROLE[s.role] || []).includes(jenis)) throw new Error("Akses riwayat nota ini tidak diizinkan.");
