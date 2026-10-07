@@ -459,8 +459,13 @@ function bukaUbahFaktur(no) {
     }
     aturModeUbahBeli(h);
     gambarBeli();
-    toast('Faktur ' + h.No_Faktur + ' siap diubah.');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    toast('Faktur ' + h.No_Faktur + ' dimuat ke form di bagian atas halaman.');
+    // Konten digulir di dalam panel #view, bukan di jendela (lihat js_core.js:
+    // "Konten di-scroll di dalam panel (#view)"). window.scrollTo tidak
+    // berpengaruh di sini, sehingga perubahan tadi tidak terlihat.
+    var panel = document.getElementById('view');
+    if (panel) panel.scrollTo({ top: 0, behavior: 'smooth' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
   }).catch(function (e) { toast(e.message, true); });
 }
 
