@@ -56,7 +56,7 @@ VIEWS.beli = {
         '<button id="blTambahItem" class="btn btn-primary">Tambah baris</button></div>' +
         '<div class="table-wrap"><table><thead><tr>' +
           '<th>Kode obat</th><th>Nama obat</th><th>Kode batch</th><th>Kedaluwarsa</th><th class="c">Qty</th>' +
-          '<th class="r">Netto</th><th class="c">PPN %</th><th class="r">Diskon</th>' +
+          '<th class="r">Netto</th><th class="c">PPN %</th><th class="r">Diskon (Rp)</th>' +
           '<th class="r">Jual umum baru</th><th class="r">Harga khusus</th><th class="r">Harga mutasi</th>' +
           '<th class="c">Laba %</th><th class="c">Stok</th><th class="r">Subtotal</th><th></th>' +
         '</tr></thead><tbody id="blBody"></tbody></table></div>' +
