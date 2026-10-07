@@ -56,7 +56,7 @@ VIEWS.beli = {
         '<button id="blTambahItem" class="btn btn-primary">Tambah baris</button></div>' +
         '<div class="table-wrap"><table><thead><tr>' +
           '<th>Kode obat</th><th>Nama obat</th><th>Kode batch</th><th>Kedaluwarsa</th><th class="c">Qty</th>' +
-          '<th class="r">Netto</th><th class="c">PPN %</th><th class="r">Diskon (Rp)</th>' +
+          '<th class="r">Netto</th><th class="c">PPN %</th><th class="r">Diskon (%)</th>' +
           '<th class="r">Jual umum baru</th><th class="r">Harga khusus</th><th class="r">Harga mutasi</th>' +
           '<th class="c">Laba %</th><th class="c">Stok</th><th class="r">Subtotal</th><th></th>' +
         '</tr></thead><tbody id="blBody"></tbody></table></div>' +
@@ -67,6 +67,7 @@ VIEWS.beli = {
         '<button id="blSimpan" class="btn btn-primary btn-block">Simpan pembelian</button>' +
         '<p class="kpi-sub">Menyimpan faktur akan menambah stok per batch dan memperbarui harga modal. ' +
           'Harga jual umum, khusus (nakes), dan mutasi (apotek lain) hanya berubah bila kolomnya diisi. ' +
+          'Diskon diisi dalam persen dari nilai baris setelah PPN. ' +
           'Laba % dihitung dari harga jual umum terhadap netto.</p>' +
       '</div>' +
 
@@ -119,9 +120,30 @@ function htmlLabaBeli(it) {
   return '<span class="chip' + kelas + '">' + l.toFixed(1).replace('.', ',') + '%</span>';
 }
 
-function subtotalBaris(it) {
+// Nilai baris sebelum diskon: netto x qty + PPN.
+function brutoBaris(it) {
   return (Number(it.Harga_Netto) || 0) * (Number(it.Qty) || 0) *
-    (1 + (Number(it.PPN) || 0) / 100) - (Number(it.Diskon) || 0);
+    (1 + (Number(it.PPN) || 0) / 100);
+}
+
+// Kolom "Diskon (%)" diisi PERSEN. Database menyimpan diskon sebagai nominal
+// rupiah (trx_pembelian_detail.diskon), jadi persennya dihitung di sini dan baru
+// dikirim sebagai rupiah saat menyimpan — tidak ada perubahan skema.
+// Persen dihitung dari nilai baris SETELAH PPN. Dengan begitu memasukkan 10%
+// menghasilkan total yang sama dengan faktur yang menghitung DPP lebih dulu
+// (bruto - diskon) baru PPN: bruto x 1,11 x (1 - 10%) = (bruto x 90%) x 1,11.
+function diskonRupiahBaris(it) {
+  var persen = Number(it.Diskon) || 0;
+  if (persen <= 0) return 0;
+  var bruto = brutoBaris(it);
+  if (bruto <= 0) return 0;
+  // Dibatas 100% supaya subtotal tidak pernah negatif.
+  var nilai = bruto * Math.min(persen, 100) / 100;
+  return Math.round(nilai * 100) / 100;
+}
+
+function subtotalBaris(it) {
+  return brutoBaris(it) - diskonRupiahBaris(it);
 }
 
 function tutupSaranBeli() {
@@ -271,12 +293,11 @@ function ringkasBeli() {
   var qty = 0, bruto = 0, ppn = 0, diskon = 0;
   BELI.items.forEach(function (it) {
     var q = Number(it.Qty) || 0, n = Number(it.Harga_Netto) || 0;
-    var p = Number(it.PPN) || 0, d = Number(it.Diskon) || 0;
-    var dasar = n * q;
+    var p = Number(it.PPN) || 0;
     qty += q;
-    ppn += dasar * p / 100;
-    diskon += d;
-    bruto += dasar * (1 + p / 100);
+    ppn += n * q * p / 100;
+    diskon += diskonRupiahBaris(it);
+    bruto += brutoBaris(it);
   });
   var elItem = document.getElementById('blTotalItem');
   var elTotal = document.getElementById('blTotalTagihan');
@@ -343,11 +364,23 @@ function simpanPembelian() {
 function kirimPembelian(isi) {
   var btn = document.getElementById('blSimpan');
   if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan…'; }
+  // Kolom diskon diisi persen, sedangkan database menyimpan rupiah. Konversinya
+  // dilakukan di sini supaya nilai tersimpan dan laporan tetap nominal.
+  var kirim = isi.map(function (it) {
+    return {
+      Kode_Obat: it.Kode_Obat, Kode_Batch: it.Kode_Batch, Expired_Date: it.Expired_Date,
+      Qty: it.Qty, Harga_Netto: it.Harga_Netto, PPN: it.PPN,
+      Diskon: diskonRupiahBaris(it),
+      Harga_Jual_Umum_Baru: it.Harga_Jual_Umum_Baru,
+      Harga_Khusus_Baru: it.Harga_Khusus_Baru,
+      Harga_Jual_Mutasi_Baru: it.Harga_Jual_Mutasi_Baru
+    };
+  });
   api('beli.simpan', {
     mode: BELI.editNoFaktur ? 'edit' : 'baru',
     No_Faktur_Sistem: BELI.editNoFaktur || '',
     No_Faktur: val('blFaktur'), Supplier: val('blSupplier'), Kategori: val('blKategori'),
-    Tanggal_Faktur: val('blTanggal'), Jatuh_Tempo: val('blTempo'), items: isi
+    Tanggal_Faktur: val('blTanggal'), Jatuh_Tempo: val('blTempo'), items: kirim
   }).then(function (r) {
     toast(BELI.editNoFaktur
       ? 'Faktur ' + r.No_Faktur + ' diperbarui, ' + angka(r.Total_Item) + ' item.'
@@ -403,6 +436,12 @@ function bukaUbahFaktur(no) {
     var h = d.Header || {};
     BELI.editNoFaktur = h.No_Faktur;
     BELI.items = (d.items && d.items.length) ? d.items : [barisKosong()];
+    // Diskon tersimpan sebagai rupiah; kolom di form memakai persen, jadi
+    // dikembalikan ke persen agar angkanya sama seperti saat diisi.
+    BELI.items.forEach(function (it) {
+      var b = brutoBaris(it);
+      it.Diskon = b > 0 ? Math.round((Number(it.Diskon) || 0) / b * 100 * 100) / 100 : 0;
+    });
     var f = document.getElementById('blFaktur'); if (f) f.value = h.No_Faktur_Supplier || '';
     var k = document.getElementById('blKategori'); if (k) k.value = h.Kategori || 'Tidak Berpajak';
     var g = document.getElementById('blTanggal'); if (g) g.value = h.Tanggal_Faktur || '';
