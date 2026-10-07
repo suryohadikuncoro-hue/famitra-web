@@ -1,6 +1,6 @@
 /* ================== Pembelian (Bab 5), Biaya (8.1), Laporan (Bab 7) ====== */
 
-var BELI = { items: [], riwayatQuery: '' };
+var BELI = { items: [], riwayatQuery: '', editNoFaktur: null };
 var BELI_SUGGEST = { timer: null, request: 0, rows: [], index: -1, input: null };
 var HUTANG_FN_URL = 'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/hutang';
 function apiHutang(action, data) {
@@ -18,13 +18,14 @@ function chipStatusHutang(status) {
     BELUM_DIBAYAR: ['Belum dibayar', 'chip-warn'],
     DIBAYAR_SEBAGIAN: ['Dibayar sebagian', 'chip-warn'],
     DIBAYAR_SEBAGIAN_TERLAMBAT: ['Sebagian · terlambat', 'chip-bad'],
-    TERLAMBAT: ['Terlambat', 'chip-bad']
+    TERLAMBAT: ['Terlambat', 'chip-bad'],
+    DIBATALKAN: ['Dibatalkan', 'chip-bad']
   };
   var x = map[status] || [status || '—', ''];
   return '<span class="chip ' + x[1] + '">' + x[0] + '</span>';
 }
 function labelJatuhTempoHutang(r) {
-  if (r.Status_Pembayaran === 'LUNAS') return '';
+  if (r.Status_Pembayaran === 'LUNAS' || r.Status_Faktur === 'DIBATALKAN') return '';
   if (r.jatuh_tempo_hari === null || r.jatuh_tempo_hari === undefined) return '';
   if (r.jatuh_tempo_hari < 0) return '<span class="kpi-sub">terlambat ' + Math.abs(r.jatuh_tempo_hari) + ' hari</span>';
   if (r.jatuh_tempo_hari === 0) return '<span class="kpi-sub">jatuh tempo hari ini</span>';
@@ -36,8 +37,10 @@ VIEWS.beli = {
   title: 'Pembelian',
   render: function (el) {
     el.innerHTML =
-      '<div class="card"><div class="card-head"><h3>Faktur masuk dari PBF</h3>' +
-        '<button id="blSupplierBaru" class="btn btn-sm">Tambah supplier</button></div>' +
+      '<div class="card"><div class="card-head"><h3 id="blJudul">Faktur masuk dari PBF</h3>' +
+        '<div><button id="blBatalUbah" class="btn btn-sm" hidden>Batal ubah</button> ' +
+        '<button id="blSupplierBaru" class="btn btn-sm">Tambah supplier</button></div></div>' +
+        '<div id="blInfoUbah" class="kpi-sub" hidden style="margin-bottom:10px"></div>' +
         '<div class="grid g4">' +
           '<label class="field"><span>Nomor faktur PBF</span><input id="blFaktur" class="inp" placeholder="FK-2026-0012"></label>' +
           '<label class="field"><span>Supplier</span><select id="blSupplier" class="inp"></select></label>' +
@@ -52,16 +55,19 @@ VIEWS.beli = {
       '<div class="card"><div class="card-head"><h3>Rincian item</h3>' +
         '<button id="blTambahItem" class="btn btn-primary">Tambah baris</button></div>' +
         '<div class="table-wrap"><table><thead><tr>' +
-          '<th>Kode obat</th><th>Kode batch</th><th>Kedaluwarsa</th><th class="c">Qty</th>' +
+          '<th>Kode obat</th><th>Nama obat</th><th>Kode batch</th><th>Kedaluwarsa</th><th class="c">Qty</th>' +
           '<th class="r">Netto</th><th class="c">PPN %</th><th class="r">Diskon</th>' +
-          '<th class="r">Jual umum baru</th><th class="r">Subtotal</th><th></th>' +
+          '<th class="r">Jual umum baru</th><th class="r">Harga khusus</th><th class="r">Harga mutasi</th>' +
+          '<th class="c">Laba %</th><th class="c">Stok</th><th class="r">Subtotal</th><th></th>' +
         '</tr></thead><tbody id="blBody"></tbody></table></div>' +
         '<div id="beliSuggest" class="suggest beli-suggest" hidden></div>' +
         '<div class="pay-row total"><span id="blTotalItem">0 item</span>' +
           '<span id="blTotalTagihan" class="money">Rp0</span></div>' +
+        '<div class="kpi-sub" id="blRingkasBeli">Total PPN Rp0 · total diskon Rp0</div>' +
         '<button id="blSimpan" class="btn btn-primary btn-block">Simpan pembelian</button>' +
-        '<p class="kpi-sub">Menyimpan faktur akan menambah stok per batch dan memperbarui harga modal ' +
-          'serta harga jual umum. Harga khusus dan harga mutasi tidak ikut berubah.</p>' +
+        '<p class="kpi-sub">Menyimpan faktur akan menambah stok per batch dan memperbarui harga modal. ' +
+          'Harga jual umum, khusus (nakes), dan mutasi (apotek lain) hanya berubah bila kolomnya diisi. ' +
+          'Laba % dihitung dari harga jual umum terhadap netto.</p>' +
       '</div>' +
 
       '<div class="card"><div class="card-head"><h3>Riwayat faktur</h3></div>' +
@@ -74,13 +80,16 @@ VIEWS.beli = {
     document.getElementById('blTambahItem').onclick = function () { BELI.items.push(barisKosong()); gambarBeli(); };
     document.getElementById('blSimpan').onclick = simpanPembelian;
     document.getElementById('blSupplierBaru').onclick = formSupplier;
+    document.getElementById('blBatalUbah').onclick = batalUbahFaktur;
     document.getElementById('blRiwayatCari').oninput = function () {
       BELI.riwayatQuery = this.value.trim();
       clearTimeout(BELI.riwayatTimer);
       BELI.riwayatTimer = setTimeout(muatRiwayatBeli, 250);
     };
 
+    BELI.editNoFaktur = null;
     BELI.items = [barisKosong()];
+    aturModeUbahBeli(null);
     muatSupplier();
     gambarBeli();
     muatRiwayatBeli();
@@ -88,8 +97,26 @@ VIEWS.beli = {
 };
 
 function barisKosong() {
-  return { Kode_Obat: '', Kode_Batch: '', Expired_Date: '', Qty: 0, Harga_Netto: 0,
-           PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 0 };
+  return { Kode_Obat: '', Nama_Obat: '', Kode_Batch: '', Expired_Date: '', Qty: 0, Harga_Netto: 0,
+           PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 0, Harga_Khusus_Baru: 0, Harga_Jual_Mutasi_Baru: 0,
+           Stok_Tersedia: null, Jual_Umum_Kini: 0 };
+}
+
+// Laba % = (harga jual umum - netto) / harga jual umum. Diisi di kolom "Laba %"
+// rincian pembelian supaya salah input harga beli (mis. harga total baris
+// dimasukkan sebagai harga satuan) langsung terlihat sebelum disimpan.
+function labaPersenBeli(it) {
+  var jual = Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0;
+  var modal = Number(it.Harga_Netto) || 0;
+  if (jual <= 0 || modal <= 0) return null;
+  return (jual - modal) / jual * 100;
+}
+
+function htmlLabaBeli(it) {
+  var l = labaPersenBeli(it);
+  if (l === null) return '<span class="kpi-sub">—</span>';
+  var kelas = l < 0 ? ' chip-bad' : (l < 10 ? ' chip-warn' : ' chip-ok');
+  return '<span class="chip' + kelas + '">' + l.toFixed(1).replace('.', ',') + '%</span>';
 }
 
 function subtotalBaris(it) {
@@ -124,7 +151,8 @@ function tampilkanSaranBeli(rows, input) {
     return '<button type="button" data-beli-suggest="' + i + '"><div class="s-name">' +
       esc(b.Kode_Obat) + ' · ' + esc(b.Nama_Obat) + '</div><div class="s-meta"><span>' +
       esc(b.Kategori || 'Tanpa kategori') + '</span>' + (b.Barcode ? '<span>Barcode ' + esc(b.Barcode) + '</span>' : '') +
-      '<span>Modal ' + rupiah(b.Harga_Modal || 0) + '</span></div></button>';
+      '<span>Modal ' + rupiah(b.Harga_Modal || 0) + '</span>' +
+      '<span>Stok ' + angka(b.stok || 0) + '</span></div></button>';
   }).join('');
   posisikanSaranBeli(input); box.hidden = false;
 }
@@ -132,6 +160,9 @@ function pilihSaranBeli(index) {
   var input = BELI_SUGGEST.input, b = BELI_SUGGEST.rows[index]; if (!input || !b) return;
   var i = Number(input.dataset.i), it = BELI.items[i]; if (!it) return;
   it.Kode_Obat = String(b.Kode_Obat || '').toUpperCase();
+  it.Nama_Obat = b.Nama_Obat || '';
+  it.Stok_Tersedia = Number(b.stok || 0);
+  it.Jual_Umum_Kini = Number(b.Harga_Jual_Umum) || 0;
   if (!Number(it.Harga_Netto)) it.Harga_Netto = Number(b.Harga_Modal) || 0;
   if (!Number(it.PPN)) it.PPN = Number(b.PPN) || 0;
   if (!Number(it.Harga_Jual_Umum_Baru)) it.Harga_Jual_Umum_Baru = Number(b.Harga_Jual_Umum) || 0;
@@ -161,6 +192,7 @@ function gambarBeli() {
     }
     return '<tr>' +
       '<td>' + inp('Kode_Obat', 'text', 90) + '</td>' +
+      '<td>' + (it.Nama_Obat ? esc(it.Nama_Obat) : '<span class="kpi-sub">—</span>') + '</td>' +
       '<td>' + inp('Kode_Batch', 'text', 90) + '</td>' +
       '<td>' + inp('Expired_Date', 'date', 130) + '</td>' +
       '<td>' + inp('Qty', 'number', 66) + '</td>' +
@@ -168,7 +200,12 @@ function gambarBeli() {
       '<td>' + inp('PPN', 'number', 60) + '</td>' +
       '<td>' + inp('Diskon', 'number', 84) + '</td>' +
       '<td>' + inp('Harga_Jual_Umum_Baru', 'number', 96) + '</td>' +
-      '<td class="r num">' + rupiah(subtotalBaris(it)) + '</td>' +
+      '<td>' + inp('Harga_Khusus_Baru', 'number', 96) + '</td>' +
+      '<td>' + inp('Harga_Jual_Mutasi_Baru', 'number', 96) + '</td>' +
+      '<td class="c num" data-laba>' + htmlLabaBeli(it) + '</td>' +
+      '<td class="c num" data-stok>' + (it.Stok_Tersedia === null || it.Stok_Tersedia === undefined
+        ? '<span class="kpi-sub">—</span>' : angka(it.Stok_Tersedia)) + '</td>' +
+      '<td class="r num" data-subtotal>' + rupiah(subtotalBaris(it)) + '</td>' +
       '<td class="c"><button class="icon-btn" data-del="' + i + '" aria-label="Hapus baris">✕</button></td>' +
     '</tr>';
   }).join('');
@@ -181,8 +218,30 @@ function gambarBeli() {
     // Hanya perbarui angka total agar fokus pengetikan tidak hilang.
     ringkasBeli();
     if (f.dataset.f === 'Kode_Obat') jadwalkanSaranBeli(f);
-    var sel = f.closest('tr').children[8];
+    var tr = f.closest('tr');
+    var sel = tr.querySelector('[data-subtotal]');
     if (sel) sel.textContent = rupiah(subtotalBaris(it));
+    var lab = tr.querySelector('[data-laba]');
+    if (lab) lab.innerHTML = htmlLabaBeli(it);
+  };
+  // Kode obat yang diketik manual (tanpa memilih saran) tetap diisi nama, stok,
+  // dan harga jualnya begitu kolom ditinggalkan.
+  tb.onchange = function (e) {
+    var f = e.target.closest('[data-f="Kode_Obat"]');
+    if (!f) return;
+    var i = Number(f.dataset.i), it = BELI.items[i];
+    if (!it || !it.Kode_Obat || it.Nama_Obat) return;
+    api('barang.list', { q: it.Kode_Obat }).then(function (rows) {
+      var b = (rows || []).filter(function (x) { return String(x.Kode_Obat).toUpperCase() === String(it.Kode_Obat).toUpperCase(); })[0];
+      if (!b) return;
+      it.Nama_Obat = b.Nama_Obat || '';
+      it.Stok_Tersedia = Number(b.stok || 0);
+      it.Jual_Umum_Kini = Number(b.Harga_Jual_Umum) || 0;
+      if (!Number(it.Harga_Netto)) it.Harga_Netto = Number(b.Harga_Modal) || 0;
+      if (!Number(it.PPN)) it.PPN = Number(b.PPN) || 0;
+      if (!Number(it.Harga_Jual_Umum_Baru)) it.Harga_Jual_Umum_Baru = Number(b.Harga_Jual_Umum) || 0;
+      gambarBeli();
+    }).catch(function () { /* nama barang opsional; abaikan bila gagal */ });
   };
   tb.onclick = function (e) {
     var d = e.target.closest('[data-del]');
@@ -209,10 +268,22 @@ function gambarBeli() {
 }
 
 function ringkasBeli() {
-  var qty = BELI.items.reduce(function (a, it) { return a + (Number(it.Qty) || 0); }, 0);
-  var total = BELI.items.reduce(function (a, it) { return a + subtotalBaris(it); }, 0);
-  document.getElementById('blTotalItem').textContent = angka(qty) + ' item masuk';
-  document.getElementById('blTotalTagihan').textContent = rupiah(total);
+  var qty = 0, bruto = 0, ppn = 0, diskon = 0;
+  BELI.items.forEach(function (it) {
+    var q = Number(it.Qty) || 0, n = Number(it.Harga_Netto) || 0;
+    var p = Number(it.PPN) || 0, d = Number(it.Diskon) || 0;
+    var dasar = n * q;
+    qty += q;
+    ppn += dasar * p / 100;
+    diskon += d;
+    bruto += dasar * (1 + p / 100);
+  });
+  var elItem = document.getElementById('blTotalItem');
+  var elTotal = document.getElementById('blTotalTagihan');
+  var elRingkas = document.getElementById('blRingkasBeli');
+  if (elItem) elItem.textContent = angka(qty) + ' item masuk';
+  if (elTotal) elTotal.textContent = rupiah(bruto - diskon);
+  if (elRingkas) elRingkas.textContent = 'Total PPN ' + rupiah(ppn) + ' · total diskon ' + rupiah(diskon);
 }
 
 function muatSupplier() {
@@ -246,22 +317,136 @@ function simpanPembelian() {
   var isi = BELI.items.filter(function (it) { return it.Kode_Obat && Number(it.Qty) > 0; });
   if (!isi.length) { toast('Isi minimal satu baris item dengan qty.', true); return; }
 
+  // Peringatan margin negatif: harga beli (netto) di atas harga jual umum.
+  var kurang = isi.filter(function (it) {
+    var jual = Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0;
+    return jual > 0 && Number(it.Harga_Netto) > jual;
+  });
+  if (kurang.length) {
+    var daftar = kurang.map(function (it) {
+      var jual = Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0;
+      return '<li>' + esc(it.Nama_Obat || it.Kode_Obat) + ' — beli ' + rupiah(it.Harga_Netto) +
+        ', jual ' + rupiah(jual) + '</li>';
+    }).join('');
+    modalBuka('Harga beli di atas harga jual',
+      '<p>Baris berikut akan membuat margin negatif:</p><ul>' + daftar + '</ul>' +
+      '<p class="kpi-sub">Periksa apakah kolom netto terisi harga total baris, bukan harga satuan.</p>',
+      [
+        { label: 'Periksa lagi', aksi: modalTutup },
+        { label: 'Tetap simpan', kelas: 'btn-danger', aksi: function () { modalTutup(); kirimPembelian(isi); } }
+      ]);
+    return;
+  }
+  kirimPembelian(isi);
+}
+
+function kirimPembelian(isi) {
   var btn = document.getElementById('blSimpan');
-  btn.disabled = true; btn.textContent = 'Menyimpan…';
+  if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan…'; }
   api('beli.simpan', {
+    mode: BELI.editNoFaktur ? 'edit' : 'baru',
+    No_Faktur_Sistem: BELI.editNoFaktur || '',
     No_Faktur: val('blFaktur'), Supplier: val('blSupplier'), Kategori: val('blKategori'),
     Tanggal_Faktur: val('blTanggal'), Jatuh_Tempo: val('blTempo'), items: isi
   }).then(function (r) {
-    toast('Faktur ' + r.No_Faktur + ' tersimpan, ' + angka(r.Total_Item) + ' item masuk.');
-    document.getElementById('blFaktur').value = '';
-    BELI.items = [barisKosong()];
-    gambarBeli();
+    toast(BELI.editNoFaktur
+      ? 'Faktur ' + r.No_Faktur + ' diperbarui, ' + angka(r.Total_Item) + ' item.'
+      : 'Faktur ' + r.No_Faktur + ' tersimpan, ' + angka(r.Total_Item) + ' item masuk.');
+    batalUbahFaktur();
     muatRiwayatBeli();
   }).catch(function (e) {
     toast(e.message, true);
   }).then(function () {
-    btn.disabled = false; btn.textContent = 'Simpan pembelian';
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = BELI.editNoFaktur ? 'Simpan perubahan faktur' : 'Simpan pembelian';
+    }
   });
+}
+
+// Menandai form sedang mengubah faktur lama (atau kembali ke mode faktur baru).
+function aturModeUbahBeli(h) {
+  var judul = document.getElementById('blJudul');
+  var info = document.getElementById('blInfoUbah');
+  var tombol = document.getElementById('blSimpan');
+  var batal = document.getElementById('blBatalUbah');
+  if (h) {
+    if (judul) judul.textContent = 'Ubah faktur ' + h.No_Faktur;
+    if (info) {
+      info.hidden = false;
+      info.innerHTML = 'Mengubah faktur <strong>' + esc(h.No_Faktur) + '</strong> · PBF ' +
+        esc(h.No_Faktur_Supplier || '—') + ' · ' + tglIndo(h.Tanggal_Faktur) +
+        (h.Diedit_At ? ' · pernah diubah oleh ' + esc(h.Diedit_Oleh || '-') : '');
+    }
+    if (tombol) tombol.textContent = 'Simpan perubahan faktur';
+    if (batal) batal.hidden = false;
+  } else {
+    if (judul) judul.textContent = 'Faktur masuk dari PBF';
+    if (info) { info.hidden = true; info.innerHTML = ''; }
+    if (tombol) tombol.textContent = 'Simpan pembelian';
+    if (batal) batal.hidden = true;
+  }
+}
+
+function batalUbahFaktur() {
+  BELI.editNoFaktur = null;
+  BELI.items = [barisKosong()];
+  var f = document.getElementById('blFaktur'); if (f) f.value = '';
+  var t = document.getElementById('blTempo'); if (t) t.value = '';
+  var g = document.getElementById('blTanggal'); if (g) g.value = new Date().toISOString().substring(0, 10);
+  aturModeUbahBeli(null);
+  gambarBeli();
+}
+
+function bukaUbahFaktur(no) {
+  api('beli.detail', { No_Faktur: no }).then(function (d) {
+    var h = d.Header || {};
+    BELI.editNoFaktur = h.No_Faktur;
+    BELI.items = (d.items && d.items.length) ? d.items : [barisKosong()];
+    var f = document.getElementById('blFaktur'); if (f) f.value = h.No_Faktur_Supplier || '';
+    var k = document.getElementById('blKategori'); if (k) k.value = h.Kategori || 'Tidak Berpajak';
+    var g = document.getElementById('blTanggal'); if (g) g.value = h.Tanggal_Faktur || '';
+    var t = document.getElementById('blTempo'); if (t) t.value = h.Jatuh_Tempo || '';
+    var sel = document.getElementById('blSupplier');
+    if (sel) {
+      var ketemu = false;
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === h.Supplier) { sel.selectedIndex = i; ketemu = true; break; }
+      }
+      if (!ketemu) {
+        sel.innerHTML = '<option>' + esc(h.Supplier || '') + '</option>' + sel.innerHTML;
+        sel.selectedIndex = 0;
+      }
+    }
+    aturModeUbahBeli(h);
+    gambarBeli();
+    toast('Faktur ' + h.No_Faktur + ' siap diubah.');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }).catch(function (e) { toast(e.message, true); });
+}
+
+function konfirmasiBatalFaktur(r) {
+  modalBuka('Batalkan faktur ' + r.No_Faktur,
+    '<p>Faktur <strong>' + esc(r.No_Faktur) + '</strong> (' + esc(r.Supplier) + ', ' + rupiah(r.Total_Tagihan) +
+      ') akan dibatalkan.</p>' +
+    '<p class="kpi-sub">Stok yang pernah ditambahkan akan dikurangi kembali. Faktur tidak dihapus — tetap ' +
+      'tersimpan sebagai catatan dibatalkan. Pembatalan ditolak kalau stoknya sudah terjual atau fakturnya ' +
+      'sudah ada pembayaran.</p>' +
+    '<label class="field"><span>Alasan pembatalan</span><textarea id="blAlasanBatal" class="inp" rows="3" ' +
+      'placeholder="Contoh: salah input, faktur dobel, barang tidak jadi dikirim"></textarea></label>',
+    [
+      { label: 'Kembali', aksi: modalTutup },
+      { label: 'Batalkan faktur', kelas: 'btn-danger', aksi: function () {
+          var alasan = val('blAlasanBatal');
+          if (!alasan) { toast('Alasan pembatalan wajib diisi.', true); return; }
+          api('beli.batal', { No_Faktur: r.No_Faktur, Alasan: alasan }).then(function () {
+            modalTutup();
+            toast('Faktur ' + r.No_Faktur + ' dibatalkan.');
+            if (BELI.editNoFaktur === r.No_Faktur) batalUbahFaktur();
+            muatRiwayatBeli();
+          }).catch(function (e) { toast(e.message, true); });
+        } }
+    ]);
 }
 
 function bukaBayarHutang(r) {
@@ -332,20 +517,38 @@ function muatRiwayatBeli() {
   }).then(function (rows) {
     if (!tb.isConnected) return;
     tb.innerHTML = rows.length ? rows.map(function (r) {
-      var bayar = r.Status_Pembayaran === 'LUNAS' ? '<button class="btn btn-sm" data-riwayat-hutang="' + esc(r.No_Faktur) + '">Riwayat</button>' : '<button class="btn btn-sm btn-primary" data-bayar-hutang="' + esc(r.No_Faktur) + '">Bayar</button> <button class="btn btn-sm" data-riwayat-hutang="' + esc(r.No_Faktur) + '">Riwayat</button>';
-      return '<tr><td>' + esc(r.No_Faktur) + '</td><td>' + esc(r.No_Faktur_Supplier || '') + '</td><td>' + esc(r.Supplier) + '</td>' +
+      var batal = r.Status_Faktur === 'DIBATALKAN';
+      var aksi;
+      if (batal) {
+        aksi = '<span class="kpi-sub">Faktur dibatalkan</span>';
+      } else {
+        var bayar = r.Status_Pembayaran === 'LUNAS'
+          ? '<button class="btn btn-sm" data-riwayat-hutang="' + esc(r.No_Faktur) + '">Riwayat</button>'
+          : '<button class="btn btn-sm btn-primary" data-bayar-hutang="' + esc(r.No_Faktur) + '">Bayar</button> ' +
+            '<button class="btn btn-sm" data-riwayat-hutang="' + esc(r.No_Faktur) + '">Riwayat</button>';
+        aksi = '<button class="btn btn-sm" data-ubah-faktur="' + esc(r.No_Faktur) + '">Ubah</button> ' + bayar +
+          ' <button class="btn btn-sm btn-danger" data-batal-faktur="' + esc(r.No_Faktur) + '">Batalkan</button>';
+      }
+      var statusSel = batal
+        ? chipStatusHutang('DIBATALKAN')
+        : chipStatusHutang(r.Status_Pembayaran) + (r.Diedit_At ? ' <span class="kpi-sub">pernah diubah</span>' : '');
+      return '<tr' + (batal ? ' style="opacity:.55"' : '') + '><td>' + esc(r.No_Faktur) + '</td><td>' + esc(r.No_Faktur_Supplier || '') + '</td><td>' + esc(r.Supplier) + '</td>' +
         '<td>' + esc(r.Kategori) + '</td><td>' + tglIndo(r.Tanggal_Faktur) + '</td>' +
         '<td>' + (r.Jatuh_Tempo ? tglIndo(r.Jatuh_Tempo) + '<br>' + labelJatuhTempoHutang(r) : '—') + '</td>' +
         '<td class="c num">' + angka(r.Total_Item) + '</td>' +
         '<td class="r num">' + rupiah(r.Total_Tagihan) + '</td><td class="r num">' + rupiah(r.Total_Dibayar) + '</td>' +
-        '<td class="r num">' + rupiah(r.Sisa_Hutang) + '</td><td>' + chipStatusHutang(r.Status_Pembayaran) + '</td><td class="c">' + bayar + '</td></tr>';
+        '<td class="r num">' + rupiah(r.Sisa_Hutang) + '</td><td>' + statusSel + '</td><td class="c">' + aksi + '</td></tr>';
     }).join('') : tabelKosong('Belum ada faktur tercatat.', 12);
     tb.onclick = function (e) {
-      var bayar = e.target.closest('[data-bayar-hutang]');
-      var riwayat = e.target.closest('[data-riwayat-hutang]');
-      var r = rows.filter(function (x) { return x.No_Faktur === (bayar || riwayat).dataset[(bayar ? 'bayar' : 'riwayat') + 'Hutang']; })[0];
-      if (bayar) bukaBayarHutang(r);
-      if (riwayat) bukaRiwayatHutang(r.No_Faktur);
+      var b = e.target.closest('[data-bayar-hutang],[data-riwayat-hutang],[data-ubah-faktur],[data-batal-faktur]');
+      if (!b) return;
+      var no = b.dataset.bayarHutang || b.dataset.riwayatHutang || b.dataset.ubahFaktur || b.dataset.batalFaktur;
+      var r = rows.filter(function (x) { return x.No_Faktur === no; })[0];
+      if (!r) return;
+      if (b.dataset.ubahFaktur) bukaUbahFaktur(r.No_Faktur);
+      else if (b.dataset.batalFaktur) konfirmasiBatalFaktur(r);
+      else if (b.dataset.bayarHutang) bukaBayarHutang(r);
+      else bukaRiwayatHutang(r.No_Faktur);
     };
   }).catch(function (e) { tb.innerHTML = '<tr><td colspan="12" class="empty">' + esc(e.message) + '</td></tr>'; });
 }

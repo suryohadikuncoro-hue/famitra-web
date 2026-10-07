@@ -70,6 +70,8 @@ var PERM = {
   "beli.simpan": ["Owner", "Apoteker"],
   "beli.supplier": ["Owner", "Apoteker"],
   "beli.simpanSupplier": ["Owner", "Apoteker"],
+  "beli.detail": ["Owner", "Apoteker"],
+  "beli.batal": ["Owner", "Apoteker"],
   "loyalty.expire": ["Owner", "Apoteker"],
   "biaya.list": ["Owner", "Kasir"],
   "biaya.simpan": ["Owner", "Kasir"],
@@ -361,7 +363,20 @@ async function action(name, data, s) {
     }
     const r = await db("master_barang", `${filterBarang}&select=*&order=nama_obat&limit=100`);
     const rows = await r.json();
-    return rows.map((b) => ({ ...b, Kode_Obat: b.kode_obat, Nama_Obat: b.nama_obat, Kategori: b.kategori, Satuan: b.satuan, Barcode: b.barcode, Harga_Modal: b.harga_modal, Harga_Jual_Umum: b.harga_jual_umum, Harga_Khusus: b.harga_khusus, Harga_Jual_Mutasi: b.harga_jual_mutasi, PPN: b.ppn, Stok_Min: b.stok_min, Aktif: b.aktif, stok: 0 }));
+    // Stok nyata per barang: dipakai pencarian barang di Pembelian supaya apoteker
+    // melihat stok yang ada sebelum menambah barang. Sebelumnya selalu 0.
+    const stok = {};
+    if (rows.length) {
+      const daftar = rows.map((b) => encodeURIComponent(`"${String(b.kode_obat).replace(/"/g, '\\"')}"`)).join(",");
+      for (let offset = 0; ; offset += 1000) {
+        const br = await db("stok_batch", `?cabang_id=eq.${cab}&kode_obat=in.(${daftar})&select=kode_obat,stok_real&order=id_batch&limit=1000&offset=${offset}`);
+        if (!br.ok) throw new Error(await br.text());
+        const page = await br.json();
+        page.forEach((x) => { stok[x.kode_obat] = (stok[x.kode_obat] || 0) + Number(x.stok_real || 0); });
+        if (page.length < 1000) break;
+      }
+    }
+    return rows.map((b) => ({ ...b, Kode_Obat: b.kode_obat, Nama_Obat: b.nama_obat, Kategori: b.kategori, Satuan: b.satuan, Barcode: b.barcode, Harga_Modal: b.harga_modal, Harga_Jual_Umum: b.harga_jual_umum, Harga_Khusus: b.harga_khusus, Harga_Jual_Mutasi: b.harga_jual_mutasi, PPN: b.ppn, Stok_Min: b.stok_min, Aktif: b.aktif, stok: stok[b.kode_obat] || 0 }));
   }
   if (name === "stok.list") {
     const cabang = cabangSesi(s), cab = encodeURIComponent(cabang);
@@ -560,7 +575,17 @@ async function action(name, data, s) {
     return { Kode_Supplier: master.kode_supplier, Nama_Supplier: master.nama_supplier };
   }
   if (name === "beli.simpan") {
-    const r = await db("rpc/purchase_save", "", { method: "POST", headers: { ...headers }, body: JSON.stringify({ p_username: s.username, p_no_faktur_supplier: data.No_Faktur, p_supplier: data.Supplier, p_kategori: data.Kategori, p_tanggal: data.Tanggal_Faktur, p_jatuh_tempo: data.Jatuh_Tempo || null, p_items: data.items || [], p_cabang_id: cabangSesi(s) }) });
+    // mode "edit" memakai purchase_update (membalik dulu efek faktur lama).
+    // No_Faktur tetap berarti nomor faktur PBF; nomor faktur sistem yang sedang
+    // diubah dikirim terpisah lewat No_Faktur_Sistem.
+    const edit = data.mode === "edit";
+    const noSistem = String(data.No_Faktur_Sistem || "").trim();
+    if (edit && !noSistem) throw new Error("Nomor faktur yang akan diubah wajib diisi.");
+    const rpc = edit ? "purchase_update" : "purchase_save";
+    const body = edit
+      ? { p_username: s.username, p_no_faktur: noSistem, p_no_faktur_supplier: data.No_Faktur, p_supplier: data.Supplier, p_kategori: data.Kategori, p_tanggal: data.Tanggal_Faktur, p_jatuh_tempo: data.Jatuh_Tempo || null, p_items: data.items || [], p_cabang_id: cabangSesi(s) }
+      : { p_username: s.username, p_no_faktur_supplier: data.No_Faktur, p_supplier: data.Supplier, p_kategori: data.Kategori, p_tanggal: data.Tanggal_Faktur, p_jatuh_tempo: data.Jatuh_Tempo || null, p_items: data.items || [], p_cabang_id: cabangSesi(s) };
+    const r = await db(`rpc/${rpc}`, "", { method: "POST", headers: { ...headers }, body: JSON.stringify(body) });
     if (!r.ok) {
       const text = await r.text();
       let detail = null;
@@ -573,9 +598,79 @@ async function action(name, data, s) {
     return await r.json();
   }
   if (name === "beli.list") {
-    const r = await db("trx_pembelian", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_faktur,no_faktur_supplier,supplier,kategori,tanggal_faktur,jatuh_tempo,total_item,total_tagihan&order=timestamp.desc&limit=200`);
+    const cab = encodeURIComponent(cabangSesi(s));
+    const kolom = "no_faktur,no_faktur_supplier,supplier,kategori,tanggal_faktur,jatuh_tempo,total_item,total_tagihan";
+    // Kolom status/diedit_at baru ada setelah migrasi pembelian_edit_dan_harga_tambahan.
+    // Kalau migrasi belum diterapkan, daftar tetap tampil (semua dianggap AKTIF)
+    // supaya halaman Pembelian tidak mati hanya karena urutan deploy.
+    let r = await db("trx_pembelian", `?cabang_id=eq.${cab}&select=${kolom},status,diedit_at&order=timestamp.desc&limit=200`);
+    if (!r.ok) r = await db("trx_pembelian", `?cabang_id=eq.${cab}&select=${kolom}&order=timestamp.desc&limit=200`);
+    if (!r.ok) throw new Error(await r.text());
     const rows = await r.json();
-    return rows.map((x) => ({ No_Faktur: x.no_faktur, No_Faktur_Supplier: x.no_faktur_supplier, Supplier: x.supplier, Kategori: x.kategori, Tanggal_Faktur: x.tanggal_faktur, Jatuh_Tempo: x.jatuh_tempo, Total_Item: x.total_item, Total_Tagihan: x.total_tagihan, jatuh_tempo_hari: x.jatuh_tempo ? daysUntil(x.jatuh_tempo) : null }));
+    return rows.map((x) => ({ No_Faktur: x.no_faktur, No_Faktur_Supplier: x.no_faktur_supplier, Supplier: x.supplier, Kategori: x.kategori, Tanggal_Faktur: x.tanggal_faktur, Jatuh_Tempo: x.jatuh_tempo, Total_Item: x.total_item, Total_Tagihan: x.total_tagihan, Status_Faktur: x.status || "AKTIF", Diedit_At: x.diedit_at || null, jatuh_tempo_hari: x.jatuh_tempo ? daysUntil(x.jatuh_tempo) : null }));
+  }
+  if (name === "beli.detail") {
+    // Dipakai form Pembelian saat mengubah faktur: header + rincian item, ditambah
+    // stok batch saat ini dan harga master terkini untuk tiap barang.
+    const cab = cabangSesi(s);
+    const no = String(data.No_Faktur || "").trim();
+    if (!no) throw new Error("Nomor faktur wajib diisi.");
+    const h = await one("trx_pembelian", `?cabang_id=eq.${encodeURIComponent(cab)}&no_faktur=eq.${encodeURIComponent(no)}&select=no_faktur,no_faktur_supplier,supplier,kategori,tanggal_faktur,jatuh_tempo,total_item,total_tagihan,petugas,status,diedit_oleh,diedit_at`);
+    if (!h) throw new Error("Faktur tidak ditemukan di cabang ini.");
+    const d = await db("trx_pembelian_detail", `?cabang_id=eq.${encodeURIComponent(cab)}&no_faktur=eq.${encodeURIComponent(no)}&select=kode_obat,nama_obat,kode_batch,expired_date,qty,harga_netto,ppn,diskon,harga_jual_umum_baru,harga_khusus_baru,harga_jual_mutasi_baru,subtotal&order=kode_obat.asc`);
+    if (!d.ok) throw new Error(await d.text());
+    const items = await d.json();
+    const kode = [...new Set(items.map((x) => String(x.kode_obat || "").toUpperCase()).filter(Boolean))];
+    const stok = {}, master = {};
+    if (kode.length) {
+      const daftar = kode.map((k) => encodeURIComponent(`"${k.replace(/"/g, '\\"')}"`)).join(",");
+      for (let offset = 0; ; offset += 1000) {
+        const br = await db("stok_batch", `?cabang_id=eq.${encodeURIComponent(cab)}&kode_obat=in.(${daftar})&select=kode_obat,kode_batch,stok_real&order=kode_obat.asc,kode_batch.asc&limit=1000&offset=${offset}`);
+        if (!br.ok) throw new Error(await br.text());
+        const page = await br.json();
+        page.forEach((x) => { stok[String(x.kode_obat).toUpperCase() + "|" + String(x.kode_batch || "")] = Number(x.stok_real || 0); });
+        if (page.length < 1000) break;
+      }
+      const mr = await db("master_barang", `?cabang_id=eq.${encodeURIComponent(cab)}&kode_obat=in.(${daftar})&select=kode_obat,harga_jual_umum,harga_khusus,harga_jual_mutasi,aktif`);
+      if (mr.ok) (await mr.json()).forEach((x) => { master[String(x.kode_obat).toUpperCase()] = x; });
+    }
+    return {
+      Header: {
+        No_Faktur: h.no_faktur, No_Faktur_Supplier: h.no_faktur_supplier || "", Supplier: h.supplier,
+        Kategori: h.kategori, Tanggal_Faktur: h.tanggal_faktur, Jatuh_Tempo: h.jatuh_tempo,
+        Total_Item: h.total_item, Total_Tagihan: h.total_tagihan, Petugas: h.petugas,
+        Status_Faktur: h.status || "AKTIF", Diedit_Oleh: h.diedit_oleh || "", Diedit_At: h.diedit_at || null
+      },
+      items: items.map((x) => {
+        const k = String(x.kode_obat || "").toUpperCase();
+        const m = master[k] || {};
+        const kunci = k + "|" + String(x.kode_batch || "");
+        return {
+          Kode_Obat: k, Nama_Obat: x.nama_obat, Kode_Batch: x.kode_batch || "", Expired_Date: x.expired_date,
+          Qty: x.qty, Harga_Netto: x.harga_netto, PPN: x.ppn, Diskon: x.diskon,
+          Harga_Jual_Umum_Baru: x.harga_jual_umum_baru || 0,
+          Harga_Khusus_Baru: x.harga_khusus_baru || 0,
+          Harga_Jual_Mutasi_Baru: x.harga_jual_mutasi_baru || 0,
+          Stok_Tersedia: Object.prototype.hasOwnProperty.call(stok, kunci) ? stok[kunci] : null,
+          Jual_Umum_Kini: m.harga_jual_umum || 0, Jual_Khusus_Kini: m.harga_khusus || 0,
+          Jual_Mutasi_Kini: m.harga_jual_mutasi || 0, Aktif: m.aktif || "YA"
+        };
+      })
+    };
+  }
+  if (name === "beli.batal") {
+    const no = String(data.No_Faktur || "").trim();
+    const alasan = String(data.Alasan || "").trim();
+    if (!no) throw new Error("Nomor faktur wajib diisi.");
+    if (!alasan) throw new Error("Alasan pembatalan wajib diisi.");
+    const r = await db("rpc/purchase_cancel", "", { method: "POST", headers: { ...headers }, body: JSON.stringify({ p_username: s.username, p_no_faktur: no, p_alasan: alasan, p_cabang_id: cabangSesi(s) }) });
+    if (!r.ok) {
+      const text = await r.text();
+      let detail = null;
+      try { detail = JSON.parse(text); } catch (_) { /* Keep non-JSON server response below. */ }
+      throw new Error(detail && (detail.message || detail.details) || text || "Pembatalan faktur gagal.");
+    }
+    return await r.json();
   }
   if (name === "riwayat.notaList") {
     const jenis = String(data.jenis || "");
