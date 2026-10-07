@@ -274,7 +274,11 @@ async function action(name, data, s) {
     const qtyPerKode = /* @__PURE__ */ new Map();
     const HALAMAN = 1e3;
     for (let i = 0; i < 8; i++) {
-      const r = await db("v_analitik_produk", `?cabang_id=eq.${encodeURIComponent(cab)}&tanggal=gte.${batas}&select=kode_obat,qty&limit=${HALAMAN}&offset=${i * HALAMAN}`);
+      // `order` wajib ada: tanpa urutan tetap, LIMIT/OFFSET bisa melewatkan atau
+      // menggandakan baris sehingga jumlah "terjual" per produk jadi keliru dan
+      // daftar Sering dibeli tidak akurat. View ini teragregasi per
+      // (cabang, tanggal, kode_obat), jadi ketiganya membuat urutan pasti.
+      const r = await db("v_analitik_produk", `?cabang_id=eq.${encodeURIComponent(cab)}&tanggal=gte.${batas}&select=kode_obat,qty&order=cabang_id.asc,tanggal.asc,kode_obat.asc&limit=${HALAMAN}&offset=${i * HALAMAN}`);
       if (!r.ok) throw new Error(await r.text());
       const rows = await r.json();
       rows.forEach((x) => {
