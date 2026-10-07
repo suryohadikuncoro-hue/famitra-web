@@ -1,6 +1,6 @@
 /* ================== Pembelian (Bab 5), Biaya (8.1), Laporan (Bab 7) ====== */
 
-var BELI = { items: [] };
+var BELI = { items: [], riwayatQuery: '' };
 var BELI_SUGGEST = { timer: null, request: 0, rows: [], index: -1, input: null };
 var HUTANG_FN_URL = 'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/hutang';
 function apiHutang(action, data) {
@@ -65,6 +65,7 @@ VIEWS.beli = {
       '</div>' +
 
       '<div class="card"><div class="card-head"><h3>Riwayat faktur</h3></div>' +
+        '<label class="field"><span>Cari nomor faktur atau nama obat</span><input id="blRiwayatCari" class="inp" placeholder="Nomor faktur atau nama obat"></label>' +
         '<div class="table-wrap"><table><thead><tr><th>No. faktur</th><th>No. faktur PBF</th><th>Supplier</th>' +
           '<th>Kategori</th><th>Tanggal</th><th>Jatuh tempo</th><th class="c">Item</th>' +
           '<th class="r">Tagihan</th><th class="r">Dibayar</th><th class="r">Sisa hutang</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="blRiwayat"></tbody></table></div></div>';
@@ -73,6 +74,11 @@ VIEWS.beli = {
     document.getElementById('blTambahItem').onclick = function () { BELI.items.push(barisKosong()); gambarBeli(); };
     document.getElementById('blSimpan').onclick = simpanPembelian;
     document.getElementById('blSupplierBaru').onclick = formSupplier;
+    document.getElementById('blRiwayatCari').oninput = function () {
+      BELI.riwayatQuery = this.value.trim();
+      clearTimeout(BELI.riwayatTimer);
+      BELI.riwayatTimer = setTimeout(muatRiwayatBeli, 250);
+    };
 
     BELI.items = [barisKosong()];
     muatSupplier();
@@ -316,7 +322,15 @@ function bukaRiwayatHutang(noFaktur) {
 function muatRiwayatBeli() {
   var tb = document.getElementById('blRiwayat');
   if (!tb) return;
+  var q = BELI.riwayatQuery || '';
   apiHutang('list', {}).then(function (rows) {
+    if (!q) return rows;
+    return api('riwayat.notaList', { jenis: 'pembelian', q: q, limit: 100, offset: 0 }).then(function (result) {
+      var matches = new Set((result.rows || []).map(function (x) { return x.No_Dokumen; }));
+      return rows.filter(function (x) { return matches.has(x.No_Faktur); });
+    });
+  }).then(function (rows) {
+    if (!tb.isConnected) return;
     tb.innerHTML = rows.length ? rows.map(function (r) {
       var bayar = r.Status_Pembayaran === 'LUNAS' ? '<button class="btn btn-sm" data-riwayat-hutang="' + esc(r.No_Faktur) + '">Riwayat</button>' : '<button class="btn btn-sm btn-primary" data-bayar-hutang="' + esc(r.No_Faktur) + '">Bayar</button> <button class="btn btn-sm" data-riwayat-hutang="' + esc(r.No_Faktur) + '">Riwayat</button>';
       return '<tr><td>' + esc(r.No_Faktur) + '</td><td>' + esc(r.No_Faktur_Supplier || '') + '</td><td>' + esc(r.Supplier) + '</td>' +
@@ -399,6 +413,7 @@ function muatBiaya() {
 /* ============================================================ Retur ====== */
 
 var RETUR = { tab: 'jual', jual: { items: [], notaAsal: null }, beli: { items: [], fakturAsal: null } };
+var RETUR_JUAL_SEARCH = { timer: null, request: 0 };
 
 VIEWS.retur = {
   title: 'Retur',
@@ -437,8 +452,8 @@ function gambarReturJual() {
   el.innerHTML =
     '<div class="card"><div class="card-head"><h3>Pilih nota asal</h3></div>' +
       '<div class="grid g2">' +
-        '<label class="field"><span>Cari nota (nomor/nama pelanggan)</span>' +
-          '<input id="rjCari" class="inp" placeholder="INV20260909 atau Ibu Sari"></label>' +
+        '<label class="field"><span>Cari nota (nomor/nama pelanggan/obat)</span>' +
+          '<input id="rjCari" class="inp" placeholder="Nomor nota, nama pelanggan, atau obat"></label>' +
         '<label class="field"><span>Rentang hari terakhir</span>' +
           '<input id="rjBatas" class="inp" type="number" min="1" max="365" value="60"></label>' +
       '</div>' +
@@ -454,18 +469,24 @@ function gambarReturJual() {
       '</tr></thead><tbody id="rjRiwayat"></tbody></table></div></div>';
 
   document.getElementById('rjMuat').onclick = muatNotaUntukRetur;
+  document.getElementById('rjCari').oninput = function () {
+    clearTimeout(RETUR_JUAL_SEARCH.timer);
+    RETUR_JUAL_SEARCH.timer = setTimeout(muatNotaUntukRetur, 300);
+  };
   document.getElementById('rjCari').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') muatNotaUntukRetur();
+    if (e.key === 'Enter') { clearTimeout(RETUR_JUAL_SEARCH.timer); muatNotaUntukRetur(); }
   });
   muatRiwayatReturJual();
 }
 
 function muatNotaUntukRetur() {
   var container = document.getElementById('rjForm');
+  var request = ++RETUR_JUAL_SEARCH.request;
   memuat(container);
   api('retur.jualList', {
     q: val('rjCari'), limit: numVal('rjBatas') || 60
   }).then(function (rows) {
+    if (request !== RETUR_JUAL_SEARCH.request || !container.isConnected) return;
     if (!rows.length) {
       container.innerHTML = '<div class="empty">Tidak ada nota pada rentang ini.</div>';
       return;
@@ -487,6 +508,7 @@ function muatNotaUntukRetur() {
     };
     gambarItemReturJual();
   }).catch(function (e) {
+    if (request !== RETUR_JUAL_SEARCH.request || !container.isConnected) return;
     container.innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
   });
 }
@@ -623,6 +645,7 @@ function gambarReturBeli() {
     '<div class="card"><div class="card-head"><h3>Pengajuan retur beli</h3>' +
       '<span class="kpi-sub">Membuat retur langsung berstatus PENDING_APPROVAL. Stok belum berubah sampai Owner kedua menyetujui.</span></div>' +
       '<div class="grid g2">' +
+        '<label class="field"><span>Cari faktur / nama obat</span><input id="rbCari" class="inp" placeholder="Nomor faktur atau nama obat"></label>' +
         '<label class="field"><span>Faktur asal</span><select id="rbFaktur" class="inp"></select></label>' +
         '<label class="field"><span>Filter riwayat</span><select id="rbFilter" class="inp">' +
           '<option value="">Semua status</option>' +
@@ -643,6 +666,26 @@ function gambarReturBeli() {
   muatFakturUntukRetur();
   muatRiwayatReturBeli();
   document.getElementById('rbFilter').onchange = muatRiwayatReturBeli;
+  document.getElementById('rbCari').oninput = gambarPilihanFakturReturBeli;
+}
+
+function gambarPilihanFakturReturBeli() {
+  var sel = document.getElementById('rbFaktur');
+  if (!sel || !RETUR.beli.daftarFaktur) return;
+  var q = (val('rbCari') || '').trim().toLocaleLowerCase();
+  var rows = RETUR.beli.daftarFaktur.filter(function (f) {
+    var fields = [f.No_Faktur, f.No_Faktur_Supplier, f.Supplier];
+    (f.items || []).forEach(function (i) { fields.push(i.Nama_Obat, i.Kode_Obat); });
+    return !q || fields.some(function (v) { return String(v || '').toLocaleLowerCase().indexOf(q) >= 0; });
+  });
+  sel.innerHTML = rows.length ? rows.map(function (f) {
+    return '<option value="' + esc(f.No_Faktur) + '">' + esc(f.No_Faktur) + ' · ' +
+      (f.No_Faktur_Supplier ? esc(f.No_Faktur_Supplier) + ' · ' : '') + esc(f.Supplier) + ' · ' + esc(f.Tanggal_Faktur) +
+      (f.sudah_retur > 0 ? ' (sudah diretur ' + rupiah(f.sudah_retur) + ')' : '') + '</option>';
+  }).join('') : '<option value="">Tidak ada faktur yang cocok</option>';
+  RETUR.beli.fakturAsal = rows[0] || null;
+  if (rows.length) muatItemFakturRetur();
+  else document.getElementById('rbForm').innerHTML = '<div class="empty">Tidak ada faktur yang cocok.</div>';
 }
 
 function muatFakturUntukRetur() {
@@ -652,17 +695,10 @@ function muatFakturUntukRetur() {
       sel.innerHTML = '<option>Belum ada faktur pembelian</option>';
       return;
     }
-    sel.innerHTML = d.faktur.map(function (f) {
-      return '<option value="' + esc(f.No_Faktur) + '">' + esc(f.No_Faktur) + ' · ' +
-        (f.No_Faktur_Supplier ? esc(f.No_Faktur_Supplier) + ' · ' : '') +
-        esc(f.Supplier) + ' · ' + esc(f.Tanggal_Faktur) +
-        (f.sudah_retur > 0 ? ' (sudah diretur ' + rupiah(f.sudah_retur) + ')' : '') +
-      '</option>';
-    }).join('');
     RETUR.beli.daftarFaktur = d.faktur;
-    RETUR.beli.fakturAsal = d.faktur[0];
+    gambarPilihanFakturReturBeli();
     document.getElementById('rbFaktur').onchange = function () {
-      RETUR.beli.fakturAsal = d.faktur.filter(function (x) { return x.No_Faktur === sel.value; })[0];
+      RETUR.beli.fakturAsal = RETUR.beli.daftarFaktur.filter(function (x) { return x.No_Faktur === sel.value; })[0];
       muatItemFakturRetur();
     };
     muatItemFakturRetur();
@@ -988,7 +1024,13 @@ VIEWS.riwayat = {
     document.getElementById('rnShift').onchange = function () { muatRiwayatNota(true); };
     aturFilterShiftRiwayat();
     document.getElementById('rnFilter').onclick = function () { muatRiwayatNota(true); };
-    document.getElementById('rnCari').addEventListener('keydown', function (e) { if (e.key === 'Enter') muatRiwayatNota(true); });
+    document.getElementById('rnCari').oninput = function () {
+      clearTimeout(RIWAYAT_NOTA_UI.searchTimer);
+      RIWAYAT_NOTA_UI.searchTimer = setTimeout(function () { muatRiwayatNota(true); }, 300);
+    };
+    document.getElementById('rnCari').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { clearTimeout(RIWAYAT_NOTA_UI.searchTimer); muatRiwayatNota(true); }
+    });
     document.getElementById('rnMore').onclick = function () { muatRiwayatNota(false); };
     document.getElementById('rnBody').onclick = function (e) {
       var b = e.target.closest('[data-rn-detail]');
