@@ -629,6 +629,7 @@ async function action(name, data, s) {
       rows = rows.filter((row) => cfg.searchFields.some((field) => String(row[field] || "") === q) || itemKeys.includes(row[cfg.key]));
     }
     return { jenis, rows: rows.slice(0, limit).map(cfg.row), has_more: rows.length > limit, next_offset: offset + Math.min(rows.length, limit) };
+  }
   if (name === "riwayat.notaDetail") {
     const jenis = String(data.jenis || ""), cfg = RIWAYAT_NOTA_CFG[jenis];
     if (!cfg || !(RIWAYAT_NOTA_ROLE[s.role] || []).includes(jenis)) throw new Error("Akses riwayat nota ini tidak diizinkan.");
