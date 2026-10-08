@@ -19,8 +19,12 @@
   var NAMA_MASA_PENDEK = { bulan: 'X bulan', selamanya: 'tidak pernah hangus', akhir_tahun: 'akhir tahun berikutnya' };
   var NAMA_GABUNG = { tertinggi: 'Ambil yang tertinggi', kali: 'Dikalikan', jumlah: 'Dijumlahkan (dua pengganda 2x menjadi 3x)' };
   var TIPE_POIN = ['Umum', 'Tenaga Kesehatan', 'Apotek Lain'];
+  // Bawaan faktor penukaran (nilai potongan), sama dengan loyalty_cfg_default():
+  // 1 = penuh, 0,5 = setengah, 0 = tipe itu tidak boleh menukar.
+  var BAWAAN_TUKAR = { 'Umum': 1, 'Tenaga Kesehatan': 0.5, 'Apotek Lain': 0 };
   var NAMA_HARI = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
   var POIN_STATE = null;
+  var TK_CARI = [];
 
   function fmtF(n) { return String(Number(n)).replace('.', ','); }
 
@@ -60,6 +64,19 @@
     teks += ' Masa berlaku poin: ' + esc(modeMasa === 'bulan'
       ? angka(c.masa_berlaku_bulan || 12) + ' bulan sejak diperoleh'
       : (NAMA_MASA_PENDEK[modeMasa] || modeMasa)) + '.';
+    // Aturan penukaran reward (faktor hanya mengubah nilai potongan rupiah,
+    // bukan jumlah poin yang dipotong).
+    var ftTukar = c.faktor_tipe_tukar || {};
+    var tipeTukar = TIPE_POIN.map(function (t) {
+      var v = ftTukar[t];
+      var f = Number(v === undefined || v === null || v === '' ? BAWAAN_TUKAR[t] : v);
+      return esc(t) + ' ' + (f === 0 ? 'tidak bisa' : fmtF(f) + 'x');
+    }).join(', ');
+    teks += ' Penukaran poin: ' + tipeTukar + '.';
+    if (Number(c.min_poin_tukar) > 0) teks += ' Minimal saldo ' + angka(c.min_poin_tukar) + ' poin untuk bisa menukar.';
+    if (Number(c.maks_persen_tukar) < 100) teks += ' Nilai penukaran dibatasi ' + fmtF(c.maks_persen_tukar) + '% dari nilai transaksi.';
+    if (Number(c.maks_tukar_per_hari) > 0) teks += ' Maksimal ' + angka(c.maks_tukar_per_hari) + ' penukaran per pelanggan per hari.';
+    if (Number(c.maks_tukar_per_bulan) > 0) teks += ' Maksimal ' + angka(c.maks_tukar_per_bulan) + ' penukaran per pelanggan per bulan.';
     return teks;
   }
 
@@ -125,6 +142,9 @@
 
   function bacaFormPoin() {
     var cap = val('mpCap');
+    // Faktor penukaran: kolom yang dikosongkan memakai bawaan, bukan 0, supaya
+    // tidak ada tipe yang diam-diam kehilangan hak menukar karena salah kosong.
+    var faktorInput = function (id, baku) { var s = val(id); return s === '' ? baku : Number(s); };
     return {
       aktif: val('mpAktif') === '1',
       basis_hitung: val('mpBasis'),
@@ -138,7 +158,12 @@
       pengganda: bacaPengganda(),
       retur_kurangi_poin: val('mpRetur') === '1',
       masa_berlaku_mode: val('mpMasa'),
-      masa_berlaku_bulan: Number(val('mpMasaBulan') || 12)
+      masa_berlaku_bulan: Number(val('mpMasaBulan') || 12),
+      faktor_tipe_tukar: { 'Umum': faktorInput('mpTkUmum', BAWAAN_TUKAR['Umum']), 'Tenaga Kesehatan': faktorInput('mpTkNakes', BAWAAN_TUKAR['Tenaga Kesehatan']), 'Apotek Lain': faktorInput('mpTkApotek', BAWAAN_TUKAR['Apotek Lain']) },
+      min_poin_tukar: Number(val('mpTkMin') || 0),
+      maks_persen_tukar: Number(val('mpTkPersen') || 100),
+      maks_tukar_per_hari: Number(val('mpTkHari') || 0),
+      maks_tukar_per_bulan: Number(val('mpTkBulan') || 0)
     };
   }
 
@@ -155,9 +180,50 @@
     return t;
   }
 
+  function tampilHasilSimulasiTukar(d, subtotal, diskon) {
+    var catatan = '<p style="margin:6px 0 0"><em>Hanya simulasi — tidak ada data yang diubah.</em></p>';
+    if (!d.boleh) {
+      return '<span style="color:#b00020"><strong>Tidak boleh ditukar.</strong> ' + esc(d.alasan || 'Penukaran tidak memenuhi syarat.') + '</span>' + catatan;
+    }
+    var potongan = Number(d.nilai_penukaran || 0);
+    var akhir = Math.max(0, Number(subtotal || 0) - Number(diskon || 0) - potongan);
+    return '<strong style="color:#0a7d33">Boleh ditukar.</strong>' +
+      '<br>Nilai potongan: <strong>' + rupiah(potongan) + '</strong>' +
+      ' (nilai reward ' + rupiah(d.nilai_reward) + ' × faktor ' + fmtF(d.faktor_tipe) + 'x untuk tipe ' + esc(d.tipe_customer) + ')' +
+      '<br>Poin yang dipotong: ' + angka(d.poin_dibutuhkan) + ' poin, sisa poin ' + angka(d.sisa_setelah) + ' (saldo ' + angka(d.poin_tersedia) + ')' +
+      '<br>Harga akhir setelah potongan: <strong>' + rupiah(akhir) + '</strong>' +
+      (Number(d.maks_persen) < 100 ? ' (batas ' + fmtF(d.maks_persen) + '% dari nilai transaksi)' : '') +
+      catatan;
+  }
+
+  function muatRewardTukar() {
+    var sel = document.getElementById('mpTkReward');
+    if (!sel) return;
+    var isi = function (rows) {
+      sel.innerHTML = '<option value="">— pilih reward —</option>' + (rows || []).map(function (r) {
+        return '<option value="' + esc(r.id) + '">' + esc(r.name) + ' — ' + angka(r.points_required) + ' poin · ' + rupiah(r.reward_value) +
+          (r.is_active ? '' : ' (nonaktif)') + '</option>';
+      }).join('');
+    };
+    // Pakai daftar yang sudah dimuat kartu utama bila ada supaya tidak memanggil ulang.
+    if (REWARD_ROWS.length) { isi(REWARD_ROWS); return; }
+    promoApi('rewardList', {}).then(isi).catch(function (e) {
+      sel.innerHTML = '<option value="">' + esc(e.message) + '</option>';
+    });
+  }
+
   function formPerolehanPoin() {
     if (!POIN_STATE) { toast('Pengaturan poin belum termuat. Coba lagi sebentar.', true); return; }
     var c = POIN_STATE.cfg, ft = c.faktor_tipe || {};
+    // Kolom penukaran bisa saja belum ada di baris lama; pakai bawaan bila kosong.
+    var ftTukar = c.faktor_tipe_tukar || {};
+    var faktorTukar = function (t) {
+      var v = ftTukar[t];
+      return (v === undefined || v === null || v === '') ? BAWAAN_TUKAR[t] : v;
+    };
+    var angkaTukar = function (v, baku) {
+      return (v === undefined || v === null || v === '' || !isFinite(Number(v))) ? baku : Number(v);
+    };
     var hariIni = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
     var opsiTipe = opsiPilihan({ 'Umum': 'Umum', 'Tenaga Kesehatan': 'Tenaga Kesehatan', 'Apotek Lain': 'Apotek Lain' }, 'Umum');
     var riwayat = (POIN_STATE.riwayat || []).map(function (r) {
@@ -192,6 +258,17 @@
       '<p class="sub">Perubahan pengaturan ini berlaku untuk pemeriksaan berikutnya. Poin yang sudah diperoleh pelanggan tidak berubah saat menyimpan.</p>' +
       '<button type="button" id="mpDryBtn" class="btn btn-sm">Lihat uji kering kedaluwarsa</button>' +
       '<div id="mpDryHasil" class="sub" style="margin-top:8px"></div>' +
+      '<h4 style="margin:12px 0 8px">Penukaran reward</h4>' +
+      '<p class="sub">Poin yang dipotong pelanggan <strong>selalu sebesar poin milik reward</strong>. ' +
+        'Faktor di bawah hanya mengubah <strong>nilai potongan rupiah</strong>, bukan jumlah poin: ' +
+        '1 = penuh, 0,5 = setengah nilai, 0 = tipe itu tidak boleh menukar poin.</p>' +
+      '<label class="field"><span>Faktor nilai potongan — Umum</span><input id="mpTkUmum" class="inp" type="number" min="0" max="100" step="0.01" value="' + esc(faktorTukar('Umum')) + '"></label>' +
+      '<label class="field"><span>Faktor nilai potongan — Tenaga Kesehatan</span><input id="mpTkNakes" class="inp" type="number" min="0" max="100" step="0.01" value="' + esc(faktorTukar('Tenaga Kesehatan')) + '"></label>' +
+      '<label class="field"><span>Faktor nilai potongan — Apotek Lain</span><input id="mpTkApotek" class="inp" type="number" min="0" max="100" step="0.01" value="' + esc(faktorTukar('Apotek Lain')) + '"></label>' +
+      '<label class="field"><span>Minimal saldo poin untuk menukar (0 = tanpa minimal)</span><input id="mpTkMin" class="inp" type="number" min="0" max="1000000" step="1" value="' + esc(angkaTukar(c.min_poin_tukar, 0)) + '"></label>' +
+      '<label class="field"><span>Batas nilai transaksi yang boleh dibayar dengan poin (%, 100 = tanpa batas tambahan)</span><input id="mpTkPersen" class="inp" type="number" min="1" max="100" step="0.01" value="' + esc(angkaTukar(c.maks_persen_tukar, 100)) + '"></label>' +
+      '<label class="field"><span>Batas penukaran per pelanggan per hari (0 = tanpa batas)</span><input id="mpTkHari" class="inp" type="number" min="0" max="1000" step="1" value="' + esc(angkaTukar(c.maks_tukar_per_hari, 0)) + '"></label>' +
+      '<label class="field"><span>Batas penukaran per pelanggan per bulan (0 = tanpa batas)</span><input id="mpTkBulan" class="inp" type="number" min="0" max="10000" step="1" value="' + esc(angkaTukar(c.maks_tukar_per_bulan, 0)) + '"></label>' +
       '<h4 style="margin:12px 0 8px">Simulasi</h4>' +
       '<p class="sub">Coba contoh belanja dengan pengaturan di atas (belum disimpan).</p>' +
       '<label class="field"><span>Tipe pelanggan</span><select id="mpSimTipe" class="inp">' + opsiTipe + '</select></label>' +
@@ -201,6 +278,17 @@
       '<label><input id="mpSimRetur" type="checkbox"> Simulasikan retur (pengurangan poin)</label> ' +
       '<button type="button" id="mpSimBtn" class="btn btn-sm">Hitung poin</button>' +
       '<div id="mpSimHasil" class="sub" style="margin-top:8px"></div>' +
+      '<h4 style="margin:12px 0 8px">Simulasi penukaran</h4>' +
+      '<p class="sub">Uji satu reward dengan pengaturan penukaran yang <strong>tersimpan</strong> di cabang ini (simpan dulu perubahan di atas bila ingin angkanya ikut berubah). Angkanya memakai fungsi yang sama dengan kasir, jadi hasilnya sama dengan yang berlaku saat transaksi.</p>' +
+      '<label class="field"><span>Nomor WA pelanggan</span><input id="mpTkWA" class="inp" placeholder="08xx atau 628xx"></label>' +
+      '<button type="button" id="mpTkCari" class="btn btn-sm">Cari pelanggan</button>' +
+      '<div id="mpTkHasilCari" class="sub" style="margin-top:8px"></div>' +
+      '<p class="sub" style="margin:6px 0 0">Catatan: pencarian pelanggan memakai daftar pelanggan cabang aktif dan sekaligus menjalankan pemeriksaan kedaluwarsa poin otomatis (sama seperti halaman Pelanggan). Hasil simulasi penukaran sendiri tidak mengubah saldo poin siapa pun.</p>' +
+      '<label class="field"><span>Reward</span><select id="mpTkReward" class="inp"><option value="">Memuat reward…</option></select></label>' +
+      '<label class="field"><span>Subtotal transaksi (Rp)</span><input id="mpTkSubtotal" class="inp" type="number" min="0" step="500" value="25000"></label>' +
+      '<label class="field"><span>Diskon manual (Rp, kosong = 0)</span><input id="mpTkDiskon" class="inp" type="number" min="0" step="500"></label>' +
+      '<button type="button" id="mpTkHitung" class="btn btn-sm">Hitung penukaran</button>' +
+      '<div id="mpTkHasil" class="sub" style="margin-top:8px"></div>' +
       (riwayat ? '<h4 style="margin:12px 0 8px">Riwayat perubahan</h4><ul class="sub" style="margin:0;padding-left:18px">' + riwayat + '</ul>' : ''),
       [{ label: 'Batal', aksi: modalTutup },
        { label: 'Simpan', kelas: 'btn-primary', aksi: function () {
@@ -211,6 +299,7 @@
            .catch(function (e) { toast(e.message, true); });
        } }]);
     gambarPengganda(c.pengganda || []);
+    muatRewardTukar();
     document.getElementById('modalBody').onclick = function (e) {
       if (e.target.closest('#mpPgTambah')) {
         var daftar = bacaPengganda();
@@ -259,6 +348,48 @@
           tanggal: val('mpSimTgl') || undefined, retur: document.getElementById('mpSimRetur').checked
         }).then(function (d) { hasil.innerHTML = tampilHasilSimulasi(d); })
           .catch(function (err) { hasil.textContent = err.message; });
+        return;
+      }
+      if (e.target.closest('#mpTkCari')) {
+        var boxCari = document.getElementById('mpTkHasilCari');
+        boxCari.textContent = 'Mencari…';
+        TK_CARI = [];
+        // `api` = Edge Function `api` (router utama), bukan promoApi.
+        api('crm.list', { q: val('mpTkWA'), tipe: 'Semua' }).then(function (rows) {
+          TK_CARI = rows || [];
+          if (!TK_CARI.length) { boxCari.innerHTML = '<span style="color:#b00020">Pelanggan tidak ditemukan di cabang aktif.</span>'; return; }
+          boxCari.innerHTML = '<div class="pos-reward-list">' + TK_CARI.slice(0, 20).map(function (x, i) {
+            return '<div class="pos-reward-item"><div><strong>' + esc(x.Nama || 'Tanpa nama') + '</strong>' +
+              '<span>' + esc(x.Nomor_WA || '—') + ' · ' + angka(x.Total_Points) + ' poin · ' + esc(x.Tipe_Customer || 'Umum') + '</span></div>' +
+              '<button type="button" class="btn btn-sm" data-mp-tkwa="' + i + '">Pilih</button></div>';
+          }).join('') + '</div>' +
+            (TK_CARI.length > 20 ? '<p class="sub" style="margin:6px 0 0">Menampilkan 20 teratas dari ' + angka(TK_CARI.length) + ' pelanggan.</p>' : '');
+        }).catch(function (er) {
+          boxCari.innerHTML = '<span style="color:#b00020">' + esc(er.message) + '</span>';
+        });
+        return;
+      }
+      var pilihTk = e.target.closest('[data-mp-tkwa]');
+      if (pilihTk) {
+        var cust = TK_CARI[Number(pilihTk.dataset.mpTkwa)];
+        if (!cust) return;
+        document.getElementById('mpTkWA').value = cust.Nomor_WA || '';
+        document.getElementById('mpTkHasilCari').innerHTML = 'Terpilih: <strong>' + esc(cust.Nama || 'Tanpa nama') + '</strong> · ' +
+          esc(cust.Nomor_WA || '—') + ' · saldo ' + angka(cust.Total_Points) + ' poin · tipe ' + esc(cust.Tipe_Customer || 'Umum') +
+          ' · tier ' + esc(cust.Tier || 'reguler');
+        return;
+      }
+      if (e.target.closest('#mpTkHitung')) {
+        var boxTukar = document.getElementById('mpTkHasil');
+        var rewardTukar = val('mpTkReward');
+        var subtotalTukar = Number(val('mpTkSubtotal') || 0);
+        var diskonTukar = val('mpTkDiskon') === '' ? 0 : Number(val('mpTkDiskon'));
+        if (!rewardTukar) { boxTukar.innerHTML = '<span style="color:#b00020">Pilih reward yang mau disimulasikan.</span>'; return; }
+        boxTukar.textContent = 'Menghitung…';
+        promoApi('poinTukarSimulasi', { reward_id: rewardTukar, nomor_wa: val('mpTkWA'), subtotal: subtotalTukar, diskon: diskonTukar })
+          .then(function (d) { boxTukar.innerHTML = tampilHasilSimulasiTukar(d, subtotalTukar, diskonTukar); })
+          .catch(function (err) { boxTukar.innerHTML = '<span style="color:#b00020">' + esc(err.message) + '</span>'; });
+        return;
       }
     };
   }
