@@ -51,6 +51,8 @@ assert.equal(context.labaPersenBeli({ ...item, PPN: -100 }), null, 'invalid tax 
 
 assert.match(migration, /CREATE OR REPLACE FUNCTION public\.purchase_effective_unit_cost/i, 'SQL shares a single effective-cost function');
 assert.match(migration, /purchase_validate_items\(p_items\)/i, 'purchase RPC wrappers validate incoming line values');
+assert.match(migration, /purchase_validate_category\(p_kategori, p_items\)/i, 'purchase RPC wrappers validate category and tax consistency');
+assert.match(migration, /Kategori Tidak Berpajak harus menggunakan PPN 0 persen/i, 'untaxed purchases cannot carry non-zero tax');
 assert.match(migration, /v_ppn < 0 OR v_ppn > 100/i, 'backend rejects invalid tax rates');
 assert.match(migration, /v_diskon < 0 OR v_diskon > v_bruto/i, 'backend rejects negative or over-gross discounts');
 assert.match(migration, /purchase_payment_save/i, 'migration provides an atomic payment RPC');
@@ -59,6 +61,8 @@ assert.match(migration, /sum\(p\.jumlah_bayar\)/i, 'payment RPC checks the curre
 assert.match(migration, /purchase_assert_no_shared_batches/i, 'edit/cancel paths reject ambiguous shared purchase batches');
 assert.match(migration, /UPDATE public\.stok_batch[\s\S]*harga_modal_batch = latest_batch\.modal/i, 'migration backfills batch modal only');
 assert.match(migration, /UPDATE public\.master_barang[\s\S]*harga_modal = latest_product\.modal/i, 'migration backfills master modal only');
+assert.match(migration, /SET harga_modal = 0[\s\S]*NOT EXISTS \([\s\S]*p\.status = 'AKTIF'/i, 'stale master modal is cleared when no active purchase remains');
+assert.match(migration, /SET harga_modal_batch = 0[\s\S]*NOT EXISTS \([\s\S]*p\.status = 'AKTIF'/i, 'stale batch modal is cleared when no active purchase remains');
 
 assert.match(api, /const headerFilters = cfg\.searchFields\.map\(\(field\) => `\$\{field\}\.ilike\.\$\{pattern\}`\)/, 'nota document search uses partial, escaped ILIKE');
 assert.match(api, /detailSearchFields: \["nama_obat", "kode_obat"\]/, 'riwayat searches both medicine name and code');

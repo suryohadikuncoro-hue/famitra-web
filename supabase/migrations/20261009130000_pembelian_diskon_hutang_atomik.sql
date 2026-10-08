@@ -66,6 +66,33 @@ BEGIN
 END;
 $function$;
 
+CREATE OR REPLACE FUNCTION public.purchase_validate_category(
+  p_kategori text,
+  p_items jsonb
+) RETURNS void
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_item jsonb;
+  v_kategori text := coalesce(nullif(trim(p_kategori), ''), 'Tidak Berpajak');
+  v_ppn numeric;
+BEGIN
+  IF v_kategori NOT IN ('Berpajak', 'Tidak Berpajak', 'Konsinyasi') THEN
+    RAISE EXCEPTION 'Kategori pembelian tidak valid.';
+  END IF;
+  IF v_kategori = 'Tidak Berpajak' THEN
+    FOR v_item IN SELECT value FROM jsonb_array_elements(p_items) LOOP
+      v_ppn := coalesce((v_item->>'PPN')::numeric, 0);
+      IF v_ppn <> 0 THEN
+        RAISE EXCEPTION 'Kategori Tidak Berpajak harus menggunakan PPN 0 persen.';
+      END IF;
+    END LOOP;
+  END IF;
+END;
+$function$;
+
 CREATE OR REPLACE FUNCTION public.purchase_assert_no_shared_batches(p_cabang_id text, p_no_faktur text)
 RETURNS void
 LANGUAGE plpgsql
@@ -174,11 +201,58 @@ BEGIN
     FROM latest_product
    WHERE m.cabang_id = latest_product.cabang_id
      AND m.kode_obat = latest_product.kode_obat;
+
+  -- Bila faktur aktif terakhir dibatalkan atau dihapus dari rincian saat edit,
+  -- tidak ada baris latest_* yang dapat di-join. Jangan biarkan modal lama
+  -- tampil seolah-olah masih berasal dari pembelian aktif.
+  UPDATE public.master_barang m
+     SET harga_modal = 0,
+         updated_at = now()
+   WHERE m.cabang_id = p_cabang_id
+     AND m.kode_obat = ANY(p_kode_obat)
+     AND EXISTS (
+       SELECT 1
+       FROM public.trx_pembelian_detail d
+       WHERE d.cabang_id = m.cabang_id AND d.kode_obat = m.kode_obat
+     )
+     AND NOT EXISTS (
+       SELECT 1
+       FROM public.trx_pembelian_detail d
+       JOIN public.trx_pembelian p
+         ON p.cabang_id = d.cabang_id AND p.no_faktur = d.no_faktur
+      WHERE d.cabang_id = m.cabang_id
+        AND d.kode_obat = m.kode_obat
+        AND p.status = 'AKTIF'
+     );
+
+  UPDATE public.stok_batch s
+     SET harga_modal_batch = 0,
+         updated_at = now()
+   WHERE s.cabang_id = p_cabang_id
+     AND s.kode_obat = ANY(p_kode_obat)
+     AND EXISTS (
+       SELECT 1
+       FROM public.trx_pembelian_detail d
+       WHERE d.cabang_id = s.cabang_id
+         AND d.kode_obat = s.kode_obat
+         AND coalesce(d.kode_batch, '') = coalesce(s.kode_batch, '')
+     )
+     AND NOT EXISTS (
+       SELECT 1
+       FROM public.trx_pembelian_detail d
+       JOIN public.trx_pembelian p
+         ON p.cabang_id = d.cabang_id AND p.no_faktur = d.no_faktur
+      WHERE d.cabang_id = s.cabang_id
+        AND d.kode_obat = s.kode_obat
+        AND coalesce(d.kode_batch, '') = coalesce(s.kode_batch, '')
+        AND p.status = 'AKTIF'
+     );
 END;
 $function$;
 
 REVOKE ALL ON FUNCTION public.purchase_effective_unit_cost(numeric, numeric, numeric, numeric) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.purchase_validate_items(jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.purchase_validate_category(text, jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.purchase_assert_no_shared_batches(text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.purchase_assert_new_batches_exclusive(text, text, jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.purchase_refresh_costs(text, text[]) FROM PUBLIC, anon, authenticated;
@@ -211,6 +285,7 @@ DECLARE
   v_kode text[];
 BEGIN
   PERFORM public.purchase_validate_items(p_items);
+  PERFORM public.purchase_validate_category(p_kategori, p_items);
   v_result := public.purchase_save_before_discount_fix(
     p_username, p_no_faktur_supplier, p_supplier, p_kategori,
     p_tanggal, p_jatuh_tempo, p_items, p_cabang_id);
@@ -241,6 +316,7 @@ DECLARE
   v_kode text[];
 BEGIN
   PERFORM public.purchase_validate_items(p_items);
+  PERFORM public.purchase_validate_category(p_kategori, p_items);
   SELECT u.cabang_id INTO v_cabang_id
     FROM public.app_users u WHERE u.username = p_username AND u.aktif = 'YA';
   IF v_cabang_id IS NULL THEN RAISE EXCEPTION 'Petugas tidak dikenal atau tidak aktif.'; END IF;
@@ -492,6 +568,47 @@ UPDATE public.master_barang m
   FROM latest_product
  WHERE m.cabang_id = latest_product.cabang_id
    AND m.kode_obat = latest_product.kode_obat;
+
+-- Bersihkan modal dari data pembelian historis yang seluruh faktur aktifnya
+-- sudah tidak ada. Baris yang tidak pernah terkait pembelian tidak disentuh.
+UPDATE public.master_barang m
+   SET harga_modal = 0,
+       updated_at = now()
+ WHERE EXISTS (
+   SELECT 1
+   FROM public.trx_pembelian_detail d
+   WHERE d.cabang_id = m.cabang_id AND d.kode_obat = m.kode_obat
+ )
+ AND NOT EXISTS (
+   SELECT 1
+   FROM public.trx_pembelian_detail d
+   JOIN public.trx_pembelian p
+     ON p.cabang_id = d.cabang_id AND p.no_faktur = d.no_faktur
+  WHERE d.cabang_id = m.cabang_id
+    AND d.kode_obat = m.kode_obat
+    AND p.status = 'AKTIF'
+ );
+
+UPDATE public.stok_batch s
+   SET harga_modal_batch = 0,
+       updated_at = now()
+ WHERE EXISTS (
+   SELECT 1
+   FROM public.trx_pembelian_detail d
+   WHERE d.cabang_id = s.cabang_id
+     AND d.kode_obat = s.kode_obat
+     AND coalesce(d.kode_batch, '') = coalesce(s.kode_batch, '')
+ )
+ AND NOT EXISTS (
+   SELECT 1
+   FROM public.trx_pembelian_detail d
+   JOIN public.trx_pembelian p
+     ON p.cabang_id = d.cabang_id AND p.no_faktur = d.no_faktur
+  WHERE d.cabang_id = s.cabang_id
+    AND d.kode_obat = s.kode_obat
+    AND coalesce(d.kode_batch, '') = coalesce(s.kode_batch, '')
+    AND p.status = 'AKTIF'
+ );
 
 -- Verifikasi read-only setelah deploy:
 -- 1) harga_modal_batch / harga_modal sama dengan modal efektif terbaru (di luar PPN).
