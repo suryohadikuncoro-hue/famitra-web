@@ -14,7 +14,7 @@ const cabangSesi = (s: any) => {
   return c;
 };
 function segment(c: any) { const days = c.tanggal_terakhir_beli ? Math.floor((Date.now() - new Date(String(c.tanggal_terakhir_beli).slice(0,10) + "T00:00:00").getTime()) / 86400000) : null; if (!c.tanggal_terakhir_beli || Number(c.jumlah_transaksi || 0) === 0) return "Baru"; if ((days || 0) > 180) return "Dormant"; if ((days || 0) > 60) return "At-Risk"; if (Number(c.total_belanja || 0) >= 2000000 || Number(c.jumlah_transaksi || 0) >= 8) return "VIP"; return "Active Routine"; }
-function allowed(role: string, name: string) { if (name === "dashboardAktif") return role === "Owner" || role === "Apoteker"; const owner = ["rewardList","rewardSave","rewardStatus","redemptionList","campaignList","campaignSave","campaignStatus","couponList","couponSave","report","bundleList","bundleSave","bundleStatus","poinSettingGet","poinSettingSave","poinSimulasi","poinKedaluwarsaRingkasan"]; if (owner.includes(name)) return role === "Owner"; return ["Owner","Apoteker","Kasir"].includes(role); }
+function allowed(role: string, name: string) { if (name === "dashboardAktif") return role === "Owner" || role === "Apoteker"; const owner = ["rewardList","rewardSave","rewardStatus","redemptionList","campaignList","campaignSave","campaignStatus","couponList","couponSave","report","bundleList","bundleSave","bundleStatus","poinSettingGet","poinSettingSave","poinSimulasi","poinKedaluwarsaRingkasan","poinTukarSimulasi"]; if (owner.includes(name)) return role === "Owner"; return ["Owner","Apoteker","Kasir"].includes(role); }
 async function validate(data: any, s: any) {
   const code = String(data.code || "").trim().toUpperCase(); const wa = normWA(data.nomor_wa || "");
   if (!code) throw new Error("Kode kupon wajib diisi."); if (!wa) throw new Error("Pilih pelanggan terlebih dahulu.");
@@ -194,6 +194,13 @@ function validasiPoinSetting(d: any) {
   const kosongMasa = (v: any) => v === undefined || v === "" || v === null;
   const masaMode = kosongMasa(d.masa_berlaku_mode) ? "bulan" : d.masa_berlaku_mode;
   const masaBulan = kosongMasa(d.masa_berlaku_bulan) ? 12 : d.masa_berlaku_bulan;
+  // Pengaturan penukaran reward (PR 3). Bila faktor_tipe_tukar belum dikirim,
+  // dipakai bawaan yang sama dengan aturan lama: Umum 1x, Tenaga Kesehatan
+  // 0,5x, Apotek Lain 0x (tidak boleh menukar).
+  const ftTukar = kosongMasa(d.faktor_tipe_tukar) ? { "Umum": 1, "Tenaga Kesehatan": 0.5, "Apotek Lain": 0 } : d.faktor_tipe_tukar;
+  if (!ftTukar || typeof ftTukar !== "object" || Array.isArray(ftTukar)) throw new Error("Faktor penukaran per tipe pelanggan wajib diisi.");
+  const faktor_tipe_tukar: any = {};
+  for (const t of POIN_TIPE) faktor_tipe_tukar[t] = angkaPoin(ftTukar[t], `Faktor penukaran ${t}`, 0, 100, false, true);
   return {
     aktif: bool(d.aktif, "Status program"),
     basis_hitung: pilih(d.basis_hitung, ["harga_akhir", "subtotal"], "Dasar hitung"),
@@ -207,7 +214,12 @@ function validasiPoinSetting(d: any) {
     pengganda,
     retur_kurangi_poin: bool(d.retur_kurangi_poin, "Pengaturan retur"),
     masa_berlaku_mode: pilih(masaMode, ["bulan", "selamanya", "akhir_tahun"], "Masa berlaku poin"),
-    masa_berlaku_bulan: angkaPoin(masaBulan, "Masa berlaku (bulan)", 1, 120, true)
+    masa_berlaku_bulan: angkaPoin(masaBulan, "Masa berlaku (bulan)", 1, 120, true),
+    faktor_tipe_tukar,
+    min_poin_tukar: angkaPoin(kosongMasa(d.min_poin_tukar) ? 0 : d.min_poin_tukar, "Minimal poin untuk menukar", 0, 1000000, true),
+    maks_persen_tukar: angkaPoin(kosongMasa(d.maks_persen_tukar) ? 100 : d.maks_persen_tukar, "Batas persentase penukaran", 1, 100, false, true),
+    maks_tukar_per_hari: angkaPoin(kosongMasa(d.maks_tukar_per_hari) ? 0 : d.maks_tukar_per_hari, "Batas penukaran per hari", 0, 1000, true),
+    maks_tukar_per_bulan: angkaPoin(kosongMasa(d.maks_tukar_per_bulan) ? 0 : d.maks_tukar_per_bulan, "Batas penukaran per bulan", 0, 10000, true)
   };
 }
 async function poinGagal(r: Response): Promise<never> {
@@ -331,6 +343,19 @@ async function action(name: string, data: any, s: any) {
         saldo_cukup: x.saldo_cukup === true
       }))
     };
+  }
+  if (name === "poinTukarSimulasi") {
+    // Memakai fungsi yang SAMA dengan kasir (loyalty_tukar_periksa), jadi angka
+    // yang dilihat Owner identik dengan yang berlaku saat transaksi.
+    const rewardId = String(data.reward_id || "").trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rewardId)) throw new Error("Pilih reward yang mau disimulasikan.");
+    const wa = normWA(String(data.nomor_wa || ""));
+    if (!wa) throw new Error("Nomor WA pelanggan wajib diisi untuk simulasi penukaran.");
+    const subtotalSim = angkaPoin(data.subtotal, "Subtotal transaksi", 0, 10000000000);
+    const diskonSim = (data.diskon === undefined || data.diskon === "" || data.diskon === null) ? 0 : angkaPoin(data.diskon, "Diskon transaksi", 0, 10000000000);
+    const r = await db("rpc/loyalty_tukar_periksa", "", { method: "POST", body: JSON.stringify({ p_cabang_id: branch, p_reward_id: rewardId, p_nomor_wa: wa, p_subtotal: subtotalSim, p_diskon: diskonSim }) });
+    if (!r.ok) await poinGagal(r);
+    return await r.json();
   }
   if (name === "redemptionList") {
     const cab = encodeURIComponent(branch);

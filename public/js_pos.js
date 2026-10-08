@@ -671,12 +671,25 @@ function gambarKeranjang() {
 }
 
 function bukaRewardPOS(c) {
-  if (c.Tipe_Customer === 'Apotek Lain') { toast('Pelanggan Apotek Lain tidak memiliki poin atau reward.', true); return; }
+  // Aturan siapa yang boleh menukar (termasuk Apotek Lain) ditentukan pengaturan
+  // penukaran per cabang dan diperiksa server; di sini cukup tampilkan daftar reward.
   api('reward.list', { wa: c.Nomor_WA }).then(function (rows) {
-    var html = '<p class="sub">Saldo pelanggan: <strong>' + angka(c.Total_Points || 0) + ' poin</strong></p><div class="pos-reward-list">' + (rows.length ? rows.map(function (r) { var nilai = c.Tipe_Customer === 'Tenaga Kesehatan' ? Math.floor(Number(r.reward_value || 0) / 2) : Number(r.reward_value || 0); var tampil = Object.assign({}, r, { reward_value: nilai, name: c.Tipe_Customer === 'Tenaga Kesehatan' ? 'Diskon ' + rupiah(nilai) : r.name }); return '<div class="pos-reward-item"><div><strong>' + esc(tampil.name) + '</strong><span>' + angka(tampil.points_required) + ' poin · ' + rupiah(nilai) + '</span></div><button class="btn btn-sm" data-reward=\'' + esc(JSON.stringify(tampil)) + '\'' + (r.eligible ? '' : ' disabled') + '>' + (r.eligible ? 'Pilih' : 'Belum cukup') + '</button></div>'; }).join('') : '<div class="empty">Belum ada reward aktif.</div>') + '</div>';
+    var html = '<p class="sub">Saldo pelanggan: <strong>' + angka(c.Total_Points || 0) + ' poin</strong></p><div class="pos-reward-list">' + (rows.length ? rows.map(function (r) {
+      // Nilai potongan datang dari server (nilai_berlaku) dan sudah memperhitungkan
+      // faktor tipe pelanggan dari pengaturan penukaran cabang. Frontend TIDAK lagi
+      // memotong setengah sendiri, supaya angka di layar sama dengan yang ditagih
+      // pos_checkout walau Owner mengubah faktornya.
+      // Cadangan `reward_value` dipakai bila server belum mengirim nilai_berlaku
+      // (mis. Edge Function `api` belum ter-deploy). Tanpa cadangan ini, seluruh
+      // reward akan tampil Rp0 di kasir.
+      var nilai = Number(r.nilai_berlaku == null ? (r.reward_value || 0) : r.nilai_berlaku);
+      var tampil = Object.assign({}, r, { nilai_berlaku: nilai });
+      var label = r.eligible ? 'Pilih' : (Number(r.faktor_tipe) <= 0 ? 'Tidak bisa' : 'Belum cukup');
+      return '<div class="pos-reward-item"><div><strong>' + esc(r.name) + '</strong><span>' + angka(r.points_required) + ' poin · ' + rupiah(nilai) + '</span></div><button class="btn btn-sm" data-reward=\'' + esc(JSON.stringify(tampil)) + '\'' + (r.eligible ? '' : ' disabled') + '>' + label + '</button></div>';
+    }).join('') : '<div class="empty">Belum ada reward aktif.</div>') + '</div>';
     modalBuka('Tukar poin pelanggan', html, [{ label: 'Tutup', aksi: modalTutup }]);
     var body = document.querySelector('.modal-body') || document.querySelector('.modal');
-    if (body) body.onclick = function (e) { var b = e.target.closest('[data-reward]'); if (!b) return; var r = JSON.parse(b.dataset.reward); POS.reward = r; POS.rewardDiscount = Number(r.reward_value || 0); modalTutup(); gambarRingkasan(); toast(r.name + ' dipilih.'); };
+    if (body) body.onclick = function (e) { var b = e.target.closest('[data-reward]'); if (!b) return; var r = JSON.parse(b.dataset.reward); POS.reward = r; POS.rewardDiscount = Number(r.nilai_berlaku || 0); modalTutup(); gambarRingkasan(); toast(r.name + ' dipilih.'); };
   }).catch(function (e) { toast(e.message, true); });
 }
 

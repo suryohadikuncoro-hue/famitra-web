@@ -689,12 +689,31 @@ async function action(name, data, s) {
   }
   if (name === "reward.list") {
     const wa = normWA(data.wa || "");
-    const c = wa ? await one("master_customer", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&nomor_wa=eq.${encodeURIComponent(wa)}&select=total_points,tier`) : null;
+    const cab = cabangSesi(s);
+    const c = wa ? await one("master_customer", `?cabang_id=eq.${encodeURIComponent(cab)}&nomor_wa=eq.${encodeURIComponent(wa)}&select=total_points,tier,tipe_customer`) : null;
     const pts = Number(c?.total_points || 0);
     const tier = c?.tier || "reguler";
-    const r = await db("loyalty_rewards", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&is_active=eq.true&select=*&order=points_required.asc&limit=100`);
+    const tipe = c?.tipe_customer || "Umum";
+    // Faktor penukaran per tipe (pengaturan PR 3). Nilai bawaan di sini sama
+    // dengan aturan lama, dan dipakai juga bila pengaturan belum tersimpan atau
+    // migrasinya belum diterapkan - supaya tampilan kasir tidak pernah gagal.
+    let set = null;
+    try { set = await one("loyalty_settings", `?cabang_id=eq.${encodeURIComponent(cab)}&select=faktor_tipe_tukar&limit=1`); } catch (e) { set = null; }
+    const faktorTukar = (set && set.faktor_tipe_tukar) || { "Umum": 1, "Tenaga Kesehatan": 0.5, "Apotek Lain": 0 };
+    const faktor = Number(faktorTukar[tipe] == null ? 0 : faktorTukar[tipe]);
+    const r = await db("loyalty_rewards", `?cabang_id=eq.${encodeURIComponent(cab)}&is_active=eq.true&select=*&order=points_required.asc&limit=100`);
     if (!r.ok) throw new Error(await r.text());
-    return (await r.json()).map((x) => ({ ...x, eligible: pts >= Number(x.points_required || 0) && (x.min_tier === "gold" ? 3 : x.min_tier === "silver" ? 2 : 1) <= (tier === "gold" ? 3 : tier === "silver" ? 2 : 1), customer_points: pts }));
+    return (await r.json()).map((x) => ({
+      ...x,
+      eligible: faktor > 0 && pts >= Number(x.points_required || 0) && (x.min_tier === "gold" ? 3 : x.min_tier === "silver" ? 2 : 1) <= (tier === "gold" ? 3 : tier === "silver" ? 2 : 1),
+      customer_points: pts,
+      tipe_customer: tipe,
+      faktor_tipe: faktor,
+      // Nilai potongan yang benar-benar akan dipakai kasir: sudah memperhitungkan
+      // faktor tipe pelanggan dari pengaturan cabang, bukan dipotong setengah
+      // sendiri oleh tampilan kasir.
+      nilai_berlaku: Math.max(0, Math.floor(Number(x.reward_value || 0) * faktor))
+    }));
   }
   if (name === "pos.simpanTransaksi") {
     const r = await db("rpc/pos_checkout", "", { method: "POST", headers: { ...headers }, body: JSON.stringify({ p_username: s.username, p_nomor_wa: data.nomor_wa || "", p_nama_pelanggan: data.nama_pelanggan || "Umum", p_tipe_customer: data.tipe_customer || "Umum", p_items: data.items || [], p_cabang_id: cabangSesi(s), p_diskon: data.diskon || 0, p_bayar: data.bayar || 0, p_reward_id: data.reward_id || null }) });
