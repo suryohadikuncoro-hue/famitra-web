@@ -190,7 +190,7 @@ function tampilkanSaranBeli(rows, input) {
     return '<button type="button" data-beli-suggest="' + i + '"><div class="s-name">' +
       esc(b.Kode_Obat) + ' · ' + esc(b.Nama_Obat) + '</div><div class="s-meta"><span>' +
       esc(b.Kategori || 'Tanpa kategori') + '</span>' + (b.Barcode ? '<span>Barcode ' + esc(b.Barcode) + '</span>' : '') +
-      '<span>Modal ' + rupiah(b.Harga_Modal || 0) + '</span>' +
+      '<span>Modal ' + (b.Harga_Modal == null ? '—' : rupiah(b.Harga_Modal)) + '</span>' +
       '<span>Stok ' + angka(b.stok || 0) + '</span></div></button>';
   }).join('');
   posisikanSaranBeli(input); box.hidden = false;

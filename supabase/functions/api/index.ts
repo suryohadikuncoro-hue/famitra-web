@@ -258,14 +258,15 @@ async function stokDashboard(cabangId) {
   batch.forEach((x) => {
     total[x.kode_obat] = (total[x.kode_obat] || 0) + Number(x.stok_real || 0);
   });
-  const expiring = batch.filter((x) => Number(x.stok_real || 0) > 0 && daysUntil(x.expired_date) <= 90).map((x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: nama[x.kode_obat] || x.kode_obat, Kode_Batch: x.kode_batch, Expired_Date: x.expired_date, Stok_Real: x.stok_real, sisa_hari: daysUntil(x.expired_date) }));
+  const expiring = batch.filter((x) => Number(x.stok_real || 0) > 0 && daysUntil(x.expired_date) <= 90).map((x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: nama[x.kode_obat] || x.kode_obat, Kode_Batch: x.kode_batch, Expired_Date: x.expired_date, Stok_Real: x.stok_real, Harga_Modal_Batch: x.harga_modal_batch == null ? null : Number(x.harga_modal_batch), sisa_hari: daysUntil(x.expired_date) }));
   const stok_menipis = barang.filter((x) => (total[x.kode_obat] || 0) <= Number(x.stok_min || 0)).map((x) => ({ Kode_Obat: x.kode_obat, Nama_Obat: x.nama_obat, stok: total[x.kode_obat] || 0, minimal: Number(x.stok_min || 0) }));
   // Untuk visual "kesehatan stok" di dashboard: aman / menipis / habis dari produk aktif.
   const stok_habis_total = barang.filter((x) => (total[x.kode_obat] || 0) <= 0).length;
-  const modal = Object.fromEntries(batch.map((x) => [`${x.kode_obat}|${x.kode_batch}`, Number(x.harga_modal_batch || 0)]));
+  const modal = Object.fromEntries(batch.map((x) => [`${x.kode_obat}|${x.kode_batch}`, x.harga_modal_batch == null ? null : Number(x.harga_modal_batch)]));
+  const expiringWithoutModal = expiring.some((x) => x.Harga_Modal_Batch == null);
   return { produk_aktif_total: barang.length, stok_habis_total, expiring_unit: expiring.reduce((n, x) => n + Number(x.Stok_Real || 0), 0),
     // nilai = unit x harga modal batch (sebelumnya berisi jumlah unit)
-    expiring_nilai: expiring.reduce((n, x) => n + Number(x.Stok_Real || 0) * (modal[`${x.Kode_Obat}|${x.Kode_Batch}`] || 0), 0), expiring_kritis: expiring.filter((x) => x.sisa_hari <= 30).length, expiring, stok_menipis_total: stok_menipis.length, stok_menipis };
+    expiring_nilai: expiringWithoutModal ? null : expiring.reduce((n, x) => n + Number(x.Stok_Real || 0) * modal[`${x.Kode_Obat}|${x.Kode_Batch}`], 0), expiring_nilai_tidak_lengkap: expiringWithoutModal, expiring_kritis: expiring.filter((x) => x.sisa_hari <= 30).length, expiring, stok_menipis_total: stok_menipis.length, stok_menipis };
 }
 async function action(name, data, s) {
   if (name === "pos.cariBarang") {
@@ -607,7 +608,7 @@ async function action(name, data, s) {
   if (name === "barang.simpan") {
     // Harga per cabang (keputusan 2): cabang_id SELALU dari sesi, tidak dari payload.
     const cabang = cabangSesi(s);
-    const dasar = { cabang_id: cabang, kode_obat: String(data.Kode_Obat).toUpperCase(), nama_obat: data.Nama_Obat, kategori: data.Kategori || "", golongan: data.Golongan || data.golongan || "Bebas", satuan: data.Satuan || "Pcs", barcode: data.Barcode || null, stok_min: data.Stok_Min || 10, harga_modal: data.Harga_Modal || 0, harga_jual_umum: data.Harga_Jual_Umum || 0, harga_khusus: data.Harga_Khusus || 0, harga_jual_mutasi: data.Harga_Jual_Mutasi || 0, ppn: data.PPN || 0 };
+    const dasar = { cabang_id: cabang, kode_obat: String(data.Kode_Obat).toUpperCase(), nama_obat: data.Nama_Obat, kategori: data.Kategori || "", golongan: data.Golongan || data.golongan || "Bebas", satuan: data.Satuan || "Pcs", barcode: data.Barcode || null, stok_min: data.Stok_Min || 10, harga_modal: data.Harga_Modal == null || data.Harga_Modal === "" ? null : Number(data.Harga_Modal), harga_jual_umum: data.Harga_Jual_Umum || 0, harga_khusus: data.Harga_Khusus || 0, harga_jual_mutasi: data.Harga_Jual_Mutasi || 0, ppn: data.PPN || 0 };
     const baru = data.mode !== "edit";
     // Catatan penting: saat MENGEDIT, kolom `aktif` sengaja TIDAK ikut dikirim
     // kecuali diminta eksplisit lewat data.Aktif. Sebelumnya selalu ditulis "YA"

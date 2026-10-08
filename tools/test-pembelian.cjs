@@ -8,6 +8,7 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const js = fs.readFileSync(path.join(root, 'public/js_trx.js'), 'utf8');
+const masterJs = fs.readFileSync(path.join(root, 'public/js_master.js'), 'utf8');
 const api = fs.readFileSync(path.join(root, 'supabase/functions/api/index.ts'), 'utf8');
 const hutang = fs.readFileSync(path.join(root, 'supabase/functions/hutang/index.ts'), 'utf8');
 const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20261009130000_pembelian_diskon_hutang_atomik.sql'), 'utf8');
@@ -61,8 +62,13 @@ assert.match(migration, /sum\(p\.jumlah_bayar\)/i, 'payment RPC checks the curre
 assert.match(migration, /purchase_assert_no_shared_batches/i, 'edit/cancel paths reject ambiguous shared purchase batches');
 assert.match(migration, /UPDATE public\.stok_batch[\s\S]*harga_modal_batch = latest_batch\.modal/i, 'migration backfills batch modal only');
 assert.match(migration, /UPDATE public\.master_barang[\s\S]*harga_modal = latest_product\.modal/i, 'migration backfills master modal only');
-assert.match(migration, /SET harga_modal = 0[\s\S]*NOT EXISTS \([\s\S]*p\.status = 'AKTIF'/i, 'stale master modal is cleared when no active purchase remains');
-assert.match(migration, /SET harga_modal_batch = 0[\s\S]*NOT EXISTS \([\s\S]*p\.status = 'AKTIF'/i, 'stale batch modal is cleared when no active purchase remains');
+assert.match(migration, /ADD COLUMN IF NOT EXISTS harga_modal_terakhir numeric/i, 'master keeps the last effective modal for audit');
+assert.match(migration, /ADD COLUMN IF NOT EXISTS harga_modal_batch_terakhir numeric/i, 'batch keeps the last effective modal for audit');
+assert.match(migration, /harga_modal_terakhir = coalesce\(m\.harga_modal_terakhir, m\.harga_modal\)[\s\S]*harga_modal = NULL/i, 'stale master modal becomes NULL while preserving the last value');
+assert.match(migration, /harga_modal_batch_terakhir = coalesce\(s\.harga_modal_batch_terakhir, s\.harga_modal_batch\)[\s\S]*harga_modal_batch = NULL/i, 'stale batch modal becomes NULL while preserving the last value');
+assert.match(api, /Harga_Modal_Batch: x\.harga_modal_batch == null \? null/i, 'dashboard preserves NULL batch modal');
+assert.match(api, /expiring_nilai: expiringWithoutModal \? null/i, 'dashboard does not value stock with unknown modal as zero');
+assert.match(masterJs, /b\.Harga_Modal == null \? '—'/i, 'master UI displays unknown modal explicitly');
 
 assert.match(api, /const headerFilters = cfg\.searchFields\.map\(\(field\) => `\$\{field\}\.ilike\.\$\{pattern\}`\)/, 'nota document search uses partial, escaped ILIKE');
 assert.match(api, /detailSearchFields: \["nama_obat", "kode_obat"\]/, 'riwayat searches both medicine name and code');

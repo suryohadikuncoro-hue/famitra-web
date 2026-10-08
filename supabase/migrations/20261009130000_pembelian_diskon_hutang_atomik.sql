@@ -93,6 +93,17 @@ BEGIN
 END;
 $function$;
 
+-- Modal aktif NULL berarti tidak ada faktur pembelian aktif yang menjadi
+-- sumber biaya. Nilai historis tetap disimpan terpisah untuk audit.
+ALTER TABLE public.master_barang
+  ADD COLUMN IF NOT EXISTS harga_modal_terakhir numeric;
+ALTER TABLE public.stok_batch
+  ADD COLUMN IF NOT EXISTS harga_modal_batch_terakhir numeric;
+ALTER TABLE public.master_barang
+  ALTER COLUMN harga_modal DROP NOT NULL;
+ALTER TABLE public.stok_batch
+  ALTER COLUMN harga_modal_batch DROP NOT NULL;
+
 CREATE OR REPLACE FUNCTION public.purchase_assert_no_shared_batches(p_cabang_id text, p_no_faktur text)
 RETURNS void
 LANGUAGE plpgsql
@@ -174,6 +185,7 @@ BEGIN
   )
   UPDATE public.stok_batch s
      SET harga_modal_batch = latest_batch.modal,
+         harga_modal_batch_terakhir = latest_batch.modal,
          updated_at = now()
     FROM latest_batch
    WHERE s.cabang_id = latest_batch.cabang_id
@@ -197,16 +209,17 @@ BEGIN
   )
   UPDATE public.master_barang m
      SET harga_modal = latest_product.modal,
+         harga_modal_terakhir = latest_product.modal,
          updated_at = now()
     FROM latest_product
    WHERE m.cabang_id = latest_product.cabang_id
      AND m.kode_obat = latest_product.kode_obat;
 
   -- Bila faktur aktif terakhir dibatalkan atau dihapus dari rincian saat edit,
-  -- tidak ada baris latest_* yang dapat di-join. Jangan biarkan modal lama
-  -- tampil seolah-olah masih berasal dari pembelian aktif.
+  -- modal aktif dikosongkan. Nilai terakhir tetap tersedia untuk audit.
   UPDATE public.master_barang m
-     SET harga_modal = 0,
+     SET harga_modal_terakhir = coalesce(m.harga_modal_terakhir, m.harga_modal),
+         harga_modal = NULL,
          updated_at = now()
    WHERE m.cabang_id = p_cabang_id
      AND m.kode_obat = ANY(p_kode_obat)
@@ -226,7 +239,8 @@ BEGIN
      );
 
   UPDATE public.stok_batch s
-     SET harga_modal_batch = 0,
+     SET harga_modal_batch_terakhir = coalesce(s.harga_modal_batch_terakhir, s.harga_modal_batch),
+         harga_modal_batch = NULL,
          updated_at = now()
    WHERE s.cabang_id = p_cabang_id
      AND s.kode_obat = ANY(p_kode_obat)
@@ -542,6 +556,7 @@ WITH per_invoice_batch AS (
 )
 UPDATE public.stok_batch s
    SET harga_modal_batch = latest_batch.modal,
+       harga_modal_batch_terakhir = latest_batch.modal,
        updated_at = now()
   FROM latest_batch
  WHERE s.cabang_id = latest_batch.cabang_id
@@ -564,15 +579,17 @@ WITH per_invoice_product AS (
 )
 UPDATE public.master_barang m
    SET harga_modal = latest_product.modal,
+       harga_modal_terakhir = latest_product.modal,
        updated_at = now()
   FROM latest_product
  WHERE m.cabang_id = latest_product.cabang_id
    AND m.kode_obat = latest_product.kode_obat;
 
--- Bersihkan modal dari data pembelian historis yang seluruh faktur aktifnya
--- sudah tidak ada. Baris yang tidak pernah terkait pembelian tidak disentuh.
+-- Produk yang seluruh faktur pembeliannya sudah tidak aktif tidak memiliki
+-- modal aktif. Simpan angka terakhir untuk audit, lalu tandai modal aktif NULL.
 UPDATE public.master_barang m
-   SET harga_modal = 0,
+   SET harga_modal_terakhir = coalesce(m.harga_modal_terakhir, m.harga_modal),
+       harga_modal = NULL,
        updated_at = now()
  WHERE EXISTS (
    SELECT 1
@@ -590,7 +607,8 @@ UPDATE public.master_barang m
  );
 
 UPDATE public.stok_batch s
-   SET harga_modal_batch = 0,
+   SET harga_modal_batch_terakhir = coalesce(s.harga_modal_batch_terakhir, s.harga_modal_batch),
+       harga_modal_batch = NULL,
        updated_at = now()
  WHERE EXISTS (
    SELECT 1
