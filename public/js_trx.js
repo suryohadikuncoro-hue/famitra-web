@@ -1,6 +1,6 @@
 /* ================== Pembelian (Bab 5), Biaya (8.1), Laporan (Bab 7) ====== */
 
-var BELI = { items: [], riwayatQuery: '', editNoFaktur: null };
+var BELI = { items: [], riwayatQuery: '', riwayatOffset: 0, riwayatHasMore: false, riwayatRequest: 0, riwayatTimer: null, editNoFaktur: null };
 var BELI_SUGGEST = { timer: null, request: 0, rows: [], index: -1, input: null };
 var HUTANG_FN_URL = 'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/hutang';
 function apiHutang(action, data) {
@@ -68,14 +68,16 @@ VIEWS.beli = {
         '<p class="kpi-sub">Menyimpan faktur akan menambah stok per batch dan memperbarui harga modal. ' +
           'Harga jual umum, khusus (nakes), dan mutasi (apotek lain) hanya berubah bila kolomnya diisi. ' +
           'Diskon diisi dalam persen dari nilai baris setelah PPN. ' +
-          'Laba % dihitung dari harga jual umum terhadap netto.</p>' +
+          'Laba % dihitung dari modal efektif: netto setelah alokasi diskon, di luar PPN.</p>' +
       '</div>' +
 
       '<div class="card"><div class="card-head"><h3>Riwayat faktur</h3></div>' +
         '<label class="field"><span>Cari nomor faktur atau nama obat</span><input id="blRiwayatCari" class="inp" placeholder="Nomor faktur atau nama obat"></label>' +
         '<div class="table-wrap"><table><thead><tr><th>No. faktur</th><th>No. faktur PBF</th><th>Supplier</th>' +
           '<th>Kategori</th><th>Tanggal</th><th>Jatuh tempo</th><th class="c">Item</th>' +
-          '<th class="r">Tagihan</th><th class="r">Dibayar</th><th class="r">Sisa hutang</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="blRiwayat"></tbody></table></div></div>';
+          '<th class="r">Tagihan</th><th class="r">Dibayar</th><th class="r">Sisa hutang</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="blRiwayat"></tbody></table></div>' +
+        '<div class="pay-row" style="justify-content:space-between;align-items:center;margin-top:10px"><span id="blPageInfo" class="kpi-sub"></span>' +
+        '<div><button id="blPrev" class="btn btn-sm" disabled>Sebelumnya</button> <button id="blNext" class="btn btn-sm" disabled>Berikutnya</button></div></div></div>';
 
     document.getElementById('blTanggal').value = new Date().toISOString().substring(0, 10);
     document.getElementById('blTambahItem').onclick = function () { BELI.items.push(barisKosong()); gambarBeli(); };
@@ -84,10 +86,17 @@ VIEWS.beli = {
     document.getElementById('blBatalUbah').onclick = batalUbahFaktur;
     document.getElementById('blRiwayatCari').oninput = function () {
       BELI.riwayatQuery = this.value.trim();
+      BELI.riwayatOffset = 0;
       clearTimeout(BELI.riwayatTimer);
       BELI.riwayatTimer = setTimeout(muatRiwayatBeli, 250);
     };
+    document.getElementById('blPrev').onclick = function () { BELI.riwayatOffset = Math.max(0, BELI.riwayatOffset - 50); muatRiwayatBeli(); };
+    document.getElementById('blNext').onclick = function () { if (BELI.riwayatHasMore) { BELI.riwayatOffset += 50; muatRiwayatBeli(); } };
 
+    BELI.riwayatQuery = '';
+    BELI.riwayatOffset = 0;
+    BELI.riwayatHasMore = false;
+    BELI.riwayatRequest++;
     BELI.editNoFaktur = null;
     BELI.items = [barisKosong()];
     aturModeUbahBeli(null);
@@ -103,13 +112,21 @@ function barisKosong() {
            Stok_Tersedia: null, Jual_Umum_Kini: 0 };
 }
 
-// Laba % = (harga jual umum - netto) / harga jual umum. Diisi di kolom "Laba %"
-// rincian pembelian supaya salah input harga beli (mis. harga total baris
-// dimasukkan sebagai harga satuan) langsung terlihat sebelum disimpan.
+// Harga modal efektif memakai netto setelah alokasi diskon, di luar PPN.
+function hargaModalEfektifBeli(it) {
+  var qty = Number(it.Qty) || 0;
+  var ppn = Number(it.PPN) || 0;
+  var faktorPajak = 1 + ppn / 100;
+  if (qty <= 0 || faktorPajak <= 0 || ppn < 0 || ppn > 100) return null;
+  var diskonNetto = diskonRupiahBaris(it) / faktorPajak;
+  return Math.max(0, Math.round((Number(it.Harga_Netto || 0) - diskonNetto / qty) * 100) / 100);
+}
+
+// Laba % = (harga jual umum - modal efektif) / harga jual umum.
 function labaPersenBeli(it) {
   var jual = Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0;
-  var modal = Number(it.Harga_Netto) || 0;
-  if (jual <= 0 || modal <= 0) return null;
+  var modal = hargaModalEfektifBeli(it);
+  if (jual <= 0 || modal === null || modal <= 0) return null;
   return (jual - modal) / jual * 100;
 }
 
@@ -209,8 +226,9 @@ function gambarBeli() {
     function inp(field, tipe, lebar) {
       var extra = field === 'Kode_Obat' ? ' beli-kode-input' : '';
       var ac = field === 'Kode_Obat' ? ' autocomplete="off"' : '';
+      var range = (field === 'PPN' || field === 'Diskon') ? ' min="0" max="100" step="0.01"' : '';
       return '<input class="inp num' + extra + '" style="min-width:' + lebar + 'px" type="' + tipe +
-        '" data-i="' + i + '" data-f="' + field + '" value="' + esc(it[field]) + '"' + ac + '>';
+        '" data-i="' + i + '" data-f="' + field + '" value="' + esc(it[field]) + '"' + ac + range + '>';
     }
     return '<tr>' +
       '<td>' + inp('Kode_Obat', 'text', 90) + '</td>' +
@@ -337,21 +355,25 @@ function formSupplier() {
 function simpanPembelian() {
   var isi = BELI.items.filter(function (it) { return it.Kode_Obat && Number(it.Qty) > 0; });
   if (!isi.length) { toast('Isi minimal satu baris item dengan qty.', true); return; }
+  if (isi.some(function (it) { return Number(it.PPN) < 0 || Number(it.PPN) > 100 || Number(it.Diskon) < 0 || Number(it.Diskon) > 100; })) {
+    toast('PPN dan diskon harus berada di antara 0 dan 100 persen.', true); return;
+  }
 
-  // Peringatan margin negatif: harga beli (netto) di atas harga jual umum.
+  // Peringatan margin negatif memakai modal efektif setelah diskon PBF.
   var kurang = isi.filter(function (it) {
     var jual = Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0;
-    return jual > 0 && Number(it.Harga_Netto) > jual;
+    var modal = hargaModalEfektifBeli(it);
+    return jual > 0 && modal !== null && modal > jual;
   });
   if (kurang.length) {
     var daftar = kurang.map(function (it) {
       var jual = Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0;
-      return '<li>' + esc(it.Nama_Obat || it.Kode_Obat) + ' — beli ' + rupiah(it.Harga_Netto) +
+      return '<li>' + esc(it.Nama_Obat || it.Kode_Obat) + ' — modal setelah diskon ' + rupiah(hargaModalEfektifBeli(it)) +
         ', jual ' + rupiah(jual) + '</li>';
     }).join('');
     modalBuka('Harga beli di atas harga jual',
       '<p>Baris berikut akan membuat margin negatif:</p><ul>' + daftar + '</ul>' +
-      '<p class="kpi-sub">Periksa apakah kolom netto terisi harga total baris, bukan harga satuan.</p>',
+      '<p class="kpi-sub">Modal dihitung dari netto setelah diskon, sebelum PPN, per satuan.</p>',
       [
         { label: 'Periksa lagi', aksi: modalTutup },
         { label: 'Tetap simpan', kelas: 'btn-danger', aksi: function () { modalTutup(); kirimPembelian(isi); } }
@@ -440,7 +462,7 @@ function bukaUbahFaktur(no) {
     // dikembalikan ke persen agar angkanya sama seperti saat diisi.
     BELI.items.forEach(function (it) {
       var b = brutoBaris(it);
-      it.Diskon = b > 0 ? Math.round((Number(it.Diskon) || 0) / b * 100 * 100) / 100 : 0;
+      it.Diskon = b > 0 ? Math.round((Number(it.Diskon) || 0) / b * 100 * 1000000) / 1000000 : 0;
     });
     var f = document.getElementById('blFaktur'); if (f) f.value = h.No_Faktur_Supplier || '';
     var k = document.getElementById('blKategori'); if (k) k.value = h.Kategori || 'Tidak Berpajak';
@@ -552,13 +574,12 @@ function muatRiwayatBeli() {
   var tb = document.getElementById('blRiwayat');
   if (!tb) return;
   var q = BELI.riwayatQuery || '';
-  apiHutang('list', {}).then(function (rows) {
-    if (!q) return rows;
-    return api('riwayat.notaList', { jenis: 'pembelian', q: q, limit: 100, offset: 0 }).then(function (result) {
-      var matches = new Set((result.rows || []).map(function (x) { return x.No_Dokumen; }));
-      return rows.filter(function (x) { return matches.has(x.No_Faktur); });
-    });
-  }).then(function (rows) {
+  var offset = BELI.riwayatOffset || 0;
+  var request = ++BELI.riwayatRequest;
+  apiHutang('list', { q: q, limit: 50, offset: offset }).then(function (result) {
+    if (request !== BELI.riwayatRequest || q !== BELI.riwayatQuery || offset !== BELI.riwayatOffset) return;
+    var rows = result.rows || [];
+    BELI.riwayatHasMore = !!result.has_more;
     if (!tb.isConnected) return;
     tb.innerHTML = rows.length ? rows.map(function (r) {
       var batal = r.Status_Faktur === 'DIBATALKAN';
@@ -582,7 +603,12 @@ function muatRiwayatBeli() {
         '<td class="c num">' + angka(r.Total_Item) + '</td>' +
         '<td class="r num">' + rupiah(r.Total_Tagihan) + '</td><td class="r num">' + rupiah(r.Total_Dibayar) + '</td>' +
         '<td class="r num">' + rupiah(r.Sisa_Hutang) + '</td><td>' + statusSel + '</td><td class="c">' + aksi + '</td></tr>';
-    }).join('') : tabelKosong('Belum ada faktur tercatat.', 12);
+    }).join('') : tabelKosong(q ? 'Tidak ada faktur yang cocok.' : 'Belum ada faktur tercatat.', 12);
+    var pageInfo = document.getElementById('blPageInfo');
+    var prev = document.getElementById('blPrev'), next = document.getElementById('blNext');
+    if (pageInfo) pageInfo.textContent = rows.length ? 'Faktur ' + (offset + 1) + '–' + (offset + rows.length) + (q ? ' · hasil pencarian' : '') : (q ? 'Tidak ada faktur yang cocok.' : 'Belum ada faktur tercatat.');
+    if (prev) prev.disabled = offset <= 0;
+    if (next) next.disabled = !BELI.riwayatHasMore;
     tb.onclick = function (e) {
       var b = e.target.closest('[data-bayar-hutang],[data-riwayat-hutang],[data-ubah-faktur],[data-batal-faktur]');
       if (!b) return;
@@ -594,7 +620,10 @@ function muatRiwayatBeli() {
       else if (b.dataset.bayarHutang) bukaBayarHutang(r);
       else bukaRiwayatHutang(r.No_Faktur);
     };
-  }).catch(function (e) { tb.innerHTML = '<tr><td colspan="12" class="empty">' + esc(e.message) + '</td></tr>'; });
+  }).catch(function (e) {
+    if (request !== BELI.riwayatRequest || q !== BELI.riwayatQuery || offset !== BELI.riwayatOffset) return;
+    tb.innerHTML = '<tr><td colspan="12" class="empty">' + esc(e.message) + '</td></tr>';
+  });
 }
 /* ------------------------------------------------- Biaya operasional ---- */
 
@@ -659,7 +688,7 @@ function muatBiaya() {
 
 /* ============================================================ Retur ====== */
 
-var RETUR = { tab: 'jual', jual: { items: [], notaAsal: null }, beli: { items: [], fakturAsal: null } };
+var RETUR = { tab: 'jual', jual: { items: [], notaAsal: null }, beli: { items: [], fakturAsal: null, searchTimer: null, searchRequest: 0 } };
 var RETUR_JUAL_SEARCH = { timer: null, request: 0 };
 
 VIEWS.retur = {
@@ -913,7 +942,10 @@ function gambarReturBeli() {
   muatFakturUntukRetur();
   muatRiwayatReturBeli();
   document.getElementById('rbFilter').onchange = muatRiwayatReturBeli;
-  document.getElementById('rbCari').oninput = gambarPilihanFakturReturBeli;
+  document.getElementById('rbCari').oninput = function () {
+    clearTimeout(RETUR.beli.searchTimer);
+    RETUR.beli.searchTimer = setTimeout(muatFakturUntukRetur, 250);
+  };
 }
 
 function gambarPilihanFakturReturBeli() {
@@ -936,10 +968,15 @@ function gambarPilihanFakturReturBeli() {
 }
 
 function muatFakturUntukRetur() {
-  api('retur.beliList', {}).then(function (d) {
+  var request = ++RETUR.beli.searchRequest;
+  var q = val('rbCari') || '';
+  api('retur.beliList', { q: q, faktur_only: true }).then(function (d) {
+    if (request !== RETUR.beli.searchRequest || !document.getElementById('rbFaktur')) return;
     var sel = document.getElementById('rbFaktur');
     if (!d.faktur.length) {
+      RETUR.beli.daftarFaktur = [];
       sel.innerHTML = '<option>Belum ada faktur pembelian</option>';
+      document.getElementById('rbForm').innerHTML = '<div class="empty">' + (q ? 'Tidak ada faktur yang cocok.' : 'Belum ada faktur pembelian.') + '</div>';
       return;
     }
     RETUR.beli.daftarFaktur = d.faktur;
@@ -1058,7 +1095,7 @@ function muatRiwayatReturBeli() {
   var tb = document.getElementById('rbRiwayat');
   if (!tb) return;
   var status = val('rbFilter');
-  api('retur.beliList', { status: status }).then(function (d) {
+  api('retur.beliList', { status: status, history_only: true }).then(function (d) {
     tb.innerHTML = d.retur.length ? d.retur.map(function (r) {
       var statusChip = '<span class="chip ' +
         (r.Status === 'APPROVED' ? 'chip-ok' :

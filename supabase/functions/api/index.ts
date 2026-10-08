@@ -120,7 +120,7 @@ var RIWAYAT_NOTA_CFG = {
   penjualan: {
     label: "Penjualan", table: "trx_penjualan", detailTable: "trx_penjualan_detail", key: "no_nota", tanggal: "tanggal",
     order: "timestamp.desc,no_nota.desc",
-    searchFields: ["no_nota"], detailSearchField: "nama_obat",
+    searchFields: ["no_nota"], detailSearchFields: ["nama_obat", "kode_obat"],
     listSelect: "no_nota,tanggal,jam,nama_pelanggan,petugas_transaksi,shift,harga_akhir",
     headerSelect: "no_nota,tanggal,jam,nama_pelanggan,petugas_transaksi,shift,subtotal,diskon,harga_akhir",
     detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_satuan,subtotal",
@@ -131,7 +131,7 @@ var RIWAYAT_NOTA_CFG = {
   pembelian: {
     label: "Pembelian", table: "trx_pembelian", detailTable: "trx_pembelian_detail", key: "no_faktur", tanggal: "tanggal_faktur",
     order: "timestamp.desc,no_faktur.desc",
-    searchFields: ["no_faktur", "no_faktur_supplier"], detailSearchField: "nama_obat",
+    searchFields: ["no_faktur", "no_faktur_supplier"], detailSearchFields: ["nama_obat", "kode_obat"],
     listSelect: "no_faktur,no_faktur_supplier,supplier,kategori,tanggal_faktur,jatuh_tempo,total_item,total_tagihan,petugas",
     headerSelect: "no_faktur,no_faktur_supplier,supplier,kategori,tanggal_faktur,jatuh_tempo,total_item,total_tagihan,petugas",
     detailSelect: "kode_obat,nama_obat,kode_batch,expired_date,qty,harga_netto,ppn,diskon,subtotal",
@@ -142,7 +142,7 @@ var RIWAYAT_NOTA_CFG = {
   retur_jual: {
     label: "Retur Penjualan", table: "trx_retur_jual", detailTable: "trx_retur_jual_detail", key: "no_retur", tanggal: "tanggal",
     order: "timestamp.desc,no_retur.desc",
-    searchFields: ["no_retur", "no_nota_asal"], detailSearchField: "nama_obat",
+    searchFields: ["no_retur", "no_nota_asal"], detailSearchFields: ["nama_obat", "kode_obat"],
     listSelect: "no_retur,no_nota_asal,tanggal,jam,nama_pelanggan,petugas,shift,total_refund,alasan",
     headerSelect: "no_retur,no_nota_asal,tanggal,jam,nama_pelanggan,petugas,shift,total_refund,alasan",
     detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_satuan,subtotal,kondisi",
@@ -153,7 +153,7 @@ var RIWAYAT_NOTA_CFG = {
   retur_beli: {
     label: "Retur Pembelian", table: "trx_retur_beli", detailTable: "trx_retur_beli_detail", key: "no_retur", tanggal: "tanggal",
     order: "timestamp.desc,no_retur.desc",
-    searchFields: ["no_retur", "no_faktur_asal"], detailSearchField: "nama_obat",
+    searchFields: ["no_retur", "no_faktur_asal"], detailSearchFields: ["nama_obat", "kode_obat"],
     listSelect: "no_retur,no_faktur_asal,supplier,tanggal,status,created_by,approved_by,total_refund,alasan",
     headerSelect: "no_retur,no_faktur_asal,supplier,tanggal,status,created_by,approved_by,tanggal_approval,total_refund,alasan",
     detailSelect: "kode_obat,nama_obat,kode_batch,qty,harga_netto,subtotal,kondisi",
@@ -870,34 +870,48 @@ async function action(name, data, s) {
     };
     const dari = tanggal(data.dari, "mulai"), sampai = tanggal(data.sampai, "akhir");
     if (dari && sampai && dari > sampai) throw new Error("Tanggal mulai tidak boleh melewati tanggal akhir.");
-    // Nomor dokumen dicari secara tepat; nama obat dicari sebagian melalui
-    // tabel rincian agar nomor lain yang mirip tidak ikut muncul.
-    const q = String(data.q || "").trim().replace(/[^A-Za-z0-9À-ÿ _-]/g, "").replace(/\s+/g, " ").slice(0, 80);
+    // Pencarian parsial menerima karakter pada nomor/kode obat (termasuk koma,
+    // titik, dan persen); polaCari melakukan escaping khusus PostgREST/ILIKE.
+    const q = String(data.q || "").trim().replace(/\s+/g, " ").slice(0, 80);
     const nLimit = Math.floor(Number(data.limit)), limit = Number.isFinite(nLimit) ? Math.max(1, Math.min(100, nLimit)) : 50;
     const nOffset = Math.floor(Number(data.offset)), offset = Number.isFinite(nOffset) ? Math.max(0, Math.min(1000000, nOffset)) : 0;
-    let query = `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=${cfg.listSelect}`;
-    if (dari) query += `&${cfg.tanggal}=gte.${encodeURIComponent(dari)}`;
-    if (sampai) query += `&${cfg.tanggal}=lte.${encodeURIComponent(sampai)}`;
-    if (shift && shift !== "Semua") query += `&shift=eq.${encodeURIComponent(shift)}`;
-    let itemKeys = [];
+    const cabang = encodeURIComponent(cabangSesi(s));
+    let common = `?cabang_id=eq.${cabang}`;
+    if (dari) common += `&${cfg.tanggal}=gte.${encodeURIComponent(dari)}`;
+    if (sampai) common += `&${cfg.tanggal}=lte.${encodeURIComponent(sampai)}`;
+    if (shift && shift !== "Semua") common += `&shift=eq.${encodeURIComponent(shift)}`;
+    const select = `${cfg.listSelect},timestamp`;
+    let rows;
     if (q) {
-      // Nomor dokumen harus benar-benar sama; jangan gunakan ILIKE tanpa
-      // wildcard karena perilakunya mudah berubah ketika query di-encode.
-      const filters = cfg.searchFields.map((field) => `${field}.eq.${encodeURIComponent(q)}`);
-      const detail = await db(cfg.detailTable, `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&${cfg.detailSearchField}=ilike.*${encodeURIComponent(q)}*&select=${cfg.key}&limit=1000`);
-      if (!detail.ok) throw new Error(await detail.text());
-      itemKeys = [...new Set((await detail.json()).map((x) => x[cfg.key]).filter(Boolean))];
-      if (itemKeys.length) filters.push(`${cfg.key}.in.(${itemKeys.map((key) => encodeURIComponent(key)).join(",")})`);
-      query += filters.length === 1 ? `&${filters[0]}` : `&or=(${filters.join(",")})`;
-    }
-    query += `&order=${cfg.order}&limit=${limit + 1}&offset=${offset}`;
-    const r = await db(cfg.table, query);
-    if (!r.ok) throw new Error(await r.text());
-    let rows = await r.json();
-    // Defense in depth: only return rows that match the exact document number
-    // or a detail row containing the searched medicine name.
-    if (q) {
-      rows = rows.filter((row) => cfg.searchFields.some((field) => String(row[field] || "") === q) || itemKeys.includes(row[cfg.key]));
+      const pattern = polaCari(q);
+      const headerFilters = cfg.searchFields.map((field) => `${field}.ilike.${pattern}`);
+      const headerQuery = `${common}&select=${select}&${headerFilters.length === 1 ? headerFilters[0] : `or=(${headerFilters.join(",")})`}&order=${cfg.order}`;
+      const headerMatches = await semua(cfg.table, headerQuery);
+      const detailFilters = cfg.detailSearchFields.map((field) => `${field}.ilike.${pattern}`);
+      const detailMatches = await semua(cfg.detailTable, `?cabang_id=eq.${cabang}&or=(${detailFilters.join(",")})&select=${cfg.key}&order=${cfg.key}.asc`);
+      const itemKeys = [...new Set(detailMatches.map((x) => x[cfg.key]).filter(Boolean))];
+      const found = new Map(headerMatches.map((row) => [row[cfg.key], row]));
+      for (let start = 0; start < itemKeys.length; start += 80) {
+        const chunk = itemKeys.slice(start, start + 80);
+        const related = await db(cfg.table, `${common}&${cfg.key}=in.(${daftarIn(chunk)})&select=${select}&order=${cfg.order}`);
+        if (!related.ok) throw new Error(await related.text());
+        (await related.json()).forEach((row) => found.set(row[cfg.key], row));
+      }
+      const sortFields = cfg.order.split(",").map((part) => {
+        const [field, direction] = part.split(".");
+        return { field, direction };
+      });
+      rows = [...found.values()].sort((a, b) => {
+        for (const sort of sortFields) {
+          const comparison = String(a[sort.field] || "").localeCompare(String(b[sort.field] || ""));
+          if (comparison) return sort.direction === "desc" ? -comparison : comparison;
+        }
+        return 0;
+      }).slice(offset, offset + limit + 1);
+    } else {
+      const response = await db(cfg.table, `${common}&select=${select}&order=${cfg.order}&limit=${limit + 1}&offset=${offset}`);
+      if (!response.ok) throw new Error(await response.text());
+      rows = await response.json();
     }
     return { jenis, rows: rows.slice(0, limit).map(cfg.row), has_more: rows.length > limit, next_offset: offset + Math.min(rows.length, limit) };
   }
@@ -1037,14 +1051,35 @@ async function action(name, data, s) {
       if (!r2.ok) throw new Error(await r2.text());
       return (await r2.json()).map((x) => ({ No_Retur: x.no_retur, No_Nota_Asal: x.no_nota_asal, Tanggal: x.tanggal, Jam: x.jam, Nama_Pelanggan: x.nama_pelanggan, Petugas: x.petugas, Total_Refund: x.total_refund, Alasan: x.alasan }));
     }
-    const r = await db("trx_penjualan", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_nota,tanggal,jam,nama_pelanggan,nomor_wa,subtotal,harga_akhir&order=timestamp.desc&limit=${Math.min(Number(data.limit) || 60, 365)}`);
-    if (!r.ok) throw new Error(await r.text());
-    const rows = await r.json();
+    const cabang = cabangSesi(s);
+    const q = String(data.q || "").trim().replace(/\s+/g, " ").slice(0, 80);
+    const limit = Math.max(1, Math.min(Math.floor(Number(data.limit) || 60), 365));
+    const fields = "no_nota,tanggal,jam,nama_pelanggan,nomor_wa,subtotal,harga_akhir,timestamp";
+    let rows;
+    if (q) {
+      const pattern = polaCari(q);
+      const headerQuery = `?cabang_id=eq.${encodeURIComponent(cabang)}&or=(no_nota.ilike.${pattern},nama_pelanggan.ilike.${pattern})&select=${fields}&order=timestamp.desc,no_nota.desc`;
+      const headerMatches = await semua("trx_penjualan", headerQuery);
+      const detailRows = await semua("trx_penjualan_detail", `?cabang_id=eq.${encodeURIComponent(cabang)}&or=(nama_obat.ilike.${pattern},kode_obat.ilike.${pattern})&select=no_nota&order=no_nota.asc`);
+      const itemKeys = [...new Set(detailRows.map((x) => x.no_nota).filter(Boolean))];
+      const found = new Map(headerMatches.map((x) => [x.no_nota, x]));
+      for (let start = 0; start < itemKeys.length; start += 80) {
+        const chunk = itemKeys.slice(start, start + 80);
+        const more = await db("trx_penjualan", `?cabang_id=eq.${encodeURIComponent(cabang)}&no_nota=in.(${daftarIn(chunk)})&select=${fields}&order=timestamp.desc,no_nota.desc`);
+        if (!more.ok) throw new Error(await more.text());
+        (await more.json()).forEach((x) => found.set(x.no_nota, x));
+      }
+      rows = [...found.values()].sort((a, b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")) || String(b.no_nota).localeCompare(String(a.no_nota))).slice(0, limit);
+    } else {
+      const response = await db("trx_penjualan", `?cabang_id=eq.${encodeURIComponent(cabang)}&select=${fields}&order=timestamp.desc,no_nota.desc&limit=${limit}`);
+      if (!response.ok) throw new Error(await response.text());
+      rows = await response.json();
+    }
     const out = [];
     for (const x of rows) {
-      if (data.q && !(String(x.no_nota).toLowerCase().includes(String(data.q).toLowerCase()) || String(x.nama_pelanggan || "").toLowerCase().includes(String(data.q).toLowerCase()))) continue;
-      const d = await db("trx_penjualan_detail", `?no_nota=eq.${encodeURIComponent(x.no_nota)}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=*`);
-      const sudah = await sudahDiretur(cabangSesi(s), x.no_nota);
+      const d = await db("trx_penjualan_detail", `?no_nota=eq.${encodeURIComponent(x.no_nota)}&cabang_id=eq.${encodeURIComponent(cabang)}&select=*`);
+      if (!d.ok) throw new Error(await d.text());
+      const sudah = await sudahDiretur(cabang, x.no_nota);
       const items = (await d.json()).map((i) => ({ Kode_Obat: i.kode_obat, Nama_Obat: i.nama_obat, Kode_Batch: i.kode_batch, Qty: i.qty, Harga_Satuan: i.harga_satuan, Sudah_Retur_Qty: sudah.qty[`${i.kode_obat}|${i.kode_batch}`] || 0 }));
       out.push({ ...x, No_Nota: x.no_nota, Tanggal: x.tanggal, Jam: x.jam, Nama_Pelanggan: x.nama_pelanggan, sudah_retur: sudah.refund, items });
     }
@@ -1057,13 +1092,62 @@ async function action(name, data, s) {
     return Array.isArray(x) ? x[0] : x;
   }
   if (name === "retur.beliList") {
-    const r = await db("trx_pembelian", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=no_faktur,no_faktur_supplier,supplier,tanggal_faktur,total_tagihan&order=timestamp.desc&limit=200`);
-    if (!r.ok) throw new Error(await r.text());
-    const rh = await db("trx_retur_beli", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&status=in.(PENDING_APPROVAL,APPROVED)&select=no_retur,no_faktur_asal&limit=1000`);
+    const cabang = cabangSesi(s);
+    const toRetur = (rows) => rows.map((x) => ({ No_Retur: x.no_retur, No_Faktur: x.no_faktur_asal, Supplier: x.supplier, Tanggal: x.tanggal, Status: x.status, Created_By: x.created_by, Approved_By: x.approved_by, Tanggal_Approval: x.tanggal_approval, Total_Refund: x.total_refund, Alasan: x.alasan }));
+    if (data.history_only) {
+      const historyQuery = `?cabang_id=eq.${encodeURIComponent(cabang)}` + (data.status ? `&status=eq.${encodeURIComponent(data.status)}` : "") + "&order=timestamp.desc&limit=200";
+      const history = await db("trx_retur_beli", historyQuery);
+      if (!history.ok) throw new Error(await history.text());
+      return { faktur: [], retur: toRetur(await history.json()) };
+    }
+
+    const search = String(data.q || "").trim().replace(/\s+/g, " ").slice(0, 80);
+    const fields = "no_faktur,no_faktur_supplier,supplier,tanggal_faktur,total_tagihan,timestamp";
+    let purchaseHeaders;
+    if (search) {
+      const pattern = polaCari(search);
+      const headerQuery = `?cabang_id=eq.${encodeURIComponent(cabang)}&status=eq.AKTIF&or=(no_faktur.ilike.${pattern},no_faktur_supplier.ilike.${pattern},supplier.ilike.${pattern})&select=${fields}&order=timestamp.desc,no_faktur.desc`;
+      const direct = await semua("trx_pembelian", headerQuery);
+      const detailRows = await semua("trx_pembelian_detail", `?cabang_id=eq.${encodeURIComponent(cabang)}&or=(nama_obat.ilike.${pattern},kode_obat.ilike.${pattern})&select=no_faktur&order=no_faktur.asc`);
+      const invoiceIds = [...new Set(detailRows.map((x) => x.no_faktur).filter(Boolean))];
+      const found = new Map(direct.map((x) => [x.no_faktur, x]));
+      for (let start = 0; start < invoiceIds.length; start += 80) {
+        const chunk = invoiceIds.slice(start, start + 80);
+        const related = await db("trx_pembelian", `?cabang_id=eq.${encodeURIComponent(cabang)}&status=eq.AKTIF&no_faktur=in.(${daftarIn(chunk)})&select=${fields}&order=timestamp.desc,no_faktur.desc`);
+        if (!related.ok) throw new Error(await related.text());
+        (await related.json()).forEach((x) => found.set(x.no_faktur, x));
+      }
+      purchaseHeaders = [...found.values()].sort((a, b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")) || String(b.no_faktur).localeCompare(String(a.no_faktur))).slice(0, 200);
+    } else {
+      const response = await db("trx_pembelian", `?cabang_id=eq.${encodeURIComponent(cabang)}&status=eq.AKTIF&select=${fields}&order=timestamp.desc,no_faktur.desc&limit=200`);
+      if (!response.ok) throw new Error(await response.text());
+      purchaseHeaders = await response.json();
+    }
+
+    const detailByInvoice = new Map();
+    const invoiceIds = purchaseHeaders.map((row) => row.no_faktur);
+    for (let start = 0; start < invoiceIds.length; start += 80) {
+      const chunk = invoiceIds.slice(start, start + 80);
+      const detailRows = await semua("trx_pembelian_detail", `?cabang_id=eq.${encodeURIComponent(cabang)}&no_faktur=in.(${daftarIn(chunk)})&select=*&order=no_faktur.asc,kode_obat.asc,kode_batch.asc`);
+      for (const item of detailRows) {
+        const current = detailByInvoice.get(item.no_faktur) || [];
+        current.push(item);
+        detailByInvoice.set(item.no_faktur, current);
+      }
+    }
+    const faktur = purchaseHeaders.map((x) => ({
+      No_Faktur: x.no_faktur,
+      No_Faktur_Supplier: x.no_faktur_supplier,
+      Supplier: x.supplier,
+      Tanggal_Faktur: x.tanggal_faktur,
+      Total_Tagihan: x.total_tagihan,
+      items: (detailByInvoice.get(x.no_faktur) || []).map((i) => ({ Kode_Obat: i.kode_obat, Nama_Obat: i.nama_obat, Kode_Batch: i.kode_batch, Qty: i.qty, Sudah_Retur_Qty: 0, Harga_Netto: i.harga_netto }))
+    }));
+    const rh = await db("trx_retur_beli", `?cabang_id=eq.${encodeURIComponent(cabang)}&status=in.(PENDING_APPROVAL,APPROVED)&select=no_retur,no_faktur_asal&limit=1000`);
     if (!rh.ok) throw new Error(await rh.text());
     const headersRetur = await rh.json();
     const noRetur = headersRetur.map((x) => encodeURIComponent(x.no_retur));
-    const rd = noRetur.length ? await db("trx_retur_beli_detail", `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&no_retur=in.(${noRetur.join(",")})&select=no_retur,kode_obat,kode_batch,qty&limit=5000`) : null;
+    const rd = noRetur.length ? await db("trx_retur_beli_detail", `?cabang_id=eq.${encodeURIComponent(cabang)}&no_retur=in.(${noRetur.join(",")})&select=no_retur,kode_obat,kode_batch,qty&limit=5000`) : null;
     if (rd && !rd.ok) throw new Error(await rd.text());
     const sudahRetur = {};
     for (const x of rd ? await rd.json() : []) {
@@ -1072,15 +1156,15 @@ async function action(name, data, s) {
       const k = `${h.no_faktur_asal}|${x.kode_obat}|${x.kode_batch}`;
       sudahRetur[k] = (sudahRetur[k] || 0) + Number(x.qty || 0);
     }
-    const faktur = [];
-    for (const x of await r.json()) {
-      const d = await db("trx_pembelian_detail", `?no_faktur=eq.${encodeURIComponent(x.no_faktur)}&cabang_id=eq.${encodeURIComponent(cabangSesi(s))}&select=*`);
-      const details = await d.json();
-      faktur.push({ No_Faktur: x.no_faktur, No_Faktur_Supplier: x.no_faktur_supplier, Supplier: x.supplier, Tanggal_Faktur: x.tanggal_faktur, Total_Tagihan: x.total_tagihan, sudah_retur: details.reduce((n, i) => n + Number(sudahRetur[`${x.no_faktur}|${i.kode_obat}|${i.kode_batch}`] || 0) * Number(i.harga_netto || 0), 0), items: details.map((i) => ({ Kode_Obat: i.kode_obat, Nama_Obat: i.nama_obat, Kode_Batch: i.kode_batch, Qty: i.qty, Sudah_Retur_Qty: Number(sudahRetur[`${x.no_faktur}|${i.kode_obat}|${i.kode_batch}`] || 0), Harga_Netto: i.harga_netto })) });
+    for (const invoice of faktur) {
+      invoice.sudah_retur = invoice.items.reduce((sum, item) => sum + Number(sudahRetur[`${invoice.No_Faktur}|${item.Kode_Obat}|${item.Kode_Batch}`] || 0) * Number(item.Harga_Netto || 0), 0);
+      invoice.items.forEach((item) => { item.Sudah_Retur_Qty = Number(sudahRetur[`${invoice.No_Faktur}|${item.Kode_Obat}|${item.Kode_Batch}`] || 0); });
     }
-    const q = `?cabang_id=eq.${encodeURIComponent(cabangSesi(s))}` + (data.status ? `&status=eq.${encodeURIComponent(data.status)}` : "") + "&order=timestamp.desc&limit=200";
-    const rr = await db("trx_retur_beli", q);
-    return { faktur, retur: rr.ok ? (await rr.json()).map((x) => ({ No_Retur: x.no_retur, No_Faktur: x.no_faktur_asal, Supplier: x.supplier, Tanggal: x.tanggal, Status: x.status, Created_By: x.created_by, Approved_By: x.approved_by, Tanggal_Approval: x.tanggal_approval, Total_Refund: x.total_refund, Alasan: x.alasan })) : [] };
+    if (data.faktur_only) return { faktur, retur: [] };
+    const historyQuery = `?cabang_id=eq.${encodeURIComponent(cabang)}` + (data.status ? `&status=eq.${encodeURIComponent(data.status)}` : "") + "&order=timestamp.desc&limit=200";
+    const history = await db("trx_retur_beli", historyQuery);
+    if (!history.ok) throw new Error(await history.text());
+    return { faktur, retur: toRetur(await history.json()) };
   }
   if (name === "retur.beliSimpan") {
     const r = await db("rpc/retur_beli_simpan", "", { method: "POST", headers: { ...headers, Prefer: "return=representation" }, body: JSON.stringify({ p_username: s.username, p_cabang_id: cabangSesi(s), p_no_faktur: data.No_Faktur_Asal, p_alasan: data.Alasan, p_items: (data.items || []).map((i) => ({ kode_obat: i.Kode_Obat, kode_batch: i.Kode_Batch, qty: i.Qty, kondisi: i.Kondisi || "Baik" })) }) });
