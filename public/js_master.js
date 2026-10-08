@@ -74,7 +74,7 @@ function muatBarang(hal) {
         '<td>' + esc(b.Kategori) + '</td>' +
         '<td class="c" style="white-space:nowrap"><span class="chip ' + stokKelas + '">' + angka(b.stok) + '</span> ' +
           '<button class="btn btn-sm" data-stok=\'' + esc(JSON.stringify({ k: b.Kode_Obat, n: b.Nama_Obat })) + '\' title="Ubah stok" aria-label="Ubah stok ' + esc(b.Nama_Obat) + '">✎</button></td>' +
-        '<td class="r num">' + rupiah(b.Harga_Modal) + '</td>' +
+        '<td class="r num">' + (b.Harga_Modal == null ? '—' : rupiah(b.Harga_Modal)) + '</td>' +
         '<td class="r num">' + rupiah(b.Harga_Jual_Umum) + '</td>' +
         '<td class="r num">' + rupiah(b.Harga_Khusus) + '</td>' +
         '<td class="r num">' + rupiah(b.Harga_Jual_Mutasi) + '</td>' +
@@ -243,7 +243,7 @@ function formBarang(b) {
       }).join('') + '</select></label>' +
     '<div class="grid g2">' +
       '<label class="field"><span>Harga modal (beli)</span><input id="fbModal" class="inp num" type="number" value="' +
-        (b.Harga_Modal || 0) + '"></label>' +
+        (b.Harga_Modal == null ? '' : b.Harga_Modal) + '"></label>' +
       '<label class="field"><span>Harga jual umum</span><input id="fbUmum" class="inp num" type="number" value="' +
         (b.Harga_Jual_Umum || 0) + '"></label>' +
       '<label class="field"><span>Harga khusus (nakes)</span><input id="fbKhusus" class="inp num" type="number" value="' +
@@ -405,7 +405,7 @@ function muatStok(offset) {
           '<td>' + (belumAdaBatch ? '—' : tglIndo(s.Expired_Date)) + '</td>' +
           '<td>' + (belumAdaBatch ? '—' : chipExpired(s.sisa_hari, s.Expired_Date)) + '</td>' +
           '<td class="c num">' + angka(s.Stok_Real || 0) + '</td>' +
-          '<td class="r num">' + (belumAdaBatch ? '—' : rupiah(s.Harga_Modal_Batch)) + '</td>' +
+          '<td class="r num">' + (belumAdaBatch || s.Harga_Modal_Batch == null ? '—' : rupiah(s.Harga_Modal_Batch)) + '</td>' +
           '<td class="c">' + (belumAdaBatch
             ? '<button class="btn btn-sm btn-primary" data-produk-index="' + i + '">Tambah batch</button>'
             : '<button class="btn btn-sm" data-batch=\'' + esc(JSON.stringify(s)) + '\'>Ubah</button>') + '</td>' +
@@ -465,7 +465,7 @@ function formBatch(s, produk) {
     '</div>' +
     (kodeBatchKosong ? '<p class="kpi-sub" style="margin:0 0 12px">Kode batch pada data ini kosong. Isi kode batch yang benar untuk memperbaiki data.</p>' : '') +
     '<label class="field"><span>Harga modal batch ini</span><input id="fsModal" class="inp num" type="number" value="' +
-      (s.Harga_Modal_Batch || 0) + '"></label>',
+      (s.Harga_Modal_Batch == null ? '' : s.Harga_Modal_Batch) + '</label>',
     [
       { label: 'Batal', aksi: modalTutup },
       { label: 'Simpan batch', kelas: 'btn-primary', aksi: function () {
