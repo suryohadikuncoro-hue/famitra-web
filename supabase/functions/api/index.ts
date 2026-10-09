@@ -708,17 +708,32 @@ async function action(name, data, s) {
     const faktor = Number(faktorTukar[tipe] == null ? 0 : faktorTukar[tipe]);
     const r = await db("loyalty_rewards", `?cabang_id=eq.${encodeURIComponent(cab)}&is_active=eq.true&select=*&order=points_required.asc&limit=100`);
     if (!r.ok) throw new Error(await r.text());
-    return (await r.json()).map((x) => ({
-      ...x,
-      eligible: faktor > 0 && pts >= Number(x.points_required || 0) && (x.min_tier === "gold" ? 3 : x.min_tier === "silver" ? 2 : 1) <= (tier === "gold" ? 3 : tier === "silver" ? 2 : 1),
-      customer_points: pts,
-      tipe_customer: tipe,
-      faktor_tipe: faktor,
-      // Nilai potongan yang benar-benar akan dipakai kasir: sudah memperhitungkan
-      // faktor tipe pelanggan dari pengaturan cabang, bukan dipotong setengah
-      // sendiri oleh tampilan kasir.
-      nilai_berlaku: Math.max(0, Math.floor(Number(x.reward_value || 0) * faktor))
-    }));
+    return (await r.json()).map((x) => {
+      // Jenis reward: discount (memotong harga jual), service (layanan gratis),
+      // free_product (merchandise non farmasi). Baris lama tanpa jenis = discount.
+      const jenis = x.reward_type || "discount";
+      const nilai = Math.max(0, Number(x.reward_value || 0));
+      // Potongan harga memakai faktor tipe pelanggan (perilaku lama). Layanan dan
+      // produk non farmasi TIDAK boleh dipotong faktor: separuh "cek tensi gratis"
+      // tidak bermakna, jadi nilai manfaatnya dicatat penuh.
+      const nilaiFaktor = Math.max(0, Math.floor(nilai * faktor));
+      return {
+        ...x,
+        reward_type: jenis,
+        eligible: faktor > 0 && pts >= Number(x.points_required || 0) && (x.min_tier === "gold" ? 3 : x.min_tier === "silver" ? 2 : 1) <= (tier === "gold" ? 3 : tier === "silver" ? 2 : 1),
+        customer_points: pts,
+        tipe_customer: tipe,
+        faktor_tipe: faktor,
+        // Nilai potongan yang benar-benar akan dipakai kasir: sudah memperhitungkan
+        // faktor tipe pelanggan dari pengaturan cabang, bukan dipotong setengah
+        // sendiri oleh tampilan kasir. Untuk service/free_product harga jual tidak
+        // dikurangi, jadi nilai_berlaku = 0 (kasir tidak boleh memotong harga).
+        nilai_berlaku: jenis === "discount" ? nilaiFaktor : 0,
+        // Nilai manfaat untuk laporan: untuk discount sama dengan potongannya,
+        // untuk service/free_product = nilai penuh reward_value.
+        nilai_manfaat: jenis === "discount" ? nilaiFaktor : nilai
+      };
+    });
   }
   if (name === "pos.simpanTransaksi") {
     const r = await db("rpc/pos_checkout", "", { method: "POST", headers: { ...headers }, body: JSON.stringify({ p_username: s.username, p_nomor_wa: data.nomor_wa || "", p_nama_pelanggan: data.nama_pelanggan || "Umum", p_tipe_customer: data.tipe_customer || "Umum", p_items: data.items || [], p_cabang_id: cabangSesi(s), p_diskon: data.diskon || 0, p_bayar: data.bayar || 0, p_reward_id: data.reward_id || null }) });

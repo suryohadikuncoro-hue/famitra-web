@@ -12,6 +12,30 @@
 
   var REWARD_ROWS = [];
   var NAMA_TIER = { reguler: 'Reguler', silver: 'Silver', gold: 'Gold' };
+  // Jenis reward (loyalty_rewards.reward_type). Hanya `discount` yang mengurangi
+  // harga jual; `service` dan `free_product` hanya dicatat nilai manfaatnya
+  // untuk laporan. Bawaan `discount` supaya reward lama tetap berperilaku sama.
+  var JENIS_REWARD = {
+    discount: 'Diskon potongan harga',
+    service: 'Layanan gratis (mis. cek tensi)',
+    free_product: 'Produk non farmasi gratis'
+  };
+  var NAMA_JENIS_REWARD = { discount: 'Diskon', service: 'Layanan', free_product: 'Produk non farmasi' };
+  var LABEL_NILAI_REWARD = {
+    discount: 'Nilai potongan (Rp)',
+    service: 'Nilai manfaat (Rp, untuk laporan)',
+    free_product: 'Nilai manfaat (Rp, untuk laporan)'
+  };
+
+  /** Jenis reward yang sah; nilai tak dikenal dianggap `discount` (perilaku lama). */
+  function jenisReward_(r) {
+    var j = String((r && r.reward_type) || '');
+    return JENIS_REWARD[j] ? j : 'discount';
+  }
+
+  function labelNilaiReward_(jenis) {
+    return LABEL_NILAI_REWARD[jenis] || LABEL_NILAI_REWARD.discount;
+  }
 
   var NAMA_BULAT = { bawah: 'ke bawah', atas: 'ke atas', terdekat: 'ke terdekat' };
   var NAMA_BASIS = { harga_akhir: 'harga akhir setelah diskon', subtotal: 'subtotal sebelum diskon' };
@@ -185,12 +209,29 @@
     if (!d.boleh) {
       return '<span style="color:#b00020"><strong>Tidak boleh ditukar.</strong> ' + esc(d.alasan || 'Penukaran tidak memenuhi syarat.') + '</span>' + catatan;
     }
+    // `jenis` dari server (default discount bila server belum mengirimnya).
+    var jenis = d.jenis && JENIS_REWARD[d.jenis] ? d.jenis : 'discount';
     var potongan = Number(d.nilai_penukaran || 0);
+    var manfaat = Number(d.nilai_manfaat === undefined || d.nilai_manfaat === null ? d.nilai_reward : d.nilai_manfaat);
     var akhir = Math.max(0, Number(subtotal || 0) - Number(diskon || 0) - potongan);
-    return '<strong style="color:#0a7d33">Boleh ditukar.</strong>' +
+    var barisJenis = '<br>Jenis reward: <strong>' + esc(NAMA_JENIS_REWARD[jenis]) + '</strong> (' + esc(JENIS_REWARD[jenis]) + ')';
+    var barisPoin = '<br>Poin yang dipotong: ' + angka(d.poin_dibutuhkan) + ' poin, sisa poin ' + angka(d.sisa_setelah) + ' (saldo ' + angka(d.poin_tersedia) + ')';
+    if (jenis !== 'discount') {
+      // Layanan / produk non farmasi: harga jual TIDAK berkurang. Yang tercatat
+      // hanya nilai manfaatnya untuk laporan (ROI/ROAS), bukan penghematan harga.
+      return '<strong style="color:#0a7d33">Boleh ditukar.</strong>' + barisJenis +
+        '<br>Nilai manfaat: <strong>' + rupiah(manfaat) + '</strong>' +
+        ' (nilai reward ' + rupiah(d.nilai_reward) + ')' +
+        '<br><strong>Harga jual tidak berkurang.</strong> Yang dicatat hanya nilai manfaat ' +
+        rupiah(manfaat) + ' untuk laporan, bukan potongan harga.' +
+        barisPoin +
+        '<br>Harga akhir (tanpa potongan reward): <strong>' + rupiah(akhir) + '</strong>' +
+        catatan;
+    }
+    return '<strong style="color:#0a7d33">Boleh ditukar.</strong>' + barisJenis +
       '<br>Nilai potongan: <strong>' + rupiah(potongan) + '</strong>' +
       ' (nilai reward ' + rupiah(d.nilai_reward) + ' × faktor ' + fmtF(d.faktor_tipe) + 'x untuk tipe ' + esc(d.tipe_customer) + ')' +
-      '<br>Poin yang dipotong: ' + angka(d.poin_dibutuhkan) + ' poin, sisa poin ' + angka(d.sisa_setelah) + ' (saldo ' + angka(d.poin_tersedia) + ')' +
+      barisPoin +
       '<br>Harga akhir setelah potongan: <strong>' + rupiah(akhir) + '</strong>' +
       (Number(d.maks_persen) < 100 ? ' (batas ' + fmtF(d.maks_persen) + '% dari nilai transaksi)' : '') +
       catatan;
@@ -400,9 +441,11 @@
     promoApi('rewardList', {}).then(function (rows) {
       REWARD_ROWS = rows || [];
       if (!REWARD_ROWS.length) { box.innerHTML = '<div class="empty">Belum ada reward di cabang ini. Klik “+ Reward” untuk membuat.</div>'; return; }
-      box.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Reward</th><th class="r">Poin</th><th class="r">Nilai diskon</th><th>Tier min.</th><th>Status</th><th></th></tr></thead><tbody>' +
+      box.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Reward</th><th>Jenis</th><th class="r">Poin</th><th class="r">Nilai</th><th>Tier min.</th><th>Status</th><th></th></tr></thead><tbody>' +
         REWARD_ROWS.map(function (r) {
+          var jenis = jenisReward_(r);
           return '<tr><td><strong>' + esc(r.name) + '</strong></td>' +
+            '<td><span class="chip">' + esc(NAMA_JENIS_REWARD[jenis]) + '</span></td>' +
             '<td class="r">' + angka(r.points_required) + '</td>' +
             '<td class="r">' + rupiah(r.reward_value) + '</td>' +
             '<td>' + esc(NAMA_TIER[r.min_tier] || r.min_tier) + '</td>' +
@@ -446,21 +489,32 @@
   function formRewardMarketing(r) {
     var ubah = !!r;
     r = r || { name: '', points_required: '', reward_value: '', min_tier: 'reguler' };
+    var jenis = jenisReward_(r);
     var opsiTier = ['reguler', 'silver', 'gold'].map(function (t) {
       return '<option value="' + t + '"' + (r.min_tier === t ? ' selected' : '') + '>' + NAMA_TIER[t] + '</option>';
     }).join('');
     modalBuka(ubah ? 'Ubah reward' : 'Reward baru',
       '<label class="field"><span>Nama reward</span><input id="mpNama" class="inp" placeholder="Diskon Rp5.000" value="' + esc(r.name) + '"></label>' +
+      '<label class="field"><span>Jenis reward</span><select id="mpRwJenis" class="inp">' + opsiPilihan(JENIS_REWARD, jenis) + '</select></label>' +
+      '<p class="sub">Hanya <strong>diskon potongan harga</strong> yang mengurangi harga jual. ' +
+        'Layanan gratis dan produk non farmasi gratis tidak mengurangi harga jual; nilainya dicatat sebagai manfaat untuk laporan.</p>' +
       '<label class="field"><span>Poin yang dibutuhkan</span><input id="mpPoin" class="inp" type="number" min="1" step="1" value="' + esc(r.points_required) + '"></label>' +
-      '<label class="field"><span>Nilai diskon (Rp)</span><input id="mpNilai" class="inp" type="number" min="1" step="500" value="' + esc(r.reward_value) + '"></label>' +
+      '<label class="field"><span id="mpRwNilaiLabel">' + esc(labelNilaiReward_(jenis)) + '</span><input id="mpNilai" class="inp" type="number" min="1" step="500" value="' + esc(r.reward_value) + '"></label>' +
       '<label class="field"><span>Tier minimum pelanggan</span><select id="mpTier" class="inp">' + opsiTier + '</select></label>' +
       '<p class="sub">Perubahan berlaku untuk penukaran berikutnya. Riwayat penukaran yang sudah terjadi tidak berubah.</p>',
       [{ label: 'Batal', aksi: modalTutup },
        { label: 'Simpan', kelas: 'btn-primary', aksi: function () {
-         var p = { id: ubah ? r.id : undefined, name: val('mpNama'), points_required: Number(val('mpPoin')), reward_value: Number(val('mpNilai')), min_tier: val('mpTier') };
+         var p = { id: ubah ? r.id : undefined, name: val('mpNama'), reward_type: val('mpRwJenis') || 'discount', points_required: Number(val('mpPoin')), reward_value: Number(val('mpNilai')), min_tier: val('mpTier') };
          promoApi('rewardSave', p).then(function () { modalTutup(); toast('Reward tersimpan.'); muatRewardMarketing(); })
            .catch(function (e) { toast(e.message, true); });
        } }]);
+    // Label nilai mengikuti jenis. Hanya teks label yang diganti, angka yang
+    // sudah diketik kasir/Owner tidak dihapus.
+    var selJenis = document.getElementById('mpRwJenis');
+    if (selJenis) selJenis.onchange = function () {
+      var lbl = document.getElementById('mpRwNilaiLabel');
+      if (lbl) lbl.textContent = labelNilaiReward_(this.value);
+    };
   }
 
   // VIEWS.marketing sudah dibungkus js_marketing_lottery.js (Apoteker -> lottery).

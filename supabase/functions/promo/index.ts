@@ -163,6 +163,18 @@ async function dashboardAktif(branch: string) {
       nilai_hadiah: hadiah.reduce((n: number, h: any) => n + Number(h.nilai_hadiah_idr || 0), 0),
       pemenang: menang.length, diambil: menang.filter((w: any) => w.pickup_status === "sudah_diambil").length });
   }
+  // Penukaran poin: loyalty_redemptions.reward_value = NILAI MANFAAT yang dicatat
+  // saat penukaran (untuk discount = besar potongan harga; untuk service /
+  // free_product = nilai layanan atau barang yang diberikan). Jenisnya diambil
+  // dari relasi loyalty_rewards; baris lama tanpa jenis dianggap diskon.
+  const penukaran = await semuaBaris("loyalty_redemptions", `?cabang_id=eq.${cab}&select=reward_value,loyalty_rewards(reward_type)&order=id`);
+  let nilaiReward = 0, nilaiNonDiskon = 0;
+  penukaran.forEach((x: any) => {
+    const nilai = Number(x.reward_value || 0);
+    const jenis = (x.loyalty_rewards || {}).reward_type || "discount";
+    nilaiReward += nilai;
+    if (jenis !== "discount") nilaiNonDiskon += nilai;
+  });
   // Ringkasan keuangan: nota unik dari kupon & bundle aktif (nota yang memakai keduanya dihitung sekali).
   const semuaNota = new Set<string>(), pelanggan = new Set<string>();
   let omzet = 0, hpp = 0, diskon = 0;
@@ -173,10 +185,21 @@ async function dashboardAktif(branch: string) {
     x.omzet = x._nota.reduce((t: number, n: string) => t + Number((transaksi[n] || {}).harga_akhir || 0), 0);
     delete x._nota; delete x._pelanggan;
   });
-  const laba = omzet - hpp;
-  return { item: [...kupon, ...bundle, ...lot], jumlah_aktif: kupon.length + bundle.length + lot.length,
+  // Nilai reward ditambahkan ke diskon SETELAH loop di atas, dan item reward
+  // tidak ikut loop itu, supaya biaya reward tidak pernah terhitung dua kali
+  // (sekaligus membuat ROAS memakai total biaya promo: kupon + bundle + reward).
+  diskon += nilaiReward;
+  // Reward berjenis discount TIDAK dikurangkan lagi dari laba di sini: potongannya
+  // sudah tercermin di omzet karena nota memakai harga_akhir yang sudah net
+  // (harga jual dikurangi potongan reward). Yang belum tercermin hanyalah nilai
+  // service / free_product (layanan atau merchandise yang diserahkan gratis),
+  // jadi hanya nilaiNonDiskon yang menjadi biaya tambahan.
+  const laba = omzet - hpp - nilaiNonDiskon;
+  const itemReward = { jenis: "reward", nama: "Penukaran poin", jumlah: penukaran.length, diskon: nilaiReward, biaya_non_diskon: nilaiNonDiskon };
+  return { item: [...kupon, ...bundle, ...lot, itemReward], jumlah_aktif: kupon.length + bundle.length + lot.length,
     ringkasan: { transaksi: semuaNota.size, omzet, diskon, hpp, laba_setelah_promo: laba,
-      margin: omzet ? laba / omzet * 100 : null, roas: diskon ? omzet / diskon : null, pelanggan_unik: pelanggan.size } };
+      margin: omzet ? laba / omzet * 100 : null, roas: diskon ? omzet / diskon : null,
+      biaya_reward: nilaiReward, biaya_reward_non_diskon: nilaiNonDiskon, pelanggan_unik: pelanggan.size } };
 }
 
 // ---- Pengaturan perolehan poin (per cabang) ----
@@ -296,21 +319,38 @@ async function action(name: string, data: any, s: any) {
   }
   if (name === "rewardSave") {
     const nama = String(data.name || "").trim(), poin = Math.floor(Number(data.points_required)), nilai = Number(data.reward_value), tier = String(data.min_tier || "reguler");
+    // Jenis reward: discount (memotong harga jual), service (layanan gratis), atau
+    // free_product (merchandise non farmasi). Bila tidak dikirim / kosong, dipakai
+    // "discount" supaya pemanggil lama tetap bekerja (sama seperti
+    // coalesce(nullif(reward_type,''),'discount') di loyalty_tukar_periksa).
+    const jenisKirim = data.reward_type === undefined || data.reward_type === null ? "" : String(data.reward_type).trim();
+    const jenis = jenisKirim === "" ? "discount" : jenisKirim;
     if (!nama) throw new Error("Nama reward wajib diisi.");
     if (!Number.isFinite(poin) || poin <= 0) throw new Error("Poin yang dibutuhkan harus lebih dari 0.");
-    if (!Number.isFinite(nilai) || nilai <= 0) throw new Error("Nilai diskon reward harus lebih dari 0.");
+    if (!["discount", "service", "free_product"].includes(jenis)) throw new Error("Jenis reward tidak valid.");
+    // Diskon wajib > 0 karena memang harus ada yang dipotong dari harga jual.
+    // Layanan & produk non farmasi boleh 0: harga jual tidak berkurang, angkanya
+    // hanya dicatat sebagai nilai manfaat untuk laporan ROI/ROAS.
+    if (jenis === "discount") {
+      if (!Number.isFinite(nilai) || nilai <= 0) throw new Error("Nilai potongan reward harus lebih dari 0.");
+    } else if (!Number.isFinite(nilai) || nilai < 0) throw new Error("Nilai manfaat reward tidak valid.");
     if (!["reguler", "silver", "gold"].includes(tier)) throw new Error("Tier minimum tidak valid.");
-    const p = { name: nama, points_required: poin, reward_type: "discount", reward_value: nilai, min_tier: tier };
+    const p = { name: nama, points_required: poin, reward_type: jenis, reward_value: nilai, min_tier: tier };
+    // reward_type ikut diminta pada balikan supaya baris hasil simpan selalu
+    // membawa jenisnya (dipakai tampilan untuk membedakan diskon vs layanan).
+    const kolomBalikan = "select=id,name,points_required,reward_type,reward_value,min_tier,is_active";
     const ret = { ...headers, Prefer: "return=representation" };
     if (data.id) {
-      const r = await db("loyalty_rewards", `?id=eq.${encodeURIComponent(data.id)}&cabang_id=eq.${encodeURIComponent(branch)}`, { method: "PATCH", headers: ret, body: JSON.stringify(p) });
+      const r = await db("loyalty_rewards", `?id=eq.${encodeURIComponent(data.id)}&cabang_id=eq.${encodeURIComponent(branch)}&${kolomBalikan}`, { method: "PATCH", headers: ret, body: JSON.stringify(p) });
       if (!r.ok) throw new Error(await r.text());
       const rows = await r.json(); if (!rows.length) throw new Error("Reward tidak ditemukan di cabang ini.");
-      return rows[0];
+      const row = rows[0];
+      return { ...row, reward_type: row.reward_type || jenis };
     }
-    const r = await db("loyalty_rewards", "", { method: "POST", headers: ret, body: JSON.stringify({ ...p, cabang_id: branch, is_active: true }) });
+    const r = await db("loyalty_rewards", `?${kolomBalikan}`, { method: "POST", headers: ret, body: JSON.stringify({ ...p, cabang_id: branch, is_active: true }) });
     if (!r.ok) throw new Error(await r.text());
-    return (await r.json())[0];
+    const row = (await r.json())[0] || {};
+    return { ...row, reward_type: row.reward_type || jenis };
   }
   if (name === "rewardStatus") {
     if (typeof data.is_active !== "boolean") throw new Error("Status reward tidak valid.");

@@ -27,6 +27,20 @@ var POS = {
 // belum punya cukup riwayat penjualan. Tidak berisi data pelanggan.
 var POS_CEPAT_KEY = 'famitra.pos.cepat.v1';
 
+// Jenis reward poin (loyalty_rewards.reward_type):
+//   discount     -> potongan harga; harga jual BERKURANG sebesar nilai_berlaku
+//   service      -> layanan gratis; harga jual TIDAK berkurang (nilai_manfaat)
+//   free_product -> produk non farmasi gratis; harga jual TIDAK berkurang
+// Untuk service/free_product, yang dihitung server adalah nilai manfaatnya
+// (untuk laporan), bukan penghematan harga pelanggan.
+var NAMA_JENIS_REWARD_POS = { discount: 'Diskon', service: 'Layanan', free_product: 'Produk non farmasi' };
+
+/** Jenis reward yang sah; nilai tak dikenal dianggap `discount` (perilaku lama). */
+function jenisRewardPOS_(r) {
+  var j = String((r && r.reward_type) || '');
+  return NAMA_JENIS_REWARD_POS[j] ? j : 'discount';
+}
+
 VIEWS.pos = {
   title: 'Kasir',
   render: function (el) {
@@ -683,12 +697,24 @@ function bukaRewardPOS(c) {
       // (mis. Edge Function `api` belum ter-deploy). Tanpa cadangan ini, seluruh
       // reward akan tampil Rp0 di kasir.
       var nilai = Number(r.nilai_berlaku == null ? (r.reward_value || 0) : r.nilai_berlaku);
-      var tampil = Object.assign({}, r, { nilai_berlaku: nilai });
+      // Jenis reward: hanya `discount` yang mengurangi harga jual. Untuk
+      // service/free_product server mengirim nilai_berlaku 0 dan nilai manfaat
+      // penuh di nilai_manfaat; cadangan reward_value bila kolomnya belum ada.
+      var jenis = jenisRewardPOS_(r);
+      var manfaat = Number(r.nilai_manfaat == null ? (r.reward_value || 0) : r.nilai_manfaat);
+      var tampil = Object.assign({}, r, { nilai_berlaku: nilai, reward_type: jenis, nilai_manfaat: manfaat });
       var label = r.eligible ? 'Pilih' : (Number(r.faktor_tipe) <= 0 ? 'Tidak bisa' : 'Belum cukup');
-      return '<div class="pos-reward-item"><div><strong>' + esc(r.name) + '</strong><span>' + angka(r.points_required) + ' poin · ' + rupiah(nilai) + '</span></div><button class="btn btn-sm" data-reward=\'' + esc(JSON.stringify(tampil)) + '\'' + (r.eligible ? '' : ' disabled') + '>' + label + '</button></div>';
+      var nilaiTeks = jenis === 'discount'
+        ? 'potongan ' + rupiah(nilai)
+        : 'senilai ' + rupiah(manfaat) + ' · harga tidak berkurang';
+      return '<div class="pos-reward-item"><div><strong>' + esc(r.name) + '</strong><span>' + angka(r.points_required) + ' poin · ' + esc(NAMA_JENIS_REWARD_POS[jenis]) + ' · ' + nilaiTeks + '</span></div><button class="btn btn-sm" data-reward=\'' + esc(JSON.stringify(tampil)) + '\'' + (r.eligible ? '' : ' disabled') + '>' + label + '</button></div>';
     }).join('') : '<div class="empty">Belum ada reward aktif.</div>') + '</div>';
     modalBuka('Tukar poin pelanggan', html, [{ label: 'Tutup', aksi: modalTutup }]);
     var body = document.querySelector('.modal-body') || document.querySelector('.modal');
+    // POS.rewardDiscount tetap diisi dari nilai_berlaku: 0 untuk service /
+    // free_product, jadi total bayar tidak berubah — memang itu yang diinginkan.
+    // reward_type & nilai_manfaat ikut disimpan supaya bisa ditampilkan di baris
+    // ringkasan dan struk.
     if (body) body.onclick = function (e) { var b = e.target.closest('[data-reward]'); if (!b) return; var r = JSON.parse(b.dataset.reward); POS.reward = r; POS.rewardDiscount = Number(r.nilai_berlaku || 0); modalTutup(); gambarRingkasan(); toast(r.name + ' dipilih.'); };
   }).catch(function (e) { toast(e.message, true); });
 }
@@ -714,7 +740,24 @@ function gambarRingkasan() {
 
   elSub.textContent = rupiah(sub);
   var rr = document.getElementById('posRewardRow');
-  if (rr) { rr.hidden = !POS.reward; if (POS.reward) { document.getElementById('posRewardName').textContent = POS.reward.name; document.getElementById('posRewardValue').textContent = '-' + rupiah(POS.rewardDiscount); } }
+  if (rr) {
+    rr.hidden = !POS.reward;
+    if (POS.reward) {
+      var namaReward = document.getElementById('posRewardName');
+      var nilaiReward = document.getElementById('posRewardValue');
+      var jenisReward = jenisRewardPOS_(POS.reward);
+      if (jenisReward === 'discount') {
+        namaReward.textContent = POS.reward.name;
+        nilaiReward.textContent = '-' + rupiah(POS.rewardDiscount);
+      } else {
+        // Layanan / produk non farmasi: harga jual tidak berkurang, jadi yang
+        // ditampilkan nilai manfaatnya — bukan potongan (yang memang Rp0).
+        var manfaatReward = Number(POS.reward.nilai_manfaat == null ? 0 : POS.reward.nilai_manfaat);
+        namaReward.textContent = POS.reward.name + ' — senilai ' + rupiah(manfaatReward) + ' (tidak mengurangi harga)';
+        nilaiReward.textContent = '';
+      }
+    }
+  }
   var br = document.getElementById('posBundleRow');
   if (br) { br.hidden = !POS.bundle; if (POS.bundle) { document.getElementById('posBundleName').textContent = POS.bundle.name; document.getElementById('posBundleValue').textContent = '-' + rupiah(POS.bundle.discount); } }
   var cr = document.getElementById('posCouponRow');
@@ -1088,6 +1131,19 @@ function cetakStruk(nota) {
       '<td class="r">' + angka(it.Subtotal) + '</td></tr>';
   }).join('');
 
+  // Reward layanan / produk non farmasi TIDAK mengurangi harga jual, jadi
+  // ditulis sebagai keterangan tersendiri dan baris TOTAL tidak diubah.
+  // Sumber utama `nota` dari pos_checkout (Reward_Jenis/Reward_Manfaat);
+  // POS.reward dipakai sebagai cadangan bila server belum mengirim kolomnya.
+  var jenisReward = (nota.Reward_Jenis || (POS.reward && POS.reward.reward_type) || 'discount');
+  var barisReward = '';
+  if (jenisReward !== 'discount') {
+    var namaReward = (POS.reward && POS.reward.name) || 'Reward';
+    var manfaatReward = Number(nota.Reward_Manfaat != null ? nota.Reward_Manfaat
+      : (POS.reward && POS.reward.nilai_manfaat != null ? POS.reward.nilai_manfaat : 0));
+    barisReward = '<div class="ctr">' + esc(namaReward) + ' — senilai ' + rupiah(manfaatReward) + ' (tidak mengurangi harga)</div>';
+  }
+
   var el = document.getElementById('struk');
   el.className = 'struk' + (POS.lebarStruk === '80' ? ' w80' : '');
   el.innerHTML =
@@ -1106,6 +1162,7 @@ function cetakStruk(nota) {
       '<tr><td>Tunai</td><td class="r">' + angka(nota.Bayar) + '</td></tr>' +
       '<tr><td>Kembali</td><td class="r">' + angka(nota.Kembalian) + '</td></tr>' +
     '</table>' +
+    (barisReward ? '<hr>' + barisReward : '') +
     '<hr>' +
     (Number(nota.Diskon) > 0 ? '<div class="ctr"><strong>Anda hemat Rp' + angka(nota.Diskon) + '</strong></div><hr>' : '') +
     '<div class="ctr">Terima kasih atas kunjungan Anda<br>Semoga lekas sembuh</div>';
@@ -1231,7 +1288,11 @@ function gambarPromoPOS() {
         terbaik: !dipakai && hematKupon[i] === terbaik && terbaik > 0 });
     }).join('') + '</div>' : '';
 
-  // Hemat & undian di panel bayar
+  // Hemat & undian di panel bayar.
+  // Hanya potongan HARGA yang dihitung hemat: diskon manual, reward `discount`,
+  // kupon, dan bundle. Nilai manfaat reward layanan / produk non farmasi TIDAK
+  // masuk ke sini karena bukan penghematan harga bagi pelanggan (hanya dicatat
+  // untuk laporan).
   var hemat = (POS.diskon || 0) + (POS.rewardDiscount || 0) + (POS.coupon ? Number(POS.coupon.discount || 0) : 0) + (POS.bundle ? Number(POS.bundle.discount || 0) : 0);
   var elHemat = document.getElementById('posHemat');
   if (elHemat) { elHemat.hidden = !(hemat > 0 && POS.items.length); elHemat.textContent = '🎉 Pembeli hemat ' + rupiah(hemat); }
