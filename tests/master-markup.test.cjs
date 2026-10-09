@@ -44,7 +44,7 @@ test('Master markup documents SKU sale prices and effective modal source', () =>
   assert.match(js, /Harga jual berlaku per SKU dan tersimpan di Master Barang/);
   assert.match(js, /modal efektif terbaru setelah PPN dan diskon/);
   assert.match(js, /<th class="r">Modal efektif<\/th>/);
-  assert.match(js, /<th class="r">Modal efektif batch<\/th>/);
+  assert.match(js, /<th class="r"(?: title="[^"]*")?>Modal efektif batch<\/th>/);
 });
 
 test('Master markup supports selecting several items before applying', () => {
