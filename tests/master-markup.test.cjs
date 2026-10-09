@@ -46,3 +46,18 @@ test('Master markup documents SKU sale prices and effective modal source', () =>
   assert.match(js, /<th class="r">Modal efektif<\/th>/);
   assert.match(js, /<th class="r">Modal efektif batch<\/th>/);
 });
+
+test('Master markup supports selecting several items before applying', () => {
+  assert.match(js, /MARKUP_MASTER_SELECTED/);
+  assert.match(js, /id="mkPilihSemua"/);
+  assert.match(js, /data-markup-kode/);
+  assert.match(js, /Terapkan item terpilih/);
+  assert.match(js, /Pilih minimal satu item obat/);
+});
+
+test('Stock & Batch exposes SKU sale prices and batch margins', () => {
+  assert.match(js, /Harga jual SKU/);
+  assert.match(js, /Margin batch/);
+  assert.match(js, /Margin_Umum/);
+  assert.match(js, /function marginStok/);
+});
