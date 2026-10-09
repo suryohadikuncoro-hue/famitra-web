@@ -16,7 +16,7 @@ VIEWS.barang = {
       '<div id="bgKartu" class="m-list hanya-hp"></div>' +
       '<div class="table-wrap hanya-desktop"><table data-tk-off="1"><thead><tr>' +
         '<th>Kode</th><th>Nama obat</th><th>Kategori</th><th class="c">Stok</th>' +
-        '<th class="r">Modal</th><th class="r">Umum</th><th class="r">Nakes</th>' +
+        '<th class="r">Modal efektif</th><th class="r">Jual umum</th><th class="r">Jual nakes</th>' +
         '<th class="r">Apotek lain</th><th class="c">PPN</th><th></th>' +
       '</tr></thead><tbody id="bgBody"></tbody></table></div>' +
       '<div id="bgPager" class="pager"></div></div>';
@@ -102,7 +102,7 @@ function muatBarang(hal) {
 }
 
 function formMarkupMaster() {
-  var body = '<p class="kpi-sub">Pilih tingkat harga dan sumber markup. Pratinjau wajib dilakukan sebelum harga master berubah.</p>' +
+  var body = '<p class="kpi-sub">Harga jual berlaku per SKU dan tersimpan di Master Barang. Markup dihitung dari modal efektif terbaru setelah PPN dan diskon; pratinjau wajib dilakukan sebelum harga master berubah.</p>' +
     '<div class="grid g3"><label class="field"><span>Tingkat</span><label><input id="mkUmum" type="checkbox" checked> Umum</label><label><input id="mkNakes" type="checkbox"> Nakes</label><label><input id="mkMutasi" type="checkbox"> Apotek lain</label></label>' +
     '<label class="field"><span>Sumber markup</span><select id="mkSumber" class="inp"><option value="bawaan">Bawaan cabang</option><option value="manual">Isi manual</option></select></label>' +
     '<label class="field"><span>Lingkup</span><select id="mkLingkup" class="inp"><option value="semua">Semua barang aktif</option><option value="cari">Hasil pencarian saat ini</option></select><input id="mkCari" class="inp" placeholder="Pencarian (opsional)"></label></div>' +
@@ -161,7 +161,7 @@ function previewMarkupMaster() {
     if (request !== MARKUP_MASTER_PREVIEW_REQUEST) return;
     var selected = r.rows || [];
     if (box) box.dataset.previewReady = '1';
-    box.innerHTML = '<p class="kpi-sub">' + angka(r.total) + ' barang ditemukan. Menampilkan maksimal 100 baris per pratinjau.</p><table><thead><tr><th>Kode</th><th>Nama</th><th>Modal</th><th>Harga baru</th><th>Margin baru</th></tr></thead><tbody>' + selected.map(function (x) { return '<tr><td>' + esc(x.kode_obat) + '</td><td>' + esc(x.nama_obat) + '</td><td class="r">' + (x.modal == null ? '—' : rupiah(x.modal)) + '</td><td class="r">' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.tingkat + ': ' + (h.baru == null ? '—' : rupiah(h.baru)); }).join('<br>') + '</td><td>' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.baru && h.baru > 0 ? (100 - Number(x.modal || 0) / Number(h.baru) * 100).toFixed(1) + '%' : '—'; }).join('<br>') + '</td></tr>'; }).join('') + '</tbody></table>';
+    box.innerHTML = '<p class="kpi-sub">' + angka(r.total) + ' barang ditemukan. Modal adalah modal efektif terbaru per SKU setelah PPN dan diskon; harga jual baru disimpan di Master Barang. Menampilkan maksimal 100 baris per pratinjau.</p><table><thead><tr><th>Kode</th><th>Nama</th><th>Modal efektif</th><th>Harga jual baru</th><th>Margin baru</th></tr></thead><tbody>' + selected.map(function (x) { return '<tr><td>' + esc(x.kode_obat) + '</td><td>' + esc(x.nama_obat) + '</td><td class="r">' + (x.modal == null ? '—' : rupiah(x.modal)) + '</td><td class="r">' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.tingkat + ': ' + (h.baru == null ? '—' : rupiah(h.baru)); }).join('<br>') + '</td><td>' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.baru && h.baru > 0 ? (100 - Number(x.modal || 0) / Number(h.baru) * 100).toFixed(1) + '%' : '—'; }).join('<br>') + '</td></tr>'; }).join('') + '</tbody></table>';
     var foot = document.getElementById('modalFoot'); foot.innerHTML = ''; [['Kembali',modalTutup,''],['Terapkan setelah konfirmasi',function () { terapkanMarkupMaster(r.total, q, cfg, tingkat); },'btn-primary']].forEach(function (x) { var b=document.createElement('button'); b.className='btn '+x[2]; b.textContent=x[0]; b.onclick=x[1]; foot.appendChild(b); });
   }).catch(function (e) { if (box) box.innerHTML = '<p class="kpi-sub">' + esc(e.message) + '</p>'; });
 }
@@ -440,7 +440,7 @@ VIEWS.stok = {
       '<p id="stHint" class="kpi-sub st-filter-hint" style="margin-top:0">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</p>' +
       '<div class="table-wrap"><table><thead><tr>' +
         '<th>Obat</th><th>Kode batch / status</th><th>Kedaluwarsa</th><th>Sisa waktu</th>' +
-        '<th class="c">Stok</th><th class="r">Modal batch</th><th></th>' +
+        '<th class="c">Stok</th><th class="r">Modal efektif batch</th><th></th>' +
       '</tr></thead><tbody id="stBody"></tbody></table></div><div id="stPager" class="pager"></div></div>';
 
     document.getElementById('stTambah').onclick = function () { formBatch(null); };
@@ -545,7 +545,7 @@ function formBatch(s, produk) {
         (s.Stok_Real || 0) + '"></label>' +
     '</div>' +
     (kodeBatchKosong ? '<p class="kpi-sub" style="margin:0 0 12px">Kode batch pada data ini kosong. Isi kode batch yang benar untuk memperbaiki data.</p>' : '') +
-    '<label class="field"><span>Harga modal batch ini</span><input id="fsModal" class="inp num" type="number" value="' +
+    '<label class="field"><span>Modal efektif batch ini</span><input id="fsModal" class="inp num" type="number" value="' +
       (s.Harga_Modal_Batch == null ? '' : s.Harga_Modal_Batch) + '</label>',
     [
       { label: 'Batal', aksi: modalTutup },

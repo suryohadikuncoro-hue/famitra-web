@@ -39,3 +39,10 @@ test('Master markup ignores late responses from an older preview request', () =>
   assert.match(js, /request = \+\+MARKUP_MASTER_PREVIEW_REQUEST/);
   assert.match(js, /if \(request !== MARKUP_MASTER_PREVIEW_REQUEST\) return/);
 });
+
+test('Master markup documents SKU sale prices and effective modal source', () => {
+  assert.match(js, /Harga jual berlaku per SKU dan tersimpan di Master Barang/);
+  assert.match(js, /modal efektif terbaru setelah PPN dan diskon/);
+  assert.match(js, /<th class="r">Modal efektif<\/th>/);
+  assert.match(js, /<th class="r">Modal efektif batch<\/th>/);
+});
