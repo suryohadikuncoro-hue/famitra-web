@@ -55,6 +55,21 @@ test('Master markup supports selecting several items before applying', () => {
   assert.match(js, /Pilih minimal satu item obat/);
 });
 
+test('Master markup searches by input with debounce and rejects short queries', () => {
+  assert.match(js, /MARKUP_MASTER_SEARCH_TIMER/);
+  assert.match(js, /query\.length < 2/);
+  assert.match(js, /setTimeout\(function \(\) \{ MARKUP_MASTER_SEARCH_TIMER = null; previewMarkupMaster\(\); \}, 350\)/);
+  assert.match(js, /Ketik minimal 2 karakter untuk mencari nama atau kode obat/);
+});
+
+test('Master markup disables apply after preview becomes stale and shows a summary', () => {
+  assert.match(js, /querySelector\('#mkApply'\)/);
+  assert.match(js, /b\.id=x\[3\]/);
+  assert.match(js, /Anda akan mengubah /);
+  assert.match(js, /Pembulatan:/);
+  assert.match(js, /Lanjutkan\?/);
+});
+
 test('Stock & Batch exposes SKU sale prices and batch margins', () => {
   assert.match(js, /Harga jual SKU/);
   assert.match(js, /Margin batch/);
