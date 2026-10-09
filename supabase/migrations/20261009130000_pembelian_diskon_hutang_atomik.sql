@@ -1,7 +1,8 @@
--- Pembelian: modal bersih setelah diskon, proteksi stok gabungan, dan pembayaran hutang atomik.
+-- Pembelian: modal bersih setelah diskon persen, proteksi stok gabungan, dan pembayaran hutang atomik.
 -- Harga modal disimpan tanpa PPN (sesuai arti Harga_Netto pada form). Diskon form
--- disimpan sebagai nominal setelah PPN; bagian diskon yang bukan PPN dialokasikan
--- kembali ke DPP sebelum menghitung modal per unit.
+-- adalah persentase dari bruto baris setelah PPN. Routine legacy yang masih
+-- menerima nominal diberi payload konversi sementara; nilai detail dipulihkan
+-- sebagai persentase sebelum transaksi selesai.
 --
 -- Migrasi ini tidak mengubah qty stok atau nilai tagihan faktur. Backfill di akhir
 -- hanya memperbarui harga_modal_batch dan harga_modal dari faktur pembelian aktif.
@@ -12,7 +13,7 @@ CREATE OR REPLACE FUNCTION public.purchase_effective_unit_cost(
   p_harga_netto numeric,
   p_qty numeric,
   p_ppn numeric,
-  p_diskon numeric
+  p_diskon_persen numeric
 ) RETURNS numeric
 LANGUAGE sql
 IMMUTABLE
@@ -22,9 +23,9 @@ AS $function$
   SELECT CASE
     WHEN coalesce(p_qty, 0) <= 0 OR (1 + coalesce(p_ppn, 0) / 100) <= 0 THEN NULL
     ELSE round(
-      ((coalesce(p_harga_netto, 0) * p_qty * (1 + coalesce(p_ppn, 0) / 100)
-        - coalesce(p_diskon, 0))
-       / (1 + coalesce(p_ppn, 0) / 100) / p_qty),
+      (coalesce(p_harga_netto, 0) * p_qty * (1 + coalesce(p_ppn, 0) / 100)
+       * (1 - least(greatest(coalesce(p_diskon_persen, 0), 0), 100) / 100)
+       / p_qty),
       2
     )
   END
@@ -42,7 +43,6 @@ DECLARE
   v_netto numeric;
   v_ppn numeric;
   v_diskon numeric;
-  v_bruto numeric;
 BEGIN
   IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' OR jsonb_array_length(p_items) = 0 THEN
     RAISE EXCEPTION 'Detail pembelian kosong.';
@@ -58,9 +58,8 @@ BEGIN
     IF v_ppn < 0 OR v_ppn > 100 THEN
       RAISE EXCEPTION 'PPN harus berada di antara 0 dan 100 persen.';
     END IF;
-    v_bruto := v_netto * v_qty * (1 + v_ppn / 100);
-    IF v_diskon < 0 OR v_diskon > v_bruto THEN
-      RAISE EXCEPTION 'Diskon item tidak valid: nilainya harus antara Rp0 dan bruto baris.';
+    IF v_diskon < 0 OR v_diskon > 100 THEN
+      RAISE EXCEPTION 'Diskon item tidak valid: nilainya harus antara 0 dan 100 persen.';
     END IF;
   END LOOP;
 END;
@@ -271,6 +270,48 @@ REVOKE ALL ON FUNCTION public.purchase_assert_no_shared_batches(text, text) FROM
 REVOKE ALL ON FUNCTION public.purchase_assert_new_batches_exclusive(text, text, jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.purchase_refresh_costs(text, text[]) FROM PUBLIC, anon, authenticated;
 
+-- Compatibility bridge: the older routine computes with nominal discount,
+-- while the public purchase contract and detail column use percentage.
+CREATE OR REPLACE FUNCTION public.purchase_items_discount_nominal(p_items jsonb)
+RETURNS jsonb
+LANGUAGE plpgsql IMMUTABLE SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_item jsonb; v_out jsonb := '[]'::jsonb;
+  v_gross numeric; v_pct numeric;
+BEGIN
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_items) LOOP
+    v_gross := coalesce((v_item->>'Harga_Netto')::numeric, 0)
+      * coalesce((v_item->>'Qty')::numeric, 0)
+      * (1 + coalesce((v_item->>'PPN')::numeric, 0) / 100);
+    v_pct := least(greatest(coalesce((v_item->>'Diskon')::numeric, 0), 0), 100);
+    v_item := jsonb_set(v_item, '{Diskon}', to_jsonb(round(v_gross * v_pct / 100, 2)), true);
+    v_out := v_out || jsonb_build_array(v_item);
+  END LOOP;
+  RETURN v_out;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.purchase_restore_discount_percent(
+  p_cabang_id text, p_no_faktur text, p_items jsonb
+) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
+AS $function$
+DECLARE v_item jsonb;
+BEGIN
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_items) LOOP
+    UPDATE public.trx_pembelian_detail
+       SET diskon = least(greatest(coalesce((v_item->>'Diskon')::numeric, 0), 0), 100)
+     WHERE cabang_id = p_cabang_id AND no_faktur = p_no_faktur
+       AND upper(kode_obat) = upper(v_item->>'Kode_Obat')
+       AND coalesce(kode_batch, '') = coalesce(v_item->>'Kode_Batch', '');
+  END LOOP;
+END;
+$function$;
+
+REVOKE ALL ON FUNCTION public.purchase_items_discount_nominal(jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.purchase_restore_discount_percent(text,text,jsonb) FROM PUBLIC, anon, authenticated;
+
 -- Keep the existing tested purchase logic, adding guarded wrappers that normalize
 -- costs after the legacy routines complete within the same database transaction.
 ALTER FUNCTION public.purchase_save(text, text, text, text, date, date, jsonb, text)
@@ -297,14 +338,17 @@ DECLARE
   v_result jsonb;
   v_cabang_id text;
   v_kode text[];
+  v_items_nominal jsonb;
 BEGIN
   PERFORM public.purchase_validate_items(p_items);
   PERFORM public.purchase_validate_category(p_kategori, p_items);
+  v_items_nominal := public.purchase_items_discount_nominal(p_items);
   v_result := public.purchase_save_before_discount_fix(
     p_username, p_no_faktur_supplier, p_supplier, p_kategori,
-    p_tanggal, p_jatuh_tempo, p_items, p_cabang_id);
+    p_tanggal, p_jatuh_tempo, v_items_nominal, p_cabang_id);
   SELECT u.cabang_id INTO v_cabang_id
     FROM public.app_users u WHERE u.username = p_username AND u.aktif = 'YA';
+  PERFORM public.purchase_restore_discount_percent(v_cabang_id, v_result->>'No_Faktur', p_items);
   SELECT array_agg(DISTINCT d.kode_obat) INTO v_kode
     FROM public.trx_pembelian_detail d
    WHERE d.cabang_id = v_cabang_id AND d.no_faktur = v_result->>'No_Faktur';
@@ -328,6 +372,7 @@ DECLARE
   v_kode_lama text[];
   v_kode_baru text[];
   v_kode text[];
+  v_items_nominal jsonb;
 BEGIN
   PERFORM public.purchase_validate_items(p_items);
   PERFORM public.purchase_validate_category(p_kategori, p_items);
@@ -340,14 +385,16 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext('purchase_save:' || v_cabang_id));
   PERFORM public.purchase_assert_no_shared_batches(v_cabang_id, p_no_faktur);
   PERFORM public.purchase_assert_new_batches_exclusive(v_cabang_id, p_no_faktur, p_items);
+  v_items_nominal := public.purchase_items_discount_nominal(p_items);
   SELECT array_agg(DISTINCT d.kode_obat) INTO v_kode_lama
     FROM public.trx_pembelian_detail d
    WHERE d.cabang_id = v_cabang_id AND d.no_faktur = p_no_faktur;
 
   v_result := public.purchase_update_before_discount_fix(
     p_username, p_no_faktur, p_no_faktur_supplier, p_supplier,
-    p_kategori, p_tanggal, p_jatuh_tempo, p_items, p_cabang_id);
+    p_kategori, p_tanggal, p_jatuh_tempo, v_items_nominal, p_cabang_id);
 
+  PERFORM public.purchase_restore_discount_percent(v_cabang_id, p_no_faktur, p_items);
   SELECT array_agg(DISTINCT d.kode_obat) INTO v_kode_baru
     FROM public.trx_pembelian_detail d
    WHERE d.cabang_id = v_cabang_id AND d.no_faktur = p_no_faktur;

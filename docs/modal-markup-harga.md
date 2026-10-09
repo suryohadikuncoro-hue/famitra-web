@@ -2,8 +2,8 @@
 
 ## Perubahan
 
-- Modal efektif pembelian memakai netto × qty × (1 + PPN/100) − diskon nominal, lalu dibagi qty.
-- PPN dihitung setelah diskon dialokasikan ke dasar PPN, sehingga contoh netto Rp1.000, PPN 11%, diskon Rp111 menghasilkan modal efektif Rp999 dan PPN Rp99.
+- Modal efektif pembelian memakai netto × qty × (1 + PPN/100) × (1 − diskon%/100), lalu dibagi qty.
+- PPN dihitung setelah diskon persentase diterapkan pada bruto baris, sehingga contoh netto Rp1.000, PPN 11%, diskon 10% menghasilkan modal efektif Rp999 dan PPN Rp99.
 - Shift POS dibaca dari definisi `public.pos_checkout` saat migrasi, lalu batasnya menjadi `07:00 ≤ pagi < 14:00`, `14:00 ≤ sore < 21:00`, selain itu `Luar Jam`.
 - Pengaturan markup tersimpan per cabang; transaksi Pembelian dapat memakai pengaturan bawaan atau draf lokal.
 - Harga jual umum, nakes, dan apotek lain dihitung terpisah. Nilai `0%` tidak terkena pembulatan; markup positif dapat dibulatkan ke atas Rp100/Rp500/Rp1.000.

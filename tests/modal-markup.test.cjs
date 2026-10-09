@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const sql = ['20261009130100_purchase_effective_unit_cost_ppn.sql','20261009130200_pos_checkout_shift_boundaries.sql','20261009140000_markup_harga.sql'].map(f => fs.readFileSync(path.join(root, 'supabase/migrations', f), 'utf8')).join('\n');
+const sql = ['20261009130000_pembelian_diskon_hutang_atomik.sql','20261009130100_purchase_effective_unit_cost_ppn.sql','20261009130200_pos_checkout_shift_boundaries.sql','20261009140000_markup_harga.sql'].map(f => fs.readFileSync(path.join(root, 'supabase/migrations', f), 'utf8')).join('\n');
 const js = fs.readFileSync(path.join(root, 'public/js_trx.js'), 'utf8');
 
 function harga(modal, persen, pembulatan) {
@@ -12,9 +12,9 @@ function harga(modal, persen, pembulatan) {
   if (persen === 0) return mentah;
   return pembulatan > 0 ? Math.ceil(mentah / pembulatan) * pembulatan : mentah;
 }
-function modal(netto, qty, ppn, diskon) {
+function modal(netto, qty, ppn, diskonPersen) {
   if (qty <= 0) return null;
-  return Math.round((netto * qty * (1 + ppn / 100) - diskon) / qty * 100) / 100;
+  return Math.round((netto * qty * (1 + ppn / 100) * (1 - diskonPersen / 100)) / qty * 100) / 100;
 }
 
 test('vektor markup persen identik dengan aturan bisnis', () => {
@@ -30,10 +30,10 @@ test('vektor rasio dipadankan ke persen', () => {
 });
 
 test('vektor modal termasuk PPN setelah diskon', () => {
-  assert.equal(modal(1000, 1, 11, 111), 999);
-  assert.equal(Math.round((1000 - 111 / 1.11) * 0.11 * 100) / 100, 99);
-  assert.equal(modal(2212, 1, 11, 2212 * 1.11 * 0.1), 2209.79);
-  assert.equal(modal(1000, 1, 0, 100), 900);
+  assert.equal(modal(1000, 1, 11, 10), 999);
+  assert.equal(Math.round((1000 * (1 - 10 / 100)) * 0.11 * 100) / 100, 99);
+  assert.equal(modal(2212, 1, 11, 10), 2209.79);
+  assert.equal(modal(1000, 1, 0, 10), 900);
 });
 
 test('frontend memuat rumus dan pengaturan yang diwajibkan', () => {
@@ -50,5 +50,8 @@ test('migrasi aman: tabel baru hanya terbuka untuk service_role dan RLS aktif', 
   }
   assert.doesNotMatch(sql, /grant[^;]+\bto\s+(anon|authenticated)\b/i);
   assert.match(sql, /harga_markup_terapkan/);
+  assert.match(sql, /between 0 and 100 percent|antara 0 dan 100 persen/i);
+  assert.match(sql, /purchase_items_discount_nominal/);
+  assert.match(sql, /purchase_restore_discount_percent/);
   assert.match(sql, /extract\(hour from/);
 });

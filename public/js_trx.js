@@ -75,7 +75,7 @@ VIEWS.beli = {
         '<button id="blSimpan" class="btn btn-primary btn-block">Simpan pembelian</button>' +
         '<p class="kpi-sub">Menyimpan faktur akan menambah stok per batch dan memperbarui harga modal. ' +
           'Harga jual umum, khusus (nakes), dan mutasi (apotek lain) hanya berubah bila kolomnya diisi. ' +
-          'Diskon diisi dalam persen dari nilai baris setelah PPN. ' +
+          'Diskon disimpan sebagai persen dari nilai baris setelah PPN. ' +
           'Laba % dihitung dari modal efektif yang sudah termasuk PPN dan diskon.</p>' +
       '</div>' +
 
@@ -123,7 +123,7 @@ function barisKosong() {
            Stok_Tersedia: null, Jual_Umum_Kini: 0, Jual_Khusus_Kini: 0, Jual_Mutasi_Kini: 0, _manual: {} };
 }
 
-// Harga modal efektif termasuk PPN dan setelah diskon nominal pada baris.
+// Harga modal efektif termasuk PPN dan setelah diskon persentase pada baris.
 function hargaModalEfektifBeli(it) {
   var qty = Number(it.Qty) || 0, ppn = Number(it.PPN) || 0;
   if (qty <= 0 || ppn < 0) return null;
@@ -189,12 +189,8 @@ function brutoBaris(it) {
     (1 + (Number(it.PPN) || 0) / 100);
 }
 
-// Kolom "Diskon (%)" diisi PERSEN. Database menyimpan diskon sebagai nominal
-// rupiah (trx_pembelian_detail.diskon), jadi persennya dihitung di sini dan baru
-// dikirim sebagai rupiah saat menyimpan — tidak ada perubahan skema.
-// Persen dihitung dari nilai baris SETELAH PPN. Dengan begitu memasukkan 10%
-// menghasilkan total yang sama dengan faktur yang menghitung DPP lebih dulu
-// (bruto - diskon) baru PPN: bruto x 1,11 x (1 - 10%) = (bruto x 90%) x 1,11.
+// Kolom "Diskon (%)" dan trx_pembelian_detail.diskon sama-sama menyimpan
+// persentase. Persen dihitung dari nilai baris setelah PPN.
 function diskonRupiahBaris(it) {
   var persen = Number(it.Diskon) || 0;
   if (persen <= 0) return 0;
@@ -437,13 +433,12 @@ function simpanPembelian() {
 function kirimPembelian(isi) {
   var btn = document.getElementById('blSimpan');
   if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan…'; }
-  // Kolom diskon diisi persen, sedangkan database menyimpan rupiah. Konversinya
-  // dilakukan di sini supaya nilai tersimpan dan laporan tetap nominal.
+  // Diskon dikirim dan disimpan sebagai persentase.
   var kirim = isi.map(function (it) {
     return {
       Kode_Obat: it.Kode_Obat, Kode_Batch: it.Kode_Batch, Expired_Date: it.Expired_Date,
       Qty: it.Qty, Harga_Netto: it.Harga_Netto, PPN: it.PPN,
-      Diskon: diskonRupiahBaris(it),
+      Diskon: Math.min(100, Math.max(0, Number(it.Diskon) || 0)),
       Harga_Jual_Umum_Baru: it.Harga_Jual_Umum_Baru,
       Harga_Khusus_Baru: it.Harga_Khusus_Baru,
       Harga_Jual_Mutasi_Baru: it.Harga_Jual_Mutasi_Baru
@@ -509,11 +504,9 @@ function bukaUbahFaktur(no) {
     var h = d.Header || {};
     BELI.editNoFaktur = h.No_Faktur;
     BELI.items = (d.items && d.items.length) ? d.items : [barisKosong()];
-    // Diskon tersimpan sebagai rupiah; kolom di form memakai persen, jadi
-    // dikembalikan ke persen agar angkanya sama seperti saat diisi.
+    // Diskon tersimpan sebagai persentase, sama seperti kolom form.
     BELI.items.forEach(function (it) {
-      var b = brutoBaris(it);
-      it.Diskon = b > 0 ? Math.round((Number(it.Diskon) || 0) / b * 100 * 1000000) / 1000000 : 0;
+      it.Diskon = Math.min(100, Math.max(0, Number(it.Diskon) || 0));
     });
     var f = document.getElementById('blFaktur'); if (f) f.value = h.No_Faktur_Supplier || '';
     var k = document.getElementById('blKategori'); if (k) k.value = h.Kategori || 'Tidak Berpajak';
