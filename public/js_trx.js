@@ -175,6 +175,9 @@ function terapkanMarkupBaris(it) {
     }
   });
 }
+function terapkanMarkupSemuaBaris() {
+  BELI.items.forEach(function (it) { terapkanMarkupBaris(it); });
+}
 function sinkronkanHargaMarkupBaris(tr, it) {
   terapkanMarkupBaris(it);
   ['Harga_Jual_Umum_Baru','Harga_Khusus_Baru','Harga_Jual_Mutasi_Baru'].forEach(function (f) { var el = tr.querySelector('[data-f="' + f + '"]'); if (el && !(it._manual && it._manual[f])) el.value = it[f] || ''; });
@@ -200,7 +203,7 @@ function muatPengaturanMarkup() {
     [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) { var el = document.getElementById(x[0]); if (el) el.value = markupPersenBeliKeInput(BELI.markup[x[1]], BELI.markup.mode); });
     if (status) status.textContent = !BELI.markup.valid ? 'Bawaan markup tidak valid; periksa nilai 0–1000% atau rasio 1–11' : (res.tersimpan ? 'Bawaan cabang dimuat' : 'Belum ada bawaan; isi untuk faktur ini');
     if (card) card.hidden = false; var save = document.getElementById('blMarkupSimpan'); if (save) save.hidden = !(SESSION && SESSION.user && SESSION.user.role === 'Owner');
-    padananMarkupBeli(); gambarBeli();
+    padananMarkupBeli(); terapkanMarkupSemuaBaris(); gambarBeli();
   }).catch(function (e) { var status = document.getElementById('blMarkupStatus'); if (status) status.textContent = e.message; });
 }
 function bacaMarkupBeli() {
@@ -213,14 +216,14 @@ function bacaMarkupBeli() {
   BELI.markup.pembulatan = Number(val('blMarkupPembulatan')) || 0;
   var status = document.getElementById('blMarkupStatus');
   if (status) status.textContent = BELI.markup.valid ? 'Draf untuk faktur ini' : 'Nilai tidak valid: persen 0–1000 atau rasio 1–11';
-  padananMarkupBeli(); gambarBeli();
+  padananMarkupBeli(); terapkanMarkupSemuaBaris(); gambarBeli();
 }
 function ubahModeMarkupBeli() {
   var m = BELI.markup, mode = val('blMarkupMode') === 'rasio' ? 'rasio' : 'persen';
   if (!m.valid) { bacaMarkupBeli(); return; }
   m.mode = mode;
   [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) { var el = document.getElementById(x[0]); if (el) el.value = markupPersenBeliKeInput(m[x[1]], mode); });
-  padananMarkupBeli(); gambarBeli();
+  padananMarkupBeli(); terapkanMarkupSemuaBaris(); gambarBeli();
 }
 function simpanBawaanMarkupBeli() {
   var m = BELI.markup;
@@ -294,6 +297,7 @@ function pilihSaranBeli(index) {
   if (!Number(it.Harga_Netto)) it.Harga_Netto = Number(b.Harga_Modal) || 0;
   if (!Number(it.PPN)) it.PPN = Number(b.PPN) || 0;
   if (!Number(it.Harga_Jual_Umum_Baru)) it.Harga_Jual_Umum_Baru = Number(b.Harga_Jual_Umum) || 0;
+  terapkanMarkupBaris(it);
   tutupSaranBeli(); gambarBeli();
   var next = document.querySelector('#blBody input[data-i="' + i + '"][data-f="Kode_Obat"]');
   if (next) { next.focus(); next.setSelectionRange(next.value.length, next.value.length); }
@@ -373,6 +377,7 @@ function gambarBeli() {
       if (!Number(it.Harga_Netto)) it.Harga_Netto = Number(b.Harga_Modal) || 0;
       if (!Number(it.PPN)) it.PPN = Number(b.PPN) || 0;
       if (!Number(it.Harga_Jual_Umum_Baru)) it.Harga_Jual_Umum_Baru = Number(b.Harga_Jual_Umum) || 0;
+      terapkanMarkupBaris(it);
       gambarBeli();
     }).catch(function () { /* nama barang opsional; abaikan bila gagal */ });
   };
