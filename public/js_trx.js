@@ -91,7 +91,15 @@ VIEWS.beli = {
     document.getElementById('blTambahItem').onclick = function () { BELI.items.push(barisKosong()); gambarBeli(); };
     document.getElementById('blSimpan').onclick = simpanPembelian;
     document.getElementById('blMarkupMode').onchange = ubahModeMarkupBeli;
-    ['blMarkupUmum','blMarkupNakes','blMarkupMutasi','blMarkupPembulatan'].forEach(function (id) { document.getElementById(id).oninput = bacaMarkupBeli; document.getElementById(id).onchange = bacaMarkupBeli; });
+    // Tingkat yang diubah dikirim ke bacaMarkupBeli supaya hanya tingkat itu yang
+    // dihitung ulang saat form sedang mengubah faktur lama.
+    [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) {
+      var el = document.getElementById(x[0]); if (!el) return;
+      el.oninput = function () { bacaMarkupBeli(x[1]); };
+      el.onchange = function () { bacaMarkupBeli(x[1]); };
+    });
+    document.getElementById('blMarkupPembulatan').oninput = function () { bacaMarkupBeli(); };
+    document.getElementById('blMarkupPembulatan').onchange = function () { bacaMarkupBeli(); };
     document.getElementById('blMarkupSimpan').onclick = simpanBawaanMarkupBeli;
     document.getElementById('blSupplierBaru').onclick = formSupplier;
     document.getElementById('blBatalUbah').onclick = batalUbahFaktur;
@@ -121,7 +129,7 @@ VIEWS.beli = {
 function barisKosong() {
   return { Kode_Obat: '', Nama_Obat: '', Kode_Batch: '', Expired_Date: '', Qty: 0, Harga_Netto: 0,
            PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 0, Harga_Khusus_Baru: 0, Harga_Jual_Mutasi_Baru: 0,
-           Stok_Tersedia: null, Jual_Umum_Kini: 0, Jual_Khusus_Kini: 0, Jual_Mutasi_Kini: 0, _manual: {}, _markupOtomatis: {} };
+           Stok_Tersedia: null, Jual_Umum_Kini: 0, Jual_Khusus_Kini: 0, Jual_Mutasi_Kini: 0, _manual: {}, _markupOtomatis: {}, _tercatat: {} };
 }
 
 // Harga modal efektif termasuk PPN dan setelah diskon persentase pada baris.
@@ -162,11 +170,12 @@ function markupPersenBeliKeInput(persen, mode) {
   return mode === 'rasio' ? 1 + Number(persen) / 100 : Number(persen);
 }
 function terapkanMarkupBaris(it) {
-  if (!BELI.markup.tersedia || BELI.editNoFaktur) return;
+  if (!BELI.markup.tersedia) return;
   var modal = hargaModalEfektifBeli(it), m = BELI.markup;
   it._markupOtomatis = it._markupOtomatis || {};
   [['umum','Harga_Jual_Umum_Baru'], ['nakes','Harga_Khusus_Baru'], ['mutasi','Harga_Jual_Mutasi_Baru']].forEach(function (x) {
     if (it._manual && it._manual[x[1]]) return;
+    if (it._tercatat && it._tercatat[x[1]]) return;
     var harga = m.valid ? hargaDariMarkupJS(modal, m[x[0]], m.pembulatan) : null;
     if (harga !== null && harga > 0) {
       it[x[1]] = harga; it._markupOtomatis[x[1]] = true;
@@ -177,6 +186,24 @@ function terapkanMarkupBaris(it) {
 }
 function terapkanMarkupSemuaBaris() {
   BELI.items.forEach(function (it) { terapkanMarkupBaris(it); });
+}
+// Harga jual hasil muat faktur lama dikunci apa adanya: yang tampil adalah nilai
+// yang tercatat di faktur itu, bukan hitungan markup saat ini. Kuncinya dilepas
+// per tingkat oleh lepasKunciMarkupBeli begitu markup tingkat itu diubah, jadi
+// setelah itu perilakunya sama dengan faktur baru.
+function kunciHargaFakturBeli(items) {
+  (items || []).forEach(function (it) {
+    it._manual = it._manual || {};
+    it._markupOtomatis = {};
+    it._tercatat = { Harga_Jual_Umum_Baru: true, Harga_Khusus_Baru: true, Harga_Jual_Mutasi_Baru: true };
+  });
+}
+// Mengubah satu kolom markup hanya menghitung ulang tingkat itu; harga tingkat
+// lain tetap seperti yang tercatat di faktur (atau yang diketik manual).
+function lepasKunciMarkupBeli(tingkat) {
+  var medan = { umum: 'Harga_Jual_Umum_Baru', nakes: 'Harga_Khusus_Baru', mutasi: 'Harga_Jual_Mutasi_Baru' }[tingkat];
+  if (!medan) return;
+  BELI.items.forEach(function (it) { if (it._tercatat) delete it._tercatat[medan]; });
 }
 function sinkronkanHargaMarkupBaris(tr, it) {
   terapkanMarkupBaris(it);
@@ -206,7 +233,7 @@ function muatPengaturanMarkup() {
     padananMarkupBeli(); terapkanMarkupSemuaBaris(); gambarBeli();
   }).catch(function (e) { var status = document.getElementById('blMarkupStatus'); if (status) status.textContent = e.message; });
 }
-function bacaMarkupBeli() {
+function bacaMarkupBeli(tingkat) {
   var mode = val('blMarkupMode') === 'rasio' ? 'rasio' : 'persen';
   var values = [markupInputBeliKePersen(val('blMarkupUmum'), mode), markupInputBeliKePersen(val('blMarkupNakes'), mode), markupInputBeliKePersen(val('blMarkupMutasi'), mode)];
   BELI.markup.mode = mode; BELI.markup.valid = values.every(function (x) { return x.valid; });
@@ -216,6 +243,7 @@ function bacaMarkupBeli() {
   BELI.markup.pembulatan = Number(val('blMarkupPembulatan')) || 0;
   var status = document.getElementById('blMarkupStatus');
   if (status) status.textContent = BELI.markup.valid ? 'Draf untuk faktur ini' : 'Nilai tidak valid: persen 0–1000 atau rasio 1–11';
+  if (tingkat) lepasKunciMarkupBeli(tingkat);
   padananMarkupBeli(); terapkanMarkupSemuaBaris(); gambarBeli();
 }
 function ubahModeMarkupBeli() {
@@ -558,6 +586,9 @@ function bukaUbahFaktur(no) {
     BELI.items.forEach(function (it) {
       it.Diskon = Math.min(100, Math.max(0, Number(it.Diskon) || 0));
     });
+    // Faktur dibuka apa adanya: harga jual yang tampil adalah nilai tercatat di
+    // faktur, bukan hitungan markup saat ini.
+    kunciHargaFakturBeli(BELI.items);
     var f = document.getElementById('blFaktur'); if (f) f.value = h.No_Faktur_Supplier || '';
     var k = document.getElementById('blKategori'); if (k) k.value = h.Kategori || 'Tidak Berpajak';
     var g = document.getElementById('blTanggal'); if (g) g.value = h.Tanggal_Faktur || '';
