@@ -195,20 +195,108 @@ test('Master markup: pilih semua dan pilih per baris selalu terbatas pada baris 
   assert.deepEqual(Array.from(ctx.kodeMarkupMasterTerpilih()).sort(), ['OBT2', 'OBT3']);
 });
 
-test('Master markup: tombol Markup ___% mengisi kolom per baris tanpa mengunci harganya', () => {
+test('Master markup: tiga kolom markup tombol bantu terpisah per tipe pelanggan', () => {
+  const form = extractFunction('formMarkupMaster', MASTER);
+  assert.match(form, /id="mkPersenUmum"/);
+  assert.match(form, /id="mkPersenNakes"/);
+  assert.match(form, /id="mkPersenMutasi"/);
+  assert.doesNotMatch(form, /id="mkPersen"/);
+  assert.match(form, /Markup Umum \(%\)/);
+  assert.match(form, /Markup Nakes \(%\)/);
+  assert.match(form, /Markup Apotek lain \(%\)/);
+  const { ctx } = muatMaster();
+  assert.equal(ctx.idPersenMarkupMaster('umum'), 'mkPersenUmum');
+  assert.equal(ctx.idPersenMarkupMaster('nakes'), 'mkPersenNakes');
+  assert.equal(ctx.idPersenMarkupMaster('mutasi'), 'mkPersenMutasi');
+  assert.equal(ctx.idPersenMarkupMaster(), null, 'tingkat tak dikenal tidak menunjuk kolom mana pun');
+  assert.equal(ctx.labelMarkupMaster('umum'), 'Umum');
+  assert.equal(ctx.labelMarkupMaster('nakes'), 'Nakes');
+  assert.equal(ctx.labelMarkupMaster('mutasi'), 'Apotek lain');
+  assert.deepEqual(Array.from(ctx.tingkatMarkupMaster()), ['umum', 'nakes', 'mutasi']);
+});
+
+test('Master markup: tombol Markup per baris mengisi tiap tingkat dengan persennya sendiri', () => {
   const input = [inputHarga('OBT1', 'umum'), inputHarga('OBT1', 'nakes'), inputHarga('OBT1', 'mutasi')];
-  const { ctx } = muatMaster({ nilai: { mkPersen: '50', mkRound: '100' }, input });
-  ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, { umum: { lama: 1000 }, nakes: { lama: 1000 }, mutasi: { lama: 1000 } })];
+  const { ctx } = muatMaster({ nilai: { mkPersenUmum: '39', mkPersenNakes: '9', mkPersenMutasi: '0', mkRound: '100' }, input });
+  // Contoh nyata apotek: modal Rp4.300 -> umum Rp6.000, nakes Rp4.700, apotek lain Rp4.300.
+  ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 4300, { umum: { lama: 4300 }, nakes: { lama: 4300 }, mutasi: { lama: 4300 } })];
   ctx.isiMarkupMaster('OBT1');
-  assert.deepEqual(input.map((i) => i.value), ['1500', '1500', '1500']);
-  assert.deepEqual(JSON.parse(JSON.stringify(ctx.MARKUP_MASTER_ROWS[0].nilai)), { umum: '1500', nakes: '1500', mutasi: '1500' });
-  assert.match(extractFunction('htmlTingkatMarkupMaster', MASTER), /data-markup-harga/);
-  assert.doesNotMatch(extractFunction('htmlTingkatMarkupMaster', MASTER), /readonly|disabled/i);
-  assert.match(MASTER, /hanya mengisi kolom, tidak mengunci harga/);
+  assert.deepEqual(input.map((i) => i.value), ['6000', '4700', '4300']);
+  assert.equal(new Set(input.map((i) => i.value)).size, 3, 'ketiga harga harus berbeda');
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.MARKUP_MASTER_ROWS[0].nilai)), { umum: '6000', nakes: '4700', mutasi: '4300' });
+  assert.equal(ctx.teksTombolMarkupMaster(), 'Markup Umum 39% · Nakes 9% · Apotek lain 0%');
   assert.match(MASTER, /data-markup-isi=/);
   assert.match(MASTER, /id="mkPilihSemua"/);
   assert.match(MASTER, /ke baris terpilih/);
   assert.match(MASTER, /Pilih minimal satu item obat/);
+});
+
+test('Master markup: mengetik harga di satu tingkat tidak menyentuh tingkat lain', () => {
+  const input = [inputHarga('OBT1', 'umum'), inputHarga('OBT1', 'nakes'), inputHarga('OBT1', 'mutasi')];
+  const { ctx } = muatMaster({ nilai: { mkAmbang: '20', mkUrut: 'margin' }, input });
+  ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, { umum: { lama: 1000 }, nakes: { lama: 1000 }, mutasi: { lama: 1000 } })];
+  input[1].value = '1250';
+  ctx.ketikMarkupMaster({ target: { closest: () => input[1] } });
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.MARKUP_MASTER_ROWS[0].nilai)), { nakes: '1250' });
+  assert.deepEqual(Array.from(ctx.tingkatBerubahMarkupMaster(ctx.MARKUP_MASTER_ROWS[0])), ['nakes']);
+  assert.equal(ctx.marginBarisMarkupMaster(ctx.MARKUP_MASTER_ROWS[0], 'nakes'), 20);
+  assert.equal(ctx.marginBarisMarkupMaster(ctx.MARKUP_MASTER_ROWS[0], 'umum'), 0);
+  assert.match(input[1].selMargin.innerHTML, /20,0%/);
+});
+
+test('Master markup: satu persentase tidak boleh dipakai untuk ketiga tingkat', () => {
+  const input = [inputHarga('OBT1', 'umum'), inputHarga('OBT1', 'nakes'), inputHarga('OBT1', 'mutasi')];
+  // Hanya kolom Nakes yang diisi; Umum dan Apotek lain sengaja dikosongkan.
+  const { ctx } = muatMaster({ nilai: { mkPersenUmum: '', mkPersenNakes: '10', mkPersenMutasi: '', mkRound: '100' }, input });
+  ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, { umum: { lama: 1200 }, nakes: { lama: 1200 }, mutasi: { lama: 1200 } })];
+  ctx.isiMarkupMaster('OBT1');
+  assert.equal(input[1].value, '1100');
+  assert.equal(input[0].value, '', 'Umum tidak boleh ikut terisi oleh persen Nakes');
+  assert.equal(input[2].value, '', 'Apotek lain tidak boleh ikut terisi oleh persen Nakes');
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.MARKUP_MASTER_ROWS[0].nilai)), { nakes: '1100' });
+  // Tanpa argumen tingkat, persen tidak boleh diambil dari kolom tingkat mana pun.
+  assert.equal(ctx.nilaiPersenMarkupMaster(), null);
+  assert.match(MASTER, /function nilaiPersenMarkupMaster\(t\)/);
+  assert.doesNotMatch(MASTER, /nilaiPersenMarkupMaster\(\)/);
+  assert.doesNotMatch(MASTER, /var persen = nilaiPersenMarkupMaster\(\)/);
+});
+
+test('Master markup: borongan "baris terpilih" memakai ketiga persentase per tingkat', () => {
+  const input = [
+    inputHarga('OBT1', 'umum'), inputHarga('OBT1', 'nakes'), inputHarga('OBT1', 'mutasi'),
+    inputHarga('OBT2', 'umum'), inputHarga('OBT2', 'nakes'), inputHarga('OBT2', 'mutasi')
+  ];
+  const { ctx } = muatMaster({ nilai: { mkPersenUmum: '40', mkPersenNakes: '10', mkPersenMutasi: '0', mkRound: '100', mkGol: '' }, input });
+  ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, {}), baris('OBT2', 2000, {})];
+  ctx.MARKUP_MASTER_SELECT_ALL = true;
+  ctx.MARKUP_MASTER_SELECTED = Object.create(null);
+  ctx.boronganMarkupMaster();
+  assert.deepEqual(input.map((i) => i.value), ['1400', '1100', '1000', '2800', '2200', '2000']);
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.MARKUP_MASTER_ROWS[0].nilai)), { umum: '1400', nakes: '1100', mutasi: '1000' });
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.MARKUP_MASTER_ROWS[1].nilai)), { umum: '2800', nakes: '2200', mutasi: '2000' });
+});
+
+test('Master markup: nilai bawaan tombol bantu diambil dari pengaturan markup per tingkat', async () => {
+  const dok = dokumenMini({ mkPersenUmum: '20', mkPersenNakes: '20', mkPersenMutasi: '20', mkRound: '100' });
+  const { ctx } = muatMaster({
+    document: dok,
+    api(aksi) {
+      if (aksi === 'harga.pengaturan') {
+        return Promise.resolve({ tersedia: true, tersimpan: true, pengaturan: { mode: 'persen', markup_umum_persen: 40, markup_nakes_persen: 10, markup_mutasi_persen: 0, pembulatan: 500 } });
+      }
+      return Promise.resolve({ total: 0, rows: [] });
+    }
+  });
+  ctx.muatPengaturanMarkupMaster();
+  await tunggu();
+  assert.equal(dok.elemen.mkPersenUmum.value, '40');
+  assert.equal(dok.elemen.mkPersenNakes.value, '10');
+  assert.equal(dok.elemen.mkPersenMutasi.value, '0');
+  assert.equal(dok.elemen.mkRound.value, '500');
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.cfgMarkupMaster())), { mode: 'persen', umum: 40, nakes: 10, mutasi: 0, pembulatan: 500 });
+  assert.match(MASTER, /markup_umum_persen/);
+  assert.match(MASTER, /markup_nakes_persen/);
+  assert.match(MASTER, /markup_mutasi_persen/);
 });
 
 test('Master markup: harga baru dibalik ke markup persen dan dikirim lewat aksi lama tanpa pembulatan', async () => {

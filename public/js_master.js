@@ -118,17 +118,32 @@ function muatBarang(hal) {
    sekaligus. Sekarang bentuknya daftar kerja per barang: tiap barang dapat
    disunting di tempat, modal dan margin tampil berdampingan, dan margin
    dihitung ulang setiap kali pengguna mengetik. Sumber data tetap aksi lama
-   harga.markupPreview; tidak ada aksi API baru yang ditambahkan. */
+   harga.markupPreview; tidak ada aksi API baru yang ditambahkan.
+   Markup tombol bantu diisi per tipe pelanggan (Umum / Nakes / Apotek lain)
+   dan harga hasil hitungan dikirim per tingkat lewat harga.markupTerapkan,
+   karena di apotek ini markup tiap tipe pelanggan memang berbeda. */
 
-function nilaiPersenMarkupMaster() {
-  var v = val('mkPersen'); if (v === '') return null;
+/** Label tingkat harga. 'mutasi' ditampilkan sebagai "Apotek lain" sesuai
+ *  kolom harga_jual_mutasi di Master Barang. */
+function labelMarkupMaster(t) { return t === 'umum' ? 'Umum' : (t === 'nakes' ? 'Nakes' : 'Apotek lain'); }
+/** Id kolom markup tombol bantu; satu kolom untuk tiap tingkat supaya Umum,
+ *  Nakes, dan Apotek lain bisa diisi persen yang berbeda. */
+function idPersenMarkupMaster(t) { return t === 'umum' ? 'mkPersenUmum' : (t === 'nakes' ? 'mkPersenNakes' : (t === 'mutasi' ? 'mkPersenMutasi' : null)); }
+/** Markup tombol bantu untuk SATU tingkat. Tanpa argumen tingkat hasilnya null
+ *  supaya satu persen tidak pernah diam-diam dipakai untuk ketiga tingkat. */
+function nilaiPersenMarkupMaster(t) {
+  var v = val(idPersenMarkupMaster(t)); if (v === '') return null;
   var n = Number(v);
   return isFinite(n) && n >= 0 && n <= 1000 ? n : null;
 }
-function teksTombolMarkupMaster() {
-  var persen = nilaiPersenMarkupMaster();
-  return 'Markup ' + (persen === null ? '—' : angka(persen)) + '%';
+/** Ringkasan ketiga markup tombol bantu, mis. "Umum 40% · Nakes 10% · Apotek lain 0%". */
+function teksRingkasPersenMarkupMaster() {
+  return tingkatMarkupMaster().map(function (t) {
+    var persen = nilaiPersenMarkupMaster(t);
+    return labelMarkupMaster(t) + ' ' + (persen === null ? '—' : angka(persen)) + '%';
+  }).join(' · ');
 }
+function teksTombolMarkupMaster() { return 'Markup ' + teksRingkasPersenMarkupMaster(); }
 /** Markup bawaan cabang; dipakai harga.markupPreview untuk kolom saran harga
  *  baru (angka abu-abu) supaya Owner tahu usulan sistem. */
 function cfgMarkupMaster() {
@@ -201,7 +216,7 @@ function htmlIsiMarginMarkupMaster(x, t) {
 }
 function htmlTingkatMarkupMaster(x, t) {
   var h = x.harga[t] || {};
-  var label = t === 'umum' ? 'Umum' : (t === 'nakes' ? 'Nakes' : 'Apotek lain');
+  var label = labelMarkupMaster(t);
   var nilai = x.nilai[t] === undefined ? '' : String(x.nilai[t]);
   var saran = h.baru == null ? '' : String(h.baru);
   return '<label class="field" style="margin-bottom:0"><span>' + label + ' · sekarang ' + (h.lama == null ? '—' : rupiah(h.lama)) + '</span>' +
@@ -259,7 +274,7 @@ function perbaruiTombolBantuMarkupMaster() {
   var teks = teksTombolMarkupMaster();
   Array.prototype.forEach.call(document.querySelectorAll('[data-markup-isi]'), function (b) { b.textContent = teks; });
   var borongan = document.getElementById('mkBorongan');
-  if (borongan) borongan.textContent = 'Terapkan markup ' + (nilaiPersenMarkupMaster() === null ? '—' : angka(nilaiPersenMarkupMaster())) + '% ke baris terpilih';
+  if (borongan) borongan.textContent = 'Terapkan markup ' + teksRingkasPersenMarkupMaster() + ' ke baris terpilih';
 }
 /** Menutup panel; harga baru yang belum disimpan tidak hilang diam-diam. */
 function tutupMarkupMaster() {
@@ -365,32 +380,39 @@ function muatHalamanMarkupMaster(offset, tambah) {
     box.innerHTML = '<p class="kpi-sub">' + esc(e.message) + '</p>';
   });
 }
+/** Tombol bantu per baris: tiap tingkat memakai persentasenya sendiri
+ *  (Umum/Nakes/Apotek lain), bukan satu persen untuk ketiganya. Tingkat yang
+ *  kolom markupnya dikosongkan dilewati supaya angka yang sudah diketik tidak
+ *  ikut tertimpa. */
 function isiMarkupMaster(kode) {
   var x = cariBarisMarkupMaster(kode); if (!x) return;
-  var persen = nilaiPersenMarkupMaster();
-  if (persen === null) { toast('Isi markup tombol bantu 0–1000% lebih dulu.', true); return; }
+  if (!(Number(x.modal) > 0)) { toast('Modal ' + x.kode + ' belum diketahui, jadi markup tidak bisa dihitung.', true); return; }
   // Rumus markup dipakai bersama modul Pembelian supaya angkanya identik.
-  var pembulatan = Number(val('mkRound')) || 0;
-  if (hargaDariMarkupJS(x.modal, persen, pembulatan) === null) { toast('Modal ' + x.kode + ' belum diketahui, jadi markup tidak bisa dihitung.', true); return; }
+  var pembulatan = Number(val('mkRound')) || 0, terisi = [];
   Array.prototype.forEach.call(document.querySelectorAll('[data-markup-harga]'), function (el) {
     if (el.getAttribute('data-markup-kode-baris') !== kode) return;
     var t = el.getAttribute('data-markup-harga');
+    var persen = nilaiPersenMarkupMaster(t);
+    if (persen === null) return;
     var harga = hargaDariMarkupJS(x.modal, persen, pembulatan);
+    if (harga === null) return;
     el.value = String(harga);
     x.nilai[t] = String(harga);
+    terisi.push(t);
     var sel = el.parentNode.querySelector('[data-markup-margin]');
     if (sel) sel.innerHTML = htmlIsiMarginMarkupMaster(x, t);
   });
+  if (!terisi.length) { toast('Isi minimal satu markup tombol bantu 0–1000% lebih dulu.', true); return; }
   sinkronkanMarkupMaster();
 }
 /** Tombol "Markup ___%" per baris hanya mengisi kolom, tidak mengunci harga. */
 function boronganMarkupMaster() {
   var terpilih = kodeMarkupMasterTerpilih();
   if (!terpilih.length) { toast('Pilih minimal satu item obat.', true); return; }
-  var persen = nilaiPersenMarkupMaster();
-  if (persen === null) { toast('Isi markup tombol bantu 0–1000% lebih dulu.', true); return; }
+  var ada = tingkatMarkupMaster().some(function (t) { return nilaiPersenMarkupMaster(t) !== null; });
+  if (!ada) { toast('Isi minimal satu markup tombol bantu 0–1000% lebih dulu.', true); return; }
   terpilih.forEach(function (kode) { isiMarkupMaster(kode); });
-  toast('Markup ' + angka(persen) + '% diisikan ke ' + angka(terpilih.length) + ' barang. Sesuaikan bila perlu, lalu simpan.');
+  toast('Markup ' + teksRingkasPersenMarkupMaster() + ' diisikan ke ' + angka(terpilih.length) + ' barang. Sesuaikan bila perlu, lalu simpan.');
 }
 function ketikMarkupMaster(e) {
   var inp = e.target.closest('[data-markup-harga]');
@@ -418,7 +440,7 @@ function klikMarkupMaster(e) {
 }
 function ubahPenyaringMarkupMaster(e) {
   var id = e && e.target ? e.target.id : '';
-  if (id === 'mkPersen' || id === 'mkRound') { perbaruiTombolBantuMarkupMaster(); return; }
+  if (id === 'mkRound' || id.indexOf('mkPersen') === 0) { perbaruiTombolBantuMarkupMaster(); return; }
   gambarMarkupMaster();
 }
 function potongMarkupMaster(a, n) {
@@ -479,14 +501,19 @@ function simpanMarkupMaster() {
     muatBarang();
   });
 }
-/** Bawaan markup cabang mengisi kolom saran dan persentase tombol bantu. */
+/** Bawaan markup cabang mengisi kolom saran dan markup tombol bantu tiap
+ *  tingkat: Umum, Nakes, dan Apotek lain punya nilai tersendiri dari
+ *  pengaturan_harga (markup_umum_persen, markup_nakes_persen,
+ *  markup_mutasi_persen). */
 function muatPengaturanMarkupMaster() {
   api('harga.pengaturan', {}).then(function (r) {
     if (!r.tersedia) throw new Error(r.pesan);
     var c = r.pengaturan || {}, bulat = Number(c.pembulatan);
     MARKUP_MASTER_CFG = { mode: 'persen', umum: c.markup_umum_persen == null ? null : Number(c.markup_umum_persen), nakes: c.markup_nakes_persen == null ? null : Number(c.markup_nakes_persen), mutasi: c.markup_mutasi_persen == null ? null : Number(c.markup_mutasi_persen), pembulatan: [0, 100, 500, 1000].indexOf(bulat) >= 0 ? bulat : 100 };
-    var persen = document.getElementById('mkPersen');
-    if (persen && MARKUP_MASTER_CFG.umum != null) persen.value = String(MARKUP_MASTER_CFG.umum);
+    tingkatMarkupMaster().forEach(function (t) {
+      var el = document.getElementById(idPersenMarkupMaster(t));
+      if (el && MARKUP_MASTER_CFG[t] != null) el.value = String(MARKUP_MASTER_CFG[t]);
+    });
     var round = document.getElementById('mkRound'); if (round) round.value = String(MARKUP_MASTER_CFG.pembulatan);
     perbaruiTombolBantuMarkupMaster();
   }).catch(function (e) {
@@ -506,27 +533,31 @@ function formMarkupMaster() {
   MARKUP_MASTER_GOL_HAL = 0;
   MARKUP_MASTER_GOL_Q = null;
   if (MARKUP_MASTER_SEARCH_TIMER) { clearTimeout(MARKUP_MASTER_SEARCH_TIMER); MARKUP_MASTER_SEARCH_TIMER = null; }
-  var body = '<p class="kpi-sub">Harga jual berlaku per SKU dan tersimpan di Master Barang. Modal terakhir sudah termasuk PPN dan sudah dikurangi diskon pembelian. Isi kolom harga baru per tingkat; margin dihitung langsung dan hijau bila mencapai ambang. Angka abu-abu pada kolom harga baru adalah saran dari markup bawaan cabang dan baru tersimpan bila Anda mengisinya.</p>' +
+  var body = '<p class="kpi-sub">Harga jual berlaku per SKU dan tersimpan di Master Barang. Modal terakhir sudah termasuk PPN dan sudah dikurangi diskon pembelian. Isi kolom harga baru per tingkat; margin dihitung langsung dan hijau bila mencapai ambang. Angka abu-abu pada kolom harga baru adalah saran dari markup bawaan cabang dan baru tersimpan bila Anda mengisinya. Markup tombol bantu diisi terpisah untuk <strong>Umum</strong>, <strong>Nakes</strong>, dan <strong>Apotek lain</strong>, jadi tiap tingkat memakai persentasenya sendiri; kolom yang dikosongkan dilewati.</p>' +
     '<div class="grid g3">' +
       '<label class="field"><span>Cari nama atau kode</span><input id="mkCari" class="inp" placeholder="Nama atau kode obat"></label>' +
       '<label class="field"><span>Golongan</span><select id="mkGol" class="inp"><option value="">Semua golongan</option></select></label>' +
       '<label class="field"><span>Ambang margin (%)</span><input id="mkAmbang" class="inp num" type="number" min="0" step="any" value="20"></label>' +
     '</div>' +
     '<div class="grid g3">' +
-      '<label class="field"><span>Markup tombol bantu (%)</span><input id="mkPersen" class="inp num" type="number" min="0" max="1000" step="any" value="20"></label>' +
+      '<label class="field"><span>Markup Umum (%)</span><input id="mkPersenUmum" class="inp num" type="number" min="0" max="1000" step="any" value="20"></label>' +
+      '<label class="field"><span>Markup Nakes (%)</span><input id="mkPersenNakes" class="inp num" type="number" min="0" max="1000" step="any" value="20"></label>' +
+      '<label class="field"><span>Markup Apotek lain (%)</span><input id="mkPersenMutasi" class="inp num" type="number" min="0" max="1000" step="any" value="20"></label>' +
+    '</div>' +
+    '<div class="grid g2">' +
       '<label class="field"><span>Pembulatan tombol bantu</span><select id="mkRound" class="inp"><option value="0">Tanpa pembulatan</option><option value="100" selected>Ke atas Rp100</option><option value="500">Ke atas Rp500</option><option value="1000">Ke atas Rp1.000</option></select></label>' +
       '<label class="field"><span>Urutkan</span><select id="mkUrut" class="inp"><option value="margin">Margin terendah lebih dulu</option><option value="nama">Nama A–Z</option><option value="kode">Kode A–Z</option><option value="modal">Modal terbesar</option></select></label>' +
     '</div>' +
     '<div class="pay-row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
       '<label class="kpi-sub" style="display:flex;align-items:center;gap:6px"><input id="mkPilihSemua" type="checkbox"> Pilih semua baris yang tampil</label>' +
-      '<button id="mkBorongan" type="button" class="btn btn-sm" title="Terapkan item terpilih; harga masih bisa disesuaikan sebelum disimpan.">Terapkan markup 20% ke baris terpilih</button>' +
+      '<button id="mkBorongan" type="button" class="btn btn-sm" title="Terapkan item terpilih; harga masih bisa disesuaikan sebelum disimpan.">Terapkan markup Umum 20% · Nakes 20% · Apotek lain 20% ke baris terpilih</button>' +
     '</div>' +
     '<p class="kpi-sub" id="mkRingkas">Memuat…</p>' +
     '<div id="mkPreview"><p class="kpi-sub">Memuat daftar barang…</p></div>' +
     '<div class="pay-row" style="justify-content:center;margin-top:10px"><button id="mkLagi" type="button" class="btn btn-sm" hidden>Muat 100 barang berikutnya</button></div>';
   modalBuka('Barang perlu ditinjau', body, []);
   gambarTombolMarkupMaster();
-  ['mkGol', 'mkUrut', 'mkRound', 'mkAmbang', 'mkPersen'].forEach(function (id) {
+  ['mkGol', 'mkUrut', 'mkRound', 'mkAmbang'].concat(tingkatMarkupMaster().map(idPersenMarkupMaster)).forEach(function (id) {
     var el = document.getElementById(id);
     if (el) { el.oninput = ubahPenyaringMarkupMaster; el.onchange = ubahPenyaringMarkupMaster; }
   });
