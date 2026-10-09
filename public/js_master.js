@@ -587,8 +587,8 @@ function tampilkanSaranMarkupMaster(rows, q) {
     : '<div class="empty">Tidak ada barang cocok.</div>';
   box.hidden = false;
 }
-/** Muat saran untuk isi kolom saat ini. Dipanggil saat kolom diklik/difokus
- *  (langsung) dan saat mengetik (lewat jeda jadwalkanSaranMarkupMaster). */
+/** Muat saran untuk isi kolom saat ini. Dipanggil saat kolom diklik (langsung)
+ *  dan saat mengetik (lewat jeda jadwalkanSaranMarkupMaster). */
 function muatSaranMarkupMaster() {
   var box = kotakSaranMarkupMaster(); if (!box) return;
   var q = val('mkCari');
@@ -702,8 +702,8 @@ function formMarkupMaster() {
     }
     MARKUP_MASTER_SEARCH_TIMER = setTimeout(function () { MARKUP_MASTER_SEARCH_TIMER = null; previewMarkupMaster(); }, 350);
   };
-  // Klik atau fokus pada kolom langsung membuka daftar saran di bawahnya.
-  document.getElementById('mkCari').onfocus = muatSaranMarkupMaster;
+  // Klik pada kolom (atau ketikan) membuka daftar saran di bawahnya; fokus
+  // saja tidak, supaya daftar kerja langsung terlihat saat panel dibuka.
   document.getElementById('mkCari').onclick = muatSaranMarkupMaster;
   document.getElementById('mkCari').onkeydown = tombolSaranMarkupMaster;
   document.getElementById('mkSuggest').onclick = klikSaranMarkupMaster;

@@ -478,7 +478,7 @@ test('Stock & Batch exposes SKU sale prices and batch margins', () => {
   assert.match(MASTER, /function marginStok/);
 });
 
-test('Master markup: daftar saran muncul begitu kolom pencarian difokus atau diklik', async () => {
+test('Master markup: daftar saran muncul begitu kolom pencarian diklik', async () => {
   const dok = dokumenSaran();
   const catatan = { api: [] };
   const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
@@ -486,8 +486,8 @@ test('Master markup: daftar saran muncul begitu kolom pencarian difokus atau dik
   await tunggu();
   assert.equal(saranApi(catatan).length, 0, 'membuka panel saja belum memuat saran');
   assert.equal(dok.elemen.mkSuggest.hidden, true);
-  // Fokus: saran langsung dimuat walau kolomnya masih kosong (tanpa dua karakter).
-  dok.elemen.mkCari.onfocus();
+  // Klik: saran langsung dimuat walau kolomnya masih kosong (tanpa dua karakter).
+  dok.elemen.mkCari.onclick();
   await tunggu();
   assert.deepEqual(JSON.parse(JSON.stringify(saranApi(catatan).map((x) => x.data))), [{ q: '' }]);
   assert.equal(dok.elemen.mkSuggest.hidden, false);
@@ -504,11 +504,11 @@ test('Master markup: daftar saran muncul begitu kolom pencarian difokus atau dik
   await tunggu();
   assert.equal(saranApi(catatan).length, 1);
   assert.match(MASTER, /id="mkCari"[\s\S]{0,140}id="mkSuggest" class="suggest mk-suggest" hidden/);
-  assert.match(MASTER, /onfocus = muatSaranMarkupMaster/);
+  assert.doesNotMatch(MASTER, /onfocus = muatSaranMarkupMaster/, 'fokus tidak boleh membuka daftar saran');
   assert.match(MASTER, /onclick = muatSaranMarkupMaster/);
 });
 
-test('Master markup: daftar saran tidak muncul saat panel belum dibuka', async () => {
+test('Master markup: daftar saran tetap tertutup saat panel baru dibuka walau kolomnya fokus', async () => {
   const dok = dokumenSaran();
   const catatan = { api: [] };
   const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
@@ -520,6 +520,14 @@ test('Master markup: daftar saran tidak muncul saat panel belum dibuka', async (
   assert.equal(dok.elemen.mkSuggest.hidden, true, 'panel terbuka belum berarti sarannya tampil');
   assert.equal(saranApi(catatan).length, 0, 'saran baru dimuat saat kolomnya disentuh');
   assert.equal(ctx.MARKUP_MASTER_SARAN.length, 0);
+  // modalBuka() memfokuskan kolom pertama; fokus itu tidak boleh membuka saran,
+  // supaya daftar kerja barang langsung terlihat saat panel dibuka.
+  assert.equal(dok.elemen.mkCari.onfocus, undefined);
+  dok.elemen.mkCari.fokus = true;
+  if (dok.elemen.mkCari.onfocus) dok.elemen.mkCari.onfocus();
+  await tunggu();
+  assert.equal(dok.elemen.mkSuggest.hidden, true, 'fokus otomatis saat panel dibuka tidak membuka daftar saran');
+  assert.equal(saranApi(catatan).length, 0);
 });
 
 test('Master markup: mengetik menyempitkan daftar saran mengikuti nama atau kode', async () => {
@@ -528,7 +536,7 @@ test('Master markup: mengetik menyempitkan daftar saran mengikuti nama atau kode
   const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
   ctx.formMarkupMaster();
   await tunggu();
-  dok.elemen.mkCari.onfocus();
+  dok.elemen.mkCari.onclick();
   await tunggu();
   assert.equal(jumlahSaran(dok.elemen.mkSuggest.innerHTML), 3);
   dok.elemen.mkCari.value = 'amox';
@@ -553,7 +561,7 @@ test('Master markup: memilih saran mengisi kolom pencarian dan menutup daftar', 
   const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
   ctx.formMarkupMaster();
   await tunggu();
-  dok.elemen.mkCari.onfocus();
+  dok.elemen.mkCari.onclick();
   await tunggu();
   dok.elemen.mkSuggest.onclick({ target: { closest: () => ({ dataset: { mkSaran: '1' } }) } });
   await tunggu();
@@ -566,6 +574,16 @@ test('Master markup: memilih saran mengisi kolom pencarian dan menutup daftar', 
   dok.elemen.mkSuggest.onclick({ target: { closest: () => null } });
   dok.elemen.mkCari.value = 'AMOX01';
   assert.equal(dok.elemen.mkCari.value, 'AMOX01');
+  // Kolom sudah fokus karena klik tadi: klik sekali lagi harus tetap membuka
+  // daftar saran, bukan diam karena kolomnya sudah fokus.
+  const sebelum = saranApi(catatan).length;
+  dok.elemen.mkCari.fokus = true;
+  dok.elemen.mkCari.onclick();
+  await tunggu();
+  assert.equal(dok.elemen.mkSuggest.hidden, false, 'klik kedua setelah memilih membuka daftar lagi');
+  assert.equal(saranApi(catatan).length, sebelum + 1);
+  assert.equal(saranApi(catatan).pop().data.q, 'AMOX01');
+  assert.equal(jumlahSaran(dok.elemen.mkSuggest.innerHTML), 1);
   assert.match(MASTER, /onclick = klikSaranMarkupMaster/);
 });
 
@@ -575,7 +593,7 @@ test('Master markup: Esc menutup daftar saran tanpa ikut menutup panel', async (
   const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
   ctx.formMarkupMaster();
   await tunggu();
-  dok.elemen.mkCari.onfocus();
+  dok.elemen.mkCari.onclick();
   await tunggu();
   assert.equal(dok.elemen.mkSuggest.hidden, false);
   let diteruskan = false;
@@ -586,6 +604,10 @@ test('Master markup: Esc menutup daftar saran tanpa ikut menutup panel', async (
   diteruskan = false;
   dok.elemen.mkCari.onkeydown({ key: 'Escape', stopPropagation() { diteruskan = true; }, preventDefault() {} });
   assert.equal(diteruskan, false);
+  // Setelah Esc, klik pada kolom membuka daftar saran lagi.
+  dok.elemen.mkCari.onclick();
+  await tunggu();
+  assert.equal(dok.elemen.mkSuggest.hidden, false, 'klik setelah Esc membuka daftar lagi');
 });
 
 test('Master markup: panah atas/bawah, Enter, dan klik di luar pada daftar saran', async () => {
@@ -596,7 +618,7 @@ test('Master markup: panah atas/bawah, Enter, dan klik di luar pada daftar saran
   await tunggu();
   const kelas = [new Set(), new Set(), new Set()];
   dok.elemen.mkSuggest.querySelectorAll = () => kelas.map(tombolPalsu);
-  dok.elemen.mkCari.onfocus();
+  dok.elemen.mkCari.onclick();
   await tunggu();
   dok.elemen.mkCari.onkeydown({ key: 'ArrowDown', preventDefault() {}, stopPropagation() {} });
   assert.equal(ctx.MARKUP_MASTER_SARAN_INDEX, 0);
@@ -610,7 +632,7 @@ test('Master markup: panah atas/bawah, Enter, dan klik di luar pada daftar saran
   assert.equal(dok.elemen.mkCari.value, 'PROMAG', 'Enter memilih baris yang sedang disorot');
   assert.equal(dok.elemen.mkSuggest.hidden, true);
   // Klik di luar kolom pencarian menutup daftar saran; klik di dalamnya tidak.
-  dok.elemen.mkCari.onfocus();
+  dok.elemen.mkCari.onclick();
   await tunggu();
   assert.equal(dok.elemen.mkSuggest.hidden, false);
   dok.pendengar.click[0]({ target: { closest: () => ({}) } });
