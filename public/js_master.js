@@ -5,6 +5,8 @@
 var MARKUP_MASTER_PREVIEW_REQUEST = 0;
 var MARKUP_MASTER_SELECTED = Object.create(null);
 var MARKUP_MASTER_SELECT_ALL = false;
+var MARKUP_MASTER_SEARCH_TIMER = null;
+var MARKUP_MASTER_PREVIEW_KEY = '';
 
 VIEWS.barang = {
   title: 'Master Barang',
@@ -106,6 +108,8 @@ function muatBarang(hal) {
 function formMarkupMaster() {
   MARKUP_MASTER_SELECTED = Object.create(null);
   MARKUP_MASTER_SELECT_ALL = false;
+  MARKUP_MASTER_PREVIEW_KEY = '';
+  if (MARKUP_MASTER_SEARCH_TIMER) { clearTimeout(MARKUP_MASTER_SEARCH_TIMER); MARKUP_MASTER_SEARCH_TIMER = null; }
   var body = '<p class="kpi-sub">Harga jual berlaku per SKU dan tersimpan di Master Barang. Markup dihitung dari modal efektif terbaru setelah PPN dan diskon; pratinjau wajib dilakukan sebelum harga master berubah.</p>' +
     '<div class="grid g3"><label class="field"><span>Tingkat</span><label><input id="mkUmum" type="checkbox" checked> Umum</label><label><input id="mkNakes" type="checkbox"> Nakes</label><label><input id="mkMutasi" type="checkbox"> Apotek lain</label></label>' +
     '<label class="field"><span>Sumber markup</span><select id="mkSumber" class="inp"><option value="bawaan">Bawaan cabang</option><option value="manual">Isi manual</option></select></label>' +
@@ -119,6 +123,20 @@ function formMarkupMaster() {
     var el = document.getElementById(id);
     if (el) { el.oninput = tandaiPreviewMarkupMasterKotor; el.onchange = tandaiPreviewMarkupMasterKotor; }
   });
+  document.getElementById('mkCari').oninput = function () {
+    tandaiPreviewMarkupMasterKotor();
+    if (MARKUP_MASTER_SEARCH_TIMER) clearTimeout(MARKUP_MASTER_SEARCH_TIMER);
+    var query = val('mkCari').trim();
+    if (val('mkLingkup') !== 'cari') document.getElementById('mkLingkup').value = 'cari';
+    if (query.length < 2) {
+      var box = document.getElementById('mkPreview');
+      if (box) box.innerHTML = '<p class="kpi-sub">Ketik minimal 2 karakter untuk mencari nama atau kode obat.</p>';
+      return;
+    }
+    var box = document.getElementById('mkPreview');
+    if (box) box.innerHTML = '<p class="kpi-sub">Mencari obat…</p>';
+    MARKUP_MASTER_SEARCH_TIMER = setTimeout(function () { MARKUP_MASTER_SEARCH_TIMER = null; previewMarkupMaster(); }, 350);
+  };
   document.getElementById('mkSumber').onchange = function () { tandaiPreviewMarkupMasterKotor(); isiSumberMarkupMaster(); };
   document.getElementById('mkMode').onchange = function () { tandaiPreviewMarkupMasterKotor(); isiSumberMarkupMaster(); };
   document.getElementById('mkRound').onchange = previewMarkupMaster;
@@ -140,14 +158,14 @@ function cfgMarkupMaster() { return { mode: val('mkMode'), umum: val('mkU') === 
 function markupMasterKey(cfg, q, tingkat) { return JSON.stringify({ cfg: cfg, q: q, tingkat: (tingkat || []).slice().sort() }); }
 function tandaiPreviewMarkupMasterKotor() {
   MARKUP_MASTER_PREVIEW_REQUEST++;
+  MARKUP_MASTER_PREVIEW_KEY = '';
   var box = document.getElementById('mkPreview'), foot = document.getElementById('modalFoot');
   if (box && box.dataset.previewReady === '1') {
     box.dataset.previewReady = '0';
     box.innerHTML = '<p class="kpi-sub">Nilai berubah. Klik Pratinjau kembali sebelum menerapkan.</p>';
   }
-  if (foot) Array.prototype.forEach.call(foot.querySelectorAll('button'), function (b) {
-    if (b.textContent.indexOf('Terapkan setelah konfirmasi') >= 0) { b.disabled = true; b.title = 'Buat pratinjau ulang setelah mengubah nilai.'; }
-  });
+  var apply = foot && foot.querySelector('#mkApply');
+  if (apply) { apply.disabled = true; apply.title = 'Buat pratinjau ulang setelah mengubah nilai.'; }
   if (foot && !Array.prototype.some.call(foot.querySelectorAll('button'), function (b) { return b.textContent === 'Pratinjau'; })) {
     var preview = document.createElement('button');
     preview.className = 'btn btn-primary';
@@ -162,6 +180,8 @@ function sinkronkanPilihanMarkupMaster(total) {
   var box = document.getElementById('mkPreview'); if (!box) return;
   var count = box.querySelector('[data-markup-count]'); if (count) count.textContent = angka(jumlahMarkupMasterTerpilih(total)) + ' item dipilih';
   var all = box.querySelector('#mkPilihSemua'); if (all) all.checked = MARKUP_MASTER_SELECT_ALL;
+  var apply = document.getElementById('mkApply');
+  if (apply) apply.disabled = !MARKUP_MASTER_PREVIEW_KEY || (!MARKUP_MASTER_SELECT_ALL && !Object.keys(MARKUP_MASTER_SELECTED).length);
   Array.prototype.forEach.call(box.querySelectorAll('[data-markup-kode]'), function (el) {
     el.checked = MARKUP_MASTER_SELECT_ALL || !!MARKUP_MASTER_SELECTED[el.value];
   });
@@ -184,14 +204,16 @@ function previewMarkupMaster() {
   api('harga.markupPreview', { q: q, offset: 0, cfg: cfg }).then(function (r) {
     if (request !== MARKUP_MASTER_PREVIEW_REQUEST) return;
     var selected = r.rows || [];
+    MARKUP_MASTER_PREVIEW_KEY = markupMasterKey(cfg, q, tingkat);
     if (box) box.dataset.previewReady = '1';
     box.innerHTML = '<p class="kpi-sub">' + angka(r.total) + ' barang ditemukan. Pilih item yang akan diubah; pencarian nama obat/kode dapat mempersempit daftar.</p><p class="kpi-sub"><label><input id="mkPilihSemua" type="checkbox"> Pilih semua hasil' + (r.total > selected.length ? ' (termasuk halaman berikutnya)' : '') + '</label> · <strong data-markup-count>0 item dipilih</strong></p><table><thead><tr><th><span class="sr-only">Pilih</span></th><th>Kode</th><th>Nama</th><th>Modal efektif</th><th>Harga jual baru</th><th>Margin baru</th></tr></thead><tbody>' + selected.map(function (x) { return '<tr><td><input type="checkbox" data-markup-kode value="' + esc(x.kode_obat) + '" aria-label="Pilih ' + esc(x.nama_obat) + '"></td><td>' + esc(x.kode_obat) + '</td><td>' + esc(x.nama_obat) + '</td><td class="r">' + (x.modal == null ? '—' : rupiah(x.modal)) + '</td><td class="r">' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.tingkat + ': ' + (h.baru == null ? '—' : rupiah(h.baru)); }).join('<br>') + '</td><td>' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.baru && h.baru > 0 ? (100 - Number(x.modal || 0) / Number(h.baru) * 100).toFixed(1) + '%' : '—'; }).join('<br>') + '</td></tr>'; }).join('') + '</tbody></table>';
     pasangPilihanMarkupMaster(r.total);
-    var foot = document.getElementById('modalFoot'); foot.innerHTML = ''; [['Kembali',modalTutup,''],['Terapkan item terpilih',function () { terapkanMarkupMaster(r.total, q, cfg, tingkat); },'btn-primary']].forEach(function (x) { var b=document.createElement('button'); b.className='btn '+x[2]; b.textContent=x[0]; b.onclick=x[1]; foot.appendChild(b); });
+    var foot = document.getElementById('modalFoot'); foot.innerHTML = ''; [['Kembali',modalTutup,''],['Terapkan item terpilih',function () { terapkanMarkupMaster(r.total, q, cfg, tingkat); },'btn-primary','mkApply']].forEach(function (x) { var b=document.createElement('button'); b.className='btn '+x[2]; b.textContent=x[0]; if (x[3]) b.id=x[3]; b.onclick=x[1]; foot.appendChild(b); });
+    sinkronkanPilihanMarkupMaster(r.total);
   }).catch(function (e) { if (box) box.innerHTML = '<p class="kpi-sub">' + esc(e.message) + '</p>'; });
 }
 function terapkanMarkupMaster(total, q, cfg, tingkat) {
-  if (markupMasterKey(cfgMarkupMaster(), val('mkLingkup') === 'cari' ? val('mkCari') : '', tingkatMarkupMaster()) !== markupMasterKey(cfg, q, tingkat)) {
+  if (!MARKUP_MASTER_PREVIEW_KEY || markupMasterKey(cfgMarkupMaster(), val('mkLingkup') === 'cari' ? val('mkCari') : '', tingkatMarkupMaster()) !== MARKUP_MASTER_PREVIEW_KEY) {
     tandaiPreviewMarkupMasterKotor();
     toast('Nilai markup atau lingkup berubah. Buat pratinjau ulang sebelum menerapkan.', true);
     return;
@@ -199,7 +221,14 @@ function terapkanMarkupMaster(total, q, cfg, tingkat) {
   var selectedCodes = Object.keys(MARKUP_MASTER_SELECTED);
   if (!MARKUP_MASTER_SELECT_ALL && !selectedCodes.length) { toast('Pilih minimal satu item obat.', true); return; }
   var targetLabel = MARKUP_MASTER_SELECT_ALL ? angka(total) + ' hasil' : angka(selectedCodes.length) + ' item';
-  if (!confirm('Terapkan markup pada ' + targetLabel + ' dan tingkat yang dipilih?')) return;
+  var value = function (x) { return x === null ? 'tidak diubah' : cfg.mode === 'rasio' ? 'rasio ' + x : x + '%'; };
+  var summary = 'Anda akan mengubah ' + targetLabel + '.\n\n' +
+    'Umum: ' + value(cfg.umum) + '\n' +
+    'Nakes: ' + value(cfg.nakes) + '\n' +
+    'Apotek lain: ' + value(cfg.mutasi) + '\n' +
+    'Pembulatan: ' + (cfg.pembulatan ? 'Rp' + angka(cfg.pembulatan) : 'tanpa pembulatan') + '\n\n' +
+    'Lanjutkan?';
+  if (!confirm(summary)) return;
   var pages = [], offset = 0;
   var hasil = { berubah: 0, dilewati: 0 };
   function ambil() { return MARKUP_MASTER_SELECT_ALL ? api('harga.markupPreview', { q: q, offset: offset, cfg: cfg }).then(function (r) { pages = pages.concat((r.rows || []).map(function (x) { return x.kode_obat; })); offset += 100; if (offset < r.total) return ambil(); }) : (pages = selectedCodes.slice(), Promise.resolve()); }
