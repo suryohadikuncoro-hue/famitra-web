@@ -47,7 +47,7 @@ async function posPromo(branch: string, data: any) {
   const cab = encodeURIComponent(branch), now = new Date().toISOString(), hari = today();
   const [bundles, undian] = await Promise.all([
     semuaBaris("promo_bundles", `?cabang_id=eq.${cab}&status=eq.ACTIVE&starts_at=lte.${encodeURIComponent(now)}&ends_at=gte.${encodeURIComponent(now)}&select=code,name,bundle_price,ends_at,promo_bundle_items(kode_obat,qty)&order=ends_at.asc`),
-    semuaBaris("lottery_campaigns", `?kode_cabang=eq.${cab}&aktif=eq.true&periode_mulai=lte.${hari}&periode_selesai=gte.${hari}&select=nama,periode_selesai,min_total_belanja_idr&order=periode_selesai.asc`)
+    semuaBaris("lottery_campaigns", `?kode_cabang=eq.${cab}&aktif=eq.true&periode_mulai=lte.${hari}&periode_selesai=gte.${hari}&select=id,nama,periode_mulai,periode_selesai,min_total_belanja_idr,min_jumlah_transaksi,min_belanja_per_transaksi_idr&order=periode_selesai.asc`)
   ]);
   const kodes = [...new Set(bundles.flatMap((b: any) => (b.promo_bundle_items || []).map((i: any) => String(i.kode_obat))))];
   const barang: Record<string, any> = {};
@@ -62,12 +62,38 @@ async function posPromo(branch: string, data: any) {
     return { code: b.code, name: b.name, bundle_price: Number(b.bundle_price || 0), ends_at: b.ends_at, items };
   }).filter((b: any) => b.items.length && b.items.every((i: any) => i.sah));
   let kupon: any[] = [], pelanggan: any = null;
+  // Kelayakan undian untuk pelanggan yang sedang dilayani. Aturannya SAMA dengan
+  // penentuan pemenang (lottery_record_winner) dan daftar peserta
+  // (participantData): transaksi di cabang campaign, di dalam periode, nomor WA
+  // cocok, harga_akhir >= minimal per transaksi, lalu jumlah dan totalnya
+  // dibandingkan dengan minimum campaign. Apotek Lain tidak ikut undian.
+  // Hanya untuk ditampilkan; keputusan resmi tetap di server saat mencatat pemenang.
+  let undianPelanggan: any[] | null = null;
   const wa = normWA(data?.nomor_wa || "");
   if (wa) {
     const c = await one("master_customer", `?cabang_id=eq.${cab}&nomor_wa=eq.${encodeURIComponent(wa)}&select=*`);
     if (c) {
       const seg = segment(c), tipe = data?.tipe_customer || c.tipe_customer || "Umum";
       pelanggan = { segmen: seg };
+      undianPelanggan = [];
+      // Tipe pelanggan untuk undian diambil dari DATA MASTER, bukan pilihan
+      // dropdown kasir: aturan resmi (participantData / lottery_record_winner)
+      // juga membaca master_customer.tipe_customer. Jadi label di kasir tidak
+      // bisa bertentangan dengan daftar peserta.
+      const tipeUndian = String(c.tipe_customer || "Umum");
+      for (const u of undian) {
+        let memenuhi = false;
+        if (tipeUndian !== "Apotek Lain") {
+          const trx = await semuaBaris("trx_penjualan", `?cabang_id=eq.${cab}&nomor_wa=eq.${encodeURIComponent(wa)}&tanggal=gte.${u.periode_mulai}&tanggal=lte.${u.periode_selesai}&select=harga_akhir&order=no_nota.asc`);
+          const minPer = Number(u.min_belanja_per_transaksi_idr || 0);
+          const minTrx = Math.max(1, Number(u.min_jumlah_transaksi || 1));
+          const minTotal = Number(u.min_total_belanja_idr || 0);
+          let n = 0, total = 0;
+          for (const t of trx) { const a = Number(t.harga_akhir || 0); if (a >= minPer) { n++; total += a; } }
+          memenuhi = n >= minTrx && total >= minTotal;
+        }
+        undianPelanggan.push({ nama: u.nama, selesai: u.periode_selesai, memenuhi });
+      }
       const cps = await semuaBaris("promo_coupons", `?cabang_id=eq.${cab}&is_active=eq.true&select=id,code,discount_type,discount_value,max_discount,min_purchase,usage_limit_per_customer,promo_campaigns!inner(name,status,starts_at,ends_at,promo_segment_targets(segment,customer_type))&order=created_at.desc`);
       const t = Date.now();
       const cocok = cps.filter((cp: any) => { const k = cp.promo_campaigns || {};
@@ -84,7 +110,9 @@ async function posPromo(branch: string, data: any) {
     }
   }
   return { bundles: paket, kupon, pelanggan,
-    undian: undian.map((u: any) => ({ nama: u.nama, min_belanja: Number(u.min_total_belanja_idr || 0), selesai: u.periode_selesai })) };
+    // Pelanggan terdaftar: status kelayakan per campaign (memenuhi / belum).
+    // Selain itu: daftar campaign tanpa status, memenuhi = null.
+    undian: undianPelanggan || undian.map((u: any) => ({ nama: u.nama, selesai: u.periode_selesai, memenuhi: null })) };
 }
 
 async function dashboardAktif(branch: string) {
