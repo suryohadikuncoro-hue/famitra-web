@@ -15,6 +15,13 @@ var MARKUP_MASTER_PREVIEW_REQUEST = 0;
 var MARKUP_MASTER_SELECTED = Object.create(null);
 var MARKUP_MASTER_SELECT_ALL = false;
 var MARKUP_MASTER_SEARCH_TIMER = null;
+var MARKUP_MASTER_SARAN = [];                   // daftar saran kolom pencarian yang sedang tampil
+var MARKUP_MASTER_SARAN_Q = null;               // kata kunci yang sedang tampil di daftar saran
+var MARKUP_MASTER_SARAN_INDEX = -1;             // sorotan papan tik (panah atas/bawah) di daftar saran
+var MARKUP_MASTER_SARAN_REQUEST = 0;
+var MARKUP_MASTER_SARAN_TIMER = null;           // jeda ketik sebelum saran dimuat ulang
+var MARKUP_MASTER_SARAN_MUAT = null;            // kata kunci yang saran-nya sedang dimuat
+var MARKUP_MASTER_SARAN_KLIK_LUAR = false;      // penjaga agar pendengar klik luar hanya dipasang sekali
 
 VIEWS.barang = {
   title: 'Master Barang',
@@ -521,6 +528,123 @@ function muatPengaturanMarkupMaster() {
     toast(e.message, true);
   }).then(function () { previewMarkupMaster(); });
 }
+/* Pencarian barang bergaya kasir. Kolom "Cari nama atau kode" membuka daftar
+   saran tepat di bawahnya begitu diklik — dan saat pengguna mengetik — jadi
+   tidak perlu menunggu dua karakter seperti penyaring tabel di bawahnya.
+   Fokus saja TIDAK membuka daftar: modalBuka() memfokuskan kolom pertama, jadi
+   kalau fokus ikut membuka, daftar kerja barang tertutup saran begitu panel
+   dibuka. Polanya disalin dari pencarian obat di kasir (posSuggest,
+   js_pos.js:225-314) dan pencarian barang di Pembelian (beliSuggest,
+   js_trx.js:275-314): wadah .suggest dengan tombol .s-name / .s-meta, panah
+   atas-bawah, Enter, Esc, dan klik di luar. Sumber datanya aksi lama
+   barang.list, jadi tidak ada aksi API baru. */
+function kotakSaranMarkupMaster() { return document.getElementById('mkSuggest'); }
+function tutupSaranMarkupMaster() {
+  var box = kotakSaranMarkupMaster();
+  if (box) box.hidden = true;
+  MARKUP_MASTER_SARAN = [];
+  MARKUP_MASTER_SARAN_Q = null;
+  MARKUP_MASTER_SARAN_INDEX = -1;
+}
+/** Baris kerja sebuah saran. Bila barangnya sudah termuat di daftar kerja,
+ *  pakai baris itu supaya modal dan marginnya sama dengan isi tabel —
+ *  termasuk harga baru yang sedang diketik. */
+function barisSaranMarkupMaster(b) {
+  var kode = String(b.Kode_Obat || b.kode_obat || '');
+  var ada = cariBarisMarkupMaster(kode);
+  if (ada) return ada;
+  var modal = b.Harga_Modal;
+  return {
+    kode: kode, nama: b.Nama_Obat || b.nama_obat || kode,
+    modal: modal === null || modal === undefined || modal === '' ? null : Number(modal),
+    harga: {
+      umum: { lama: Number(b.Harga_Jual_Umum) || 0 },
+      nakes: { lama: Number(b.Harga_Khusus) || 0 },
+      mutasi: { lama: Number(b.Harga_Jual_Mutasi) || 0 }
+    },
+    nilai: {}
+  };
+}
+function htmlSaranMarkupMaster(b, i) {
+  var x = barisSaranMarkupMaster(b);
+  var margin = marginTerendahMarkupMaster(x);
+  var stok = b.stok;
+  return '<button type="button" data-mk-saran="' + i + '"' + (i === MARKUP_MASTER_SARAN_INDEX ? ' class="is-cursor"' : '') + '>' +
+    '<div class="s-name">' + esc(x.nama) + '</div>' +
+    '<div class="s-meta"><span>' + esc(x.kode) + '</span>' +
+      '<span>Stok ' + (stok === null || stok === undefined ? '—' : angka(stok)) + '</span>' +
+      '<span>Modal terakhir ' + (x.modal === null ? '—' : rupiah(x.modal)) + '</span>' +
+      '<span>Margin terendah ' + (isFinite(margin) ? margin.toFixed(1).replace('.', ',') + '%' : '—') + '</span>' +
+    '</div></button>';
+}
+function tampilkanSaranMarkupMaster(rows, q) {
+  var box = kotakSaranMarkupMaster(); if (!box) return;
+  MARKUP_MASTER_SARAN = (rows || []).slice(0, 8);
+  MARKUP_MASTER_SARAN_Q = q;
+  MARKUP_MASTER_SARAN_INDEX = -1;
+  box.innerHTML = MARKUP_MASTER_SARAN.length
+    ? MARKUP_MASTER_SARAN.map(htmlSaranMarkupMaster).join('')
+    : '<div class="empty">Tidak ada barang cocok.</div>';
+  box.hidden = false;
+}
+/** Muat saran untuk isi kolom saat ini. Dipanggil saat kolom diklik/difokus
+ *  (langsung) dan saat mengetik (lewat jeda jadwalkanSaranMarkupMaster). */
+function muatSaranMarkupMaster() {
+  var box = kotakSaranMarkupMaster(); if (!box) return;
+  var q = val('mkCari');
+  if (!box.hidden && MARKUP_MASTER_SARAN_Q === q) return;   // sudah tampil untuk kata kunci ini
+  if (MARKUP_MASTER_SARAN_MUAT === q) return;               // permintaan yang sama masih jalan
+  MARKUP_MASTER_SARAN_MUAT = q;
+  var request = ++MARKUP_MASTER_SARAN_REQUEST;
+  api('barang.list', { q: q }).then(function (rows) {
+    if (request !== MARKUP_MASTER_SARAN_REQUEST) return;
+    MARKUP_MASTER_SARAN_MUAT = null;
+    tampilkanSaranMarkupMaster(rows, q);
+  }).catch(function (e) {
+    if (request !== MARKUP_MASTER_SARAN_REQUEST) return;
+    MARKUP_MASTER_SARAN_MUAT = null;
+    tutupSaranMarkupMaster();
+    toast(e.message, true);
+  });
+}
+function jadwalkanSaranMarkupMaster() {
+  if (MARKUP_MASTER_SARAN_TIMER) { clearTimeout(MARKUP_MASTER_SARAN_TIMER); MARKUP_MASTER_SARAN_TIMER = null; }
+  MARKUP_MASTER_SARAN_TIMER = setTimeout(function () { MARKUP_MASTER_SARAN_TIMER = null; muatSaranMarkupMaster(); }, 180);
+}
+/** Klik saran: kolom diisi kode barang, barisnya dimunculkan di daftar kerja,
+ *  lalu daftar saran ditutup. */
+function pilihSaranMarkupMaster(i) {
+  var b = MARKUP_MASTER_SARAN[i]; if (!b) return;
+  var kode = String(b.Kode_Obat || b.kode_obat || '');
+  var inp = document.getElementById('mkCari');
+  if (inp) inp.value = kode;
+  tutupSaranMarkupMaster();
+  previewMarkupMaster();
+}
+function klikSaranMarkupMaster(e) {
+  var b = e && e.target && e.target.closest ? e.target.closest('[data-mk-saran]') : null;
+  if (b) pilihSaranMarkupMaster(Number(b.dataset.mkSaran));
+}
+/** Papan tik saat daftar saran terbuka. Esc hanya menutup daftar saran dan
+ *  tidak diteruskan, supaya panel tidak ikut tertutup oleh pintasan js_core. */
+function tombolSaranMarkupMaster(e) {
+  var box = kotakSaranMarkupMaster();
+  if (!box || box.hidden) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!MARKUP_MASTER_SARAN.length) return;
+    e.preventDefault();
+    var n = MARKUP_MASTER_SARAN.length, d = e.key === 'ArrowDown' ? 1 : -1;
+    MARKUP_MASTER_SARAN_INDEX = (MARKUP_MASTER_SARAN_INDEX + d + n) % n;
+    var tombol = box.querySelectorAll ? box.querySelectorAll('[data-mk-saran]') : [];
+    Array.prototype.forEach.call(tombol, function (t, i) { if (t.classList) t.classList.toggle('is-cursor', i === MARKUP_MASTER_SARAN_INDEX); });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    pilihSaranMarkupMaster(MARKUP_MASTER_SARAN_INDEX >= 0 ? MARKUP_MASTER_SARAN_INDEX : 0);
+  } else if (e.key === 'Escape') {
+    if (e.stopPropagation) e.stopPropagation();
+    tutupSaranMarkupMaster();
+  }
+}
 function formMarkupMaster() {
   MARKUP_MASTER_ROWS = [];
   MARKUP_MASTER_TOTAL = 0;
@@ -533,9 +657,15 @@ function formMarkupMaster() {
   MARKUP_MASTER_GOL_HAL = 0;
   MARKUP_MASTER_GOL_Q = null;
   if (MARKUP_MASTER_SEARCH_TIMER) { clearTimeout(MARKUP_MASTER_SEARCH_TIMER); MARKUP_MASTER_SEARCH_TIMER = null; }
+  if (MARKUP_MASTER_SARAN_TIMER) { clearTimeout(MARKUP_MASTER_SARAN_TIMER); MARKUP_MASTER_SARAN_TIMER = null; }
+  MARKUP_MASTER_SARAN_REQUEST++;
+  MARKUP_MASTER_SARAN_MUAT = null;
+  MARKUP_MASTER_SARAN = [];
+  MARKUP_MASTER_SARAN_Q = null;
+  MARKUP_MASTER_SARAN_INDEX = -1;
   var body = '<p class="kpi-sub">Harga jual berlaku per SKU dan tersimpan di Master Barang. Modal terakhir sudah termasuk PPN dan sudah dikurangi diskon pembelian. Isi kolom harga baru per tingkat; margin dihitung langsung dan hijau bila mencapai ambang. Angka abu-abu pada kolom harga baru adalah saran dari markup bawaan cabang dan baru tersimpan bila Anda mengisinya. Markup tombol bantu diisi terpisah untuk <strong>Umum</strong>, <strong>Nakes</strong>, dan <strong>Apotek lain</strong>, jadi tiap tingkat memakai persentasenya sendiri; kolom yang dikosongkan dilewati.</p>' +
     '<div class="grid g3">' +
-      '<label class="field"><span>Cari nama atau kode</span><input id="mkCari" class="inp" placeholder="Nama atau kode obat"></label>' +
+      '<div class="field mk-cari"><span>Cari nama atau kode</span><input id="mkCari" class="inp" placeholder="Nama atau kode obat" autocomplete="off"><div id="mkSuggest" class="suggest mk-suggest" hidden></div></div>' +
       '<label class="field"><span>Golongan</span><select id="mkGol" class="inp"><option value="">Semua golongan</option></select></label>' +
       '<label class="field"><span>Ambang margin (%)</span><input id="mkAmbang" class="inp num" type="number" min="0" step="any" value="20"></label>' +
     '</div>' +
@@ -563,6 +693,7 @@ function formMarkupMaster() {
   });
   document.getElementById('mkCari').oninput = function () {
     if (MARKUP_MASTER_SEARCH_TIMER) { clearTimeout(MARKUP_MASTER_SEARCH_TIMER); MARKUP_MASTER_SEARCH_TIMER = null; }
+    jadwalkanSaranMarkupMaster();     // daftar saran menyempit mengikuti ketikan
     var query = val('mkCari');
     if (query.length < 2 && query.length > 0) {
       var ringkas = document.getElementById('mkRingkas');
@@ -571,6 +702,18 @@ function formMarkupMaster() {
     }
     MARKUP_MASTER_SEARCH_TIMER = setTimeout(function () { MARKUP_MASTER_SEARCH_TIMER = null; previewMarkupMaster(); }, 350);
   };
+  // Klik atau fokus pada kolom langsung membuka daftar saran di bawahnya.
+  document.getElementById('mkCari').onfocus = muatSaranMarkupMaster;
+  document.getElementById('mkCari').onclick = muatSaranMarkupMaster;
+  document.getElementById('mkCari').onkeydown = tombolSaranMarkupMaster;
+  document.getElementById('mkSuggest').onclick = klikSaranMarkupMaster;
+  if (!MARKUP_MASTER_SARAN_KLIK_LUAR && document.addEventListener) {
+    MARKUP_MASTER_SARAN_KLIK_LUAR = true;
+    document.addEventListener('click', function (e) {
+      var dalam = e && e.target && e.target.closest ? e.target.closest('.mk-cari') : null;
+      if (!dalam) tutupSaranMarkupMaster();
+    });
+  }
   document.getElementById('mkPilihSemua').onchange = function () {
     MARKUP_MASTER_SELECT_ALL = this.checked;
     if (this.checked) MARKUP_MASTER_SELECTED = Object.create(null);

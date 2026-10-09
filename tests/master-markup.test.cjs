@@ -29,19 +29,72 @@ function extractFunction(nama, sumber) {
   return sumber.slice(start, end + 2);
 }
 
-/** DOM mini: cukup untuk getElementById, querySelectorAll, dan elemen palsu. */
+/** DOM mini: cukup untuk getElementById, querySelectorAll, dan elemen palsu.
+ *  Pendengar dokumen dicatat supaya klik di luar kolom pencarian bisa diuji. */
 function dokumenMini(nilai, input) {
   const elemen = {};
   Object.keys(nilai || {}).forEach((id) => {
     elemen[id] = { value: String(nilai[id]), textContent: '', innerHTML: '', hidden: false, checked: false, disabled: false };
   });
+  const pendengar = {};
   return {
     elemen,
+    pendengar,
     getElementById(id) { return elemen[id] || null; },
     querySelector() { return null; },
     querySelectorAll() { return input || []; },
-    createElement() { return { style: {}, dataset: {}, className: '', appendChild() {} }; }
+    createElement() { return { style: {}, dataset: {}, className: '', appendChild() {} }; },
+    addEventListener(jenis, fn) { (pendengar[jenis] = pendengar[jenis] || []).push(fn); }
   };
+}
+
+/** DOM mini untuk uji daftar saran kolom "Cari nama atau kode". Kotak saran
+ *  dibuat seperti markup aslinya (mulai tersembunyi) dan daftar kerja diberi
+ *  querySelectorAll supaya gambarMarkupMaster() tetap bisa jalan. */
+function dokumenSaran() {
+  const dok = dokumenMini({
+    mkCari: '', mkSuggest: '', mkRingkas: '', mkGol: '', mkUrut: 'margin',
+    mkRound: '100', mkAmbang: '20', mkPilihSemua: '', mkBorongan: '', mkLagi: '', mkPreview: ''
+  });
+  dok.elemen.mkSuggest.hidden = true;
+  dok.elemen.mkPreview.querySelectorAll = () => [];
+  return dok;
+}
+
+/** Barang contoh seperti balikan aksi barang.list (kolomnya sama). */
+const SARAN_CONTOH = [
+  { Kode_Obat: 'PARA001', Nama_Obat: 'Paracetamol 500 mg', Harga_Modal: 1000, Harga_Jual_Umum: 1500, Harga_Khusus: 1400, Harga_Jual_Mutasi: 1300, stok: 12 },
+  { Kode_Obat: 'AMOX01', Nama_Obat: 'Amoxicillin 500 mg', Harga_Modal: 2000, Harga_Jual_Umum: 2500, Harga_Khusus: 2400, Harga_Jual_Mutasi: 2300, stok: 3 },
+  { Kode_Obat: 'PROMAG', Nama_Obat: 'Promag tablet', Harga_Modal: 500, Harga_Jual_Umum: 600, Harga_Khusus: 580, Harga_Jual_Mutasi: 570, stok: 0 }
+];
+
+/** api() tiruan: penyempitan nama/kode dilakukan seperti polaCari di server. */
+function apiSaran(catatan) {
+  return (aksi, data) => {
+    catatan.api.push({ aksi, data });
+    if (aksi === 'harga.pengaturan') {
+      return Promise.resolve({ tersedia: true, tersimpan: true, pengaturan: { mode: 'persen', markup_umum_persen: 20, markup_nakes_persen: 20, markup_mutasi_persen: 20, pembulatan: 100 } });
+    }
+    if (aksi === 'barang.list' && data.halaman === undefined) {
+      const q = String(data.q || '').toLowerCase();
+      return Promise.resolve(SARAN_CONTOH.filter((b) => !q || b.Kode_Obat.toLowerCase().includes(q) || b.Nama_Obat.toLowerCase().includes(q)));
+    }
+    return Promise.resolve({ total: 0, rows: [] });
+  };
+}
+
+/** setTimeout yang langsung jalan: jeda 180 ms dan 350 ms tidak perlu ditunggu. */
+function langsung(fn) { fn(); return 0; }
+
+/** Saran yang termuat untuk kolom pencarian (bukan pelengkap golongan). */
+function saranApi(catatan) {
+  return catatan.api.filter((x) => x.aksi === 'barang.list' && x.data.halaman === undefined);
+}
+
+function jumlahSaran(html) { return (html.match(/data-mk-saran=/g) || []).length; }
+
+function tombolPalsu(kelas) {
+  return { classList: { toggle(nama, aktif) { if (aktif) kelas.add(nama); else kelas.delete(nama); } } };
 }
 
 /** Satu kolom harga palsu seperti yang dirender htmlTingkatMarkupMaster(). */
@@ -76,7 +129,7 @@ function muatMaster(opts) {
     modalTutup() { catatan.modalTutup += 1; },
     modalBuka() {},
     promoApi() { return Promise.resolve([]); },
-    setTimeout() { return 0; },
+    setTimeout: opts.setTimeout || function () { return 0; },
     clearTimeout() {}
   };
   vm.createContext(context);
@@ -423,4 +476,146 @@ test('Stock & Batch exposes SKU sale prices and batch margins', () => {
   assert.match(MASTER, /Margin batch/);
   assert.match(MASTER, /Margin_Umum/);
   assert.match(MASTER, /function marginStok/);
+});
+
+test('Master markup: daftar saran muncul begitu kolom pencarian difokus atau diklik', async () => {
+  const dok = dokumenSaran();
+  const catatan = { api: [] };
+  const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
+  ctx.formMarkupMaster();
+  await tunggu();
+  assert.equal(saranApi(catatan).length, 0, 'membuka panel saja belum memuat saran');
+  assert.equal(dok.elemen.mkSuggest.hidden, true);
+  // Fokus: saran langsung dimuat walau kolomnya masih kosong (tanpa dua karakter).
+  dok.elemen.mkCari.onfocus();
+  await tunggu();
+  assert.deepEqual(JSON.parse(JSON.stringify(saranApi(catatan).map((x) => x.data))), [{ q: '' }]);
+  assert.equal(dok.elemen.mkSuggest.hidden, false);
+  assert.equal(jumlahSaran(dok.elemen.mkSuggest.innerHTML), 3);
+  const html = dok.elemen.mkSuggest.innerHTML;
+  assert.match(html, /Paracetamol 500 mg/);
+  assert.match(html, /PARA001/);
+  assert.match(html, /Stok 12/);
+  assert.match(html, /Modal terakhir Rp1\.000/);
+  assert.match(html, /Margin terendah 23,1%/, 'margin terendah dari modal dan harga yang dikirim barang.list');
+  assert.match(html, /class="s-meta"/);
+  // Klik pada kolom yang sarannya sudah tampil tidak memuat ulang data yang sama.
+  dok.elemen.mkCari.onclick();
+  await tunggu();
+  assert.equal(saranApi(catatan).length, 1);
+  assert.match(MASTER, /id="mkCari"[\s\S]{0,140}id="mkSuggest" class="suggest mk-suggest" hidden/);
+  assert.match(MASTER, /onfocus = muatSaranMarkupMaster/);
+  assert.match(MASTER, /onclick = muatSaranMarkupMaster/);
+});
+
+test('Master markup: daftar saran tidak muncul saat panel belum dibuka', async () => {
+  const dok = dokumenSaran();
+  const catatan = { api: [] };
+  const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
+  assert.equal(dok.elemen.mkSuggest.hidden, true);
+  assert.equal(ctx.MARKUP_MASTER_SARAN.length, 0);
+  assert.equal(catatan.api.length, 0, 'sebelum panel dibuka belum ada permintaan apa pun');
+  ctx.formMarkupMaster();
+  await tunggu();
+  assert.equal(dok.elemen.mkSuggest.hidden, true, 'panel terbuka belum berarti sarannya tampil');
+  assert.equal(saranApi(catatan).length, 0, 'saran baru dimuat saat kolomnya disentuh');
+  assert.equal(ctx.MARKUP_MASTER_SARAN.length, 0);
+});
+
+test('Master markup: mengetik menyempitkan daftar saran mengikuti nama atau kode', async () => {
+  const dok = dokumenSaran();
+  const catatan = { api: [] };
+  const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
+  ctx.formMarkupMaster();
+  await tunggu();
+  dok.elemen.mkCari.onfocus();
+  await tunggu();
+  assert.equal(jumlahSaran(dok.elemen.mkSuggest.innerHTML), 3);
+  dok.elemen.mkCari.value = 'amox';
+  dok.elemen.mkCari.oninput();
+  await tunggu();
+  assert.equal(saranApi(catatan).pop().data.q, 'amox');
+  assert.equal(jumlahSaran(dok.elemen.mkSuggest.innerHTML), 1);
+  assert.match(dok.elemen.mkSuggest.innerHTML, /Amoxicillin 500 mg/);
+  assert.doesNotMatch(dok.elemen.mkSuggest.innerHTML, /Paracetamol/);
+  // Ketikan yang tidak cocok: pesan singkat, bukan kotak kosong.
+  dok.elemen.mkCari.value = 'zzz';
+  dok.elemen.mkCari.oninput();
+  await tunggu();
+  assert.equal(dok.elemen.mkSuggest.hidden, false);
+  assert.match(dok.elemen.mkSuggest.innerHTML, /Tidak ada barang cocok/);
+  assert.equal(jumlahSaran(dok.elemen.mkSuggest.innerHTML), 0);
+});
+
+test('Master markup: memilih saran mengisi kolom pencarian dan menutup daftar', async () => {
+  const dok = dokumenSaran();
+  const catatan = { api: [] };
+  const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
+  ctx.formMarkupMaster();
+  await tunggu();
+  dok.elemen.mkCari.onfocus();
+  await tunggu();
+  dok.elemen.mkSuggest.onclick({ target: { closest: () => ({ dataset: { mkSaran: '1' } }) } });
+  await tunggu();
+  assert.equal(dok.elemen.mkCari.value, 'AMOX01');
+  assert.equal(dok.elemen.mkSuggest.hidden, true);
+  assert.equal(ctx.MARKUP_MASTER_SARAN.length, 0);
+  const preview = catatan.api.filter((x) => x.aksi === 'harga.markupPreview').pop();
+  assert.equal(preview.data.q, 'AMOX01', 'baris barang yang dipilih dimunculkan di daftar kerja');
+  // Saran yang tidak ada tidak boleh mengubah apa pun.
+  dok.elemen.mkSuggest.onclick({ target: { closest: () => null } });
+  dok.elemen.mkCari.value = 'AMOX01';
+  assert.equal(dok.elemen.mkCari.value, 'AMOX01');
+  assert.match(MASTER, /onclick = klikSaranMarkupMaster/);
+});
+
+test('Master markup: Esc menutup daftar saran tanpa ikut menutup panel', async () => {
+  const dok = dokumenSaran();
+  const catatan = { api: [] };
+  const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
+  ctx.formMarkupMaster();
+  await tunggu();
+  dok.elemen.mkCari.onfocus();
+  await tunggu();
+  assert.equal(dok.elemen.mkSuggest.hidden, false);
+  let diteruskan = false;
+  dok.elemen.mkCari.onkeydown({ key: 'Escape', stopPropagation() { diteruskan = true; }, preventDefault() {} });
+  assert.equal(dok.elemen.mkSuggest.hidden, true);
+  assert.equal(diteruskan, true, 'Esc tidak diteruskan supaya panel tidak ikut tertutup');
+  // Daftar saran sudah tertutup: Esc diteruskan lagi agar panel tetap bisa ditutup.
+  diteruskan = false;
+  dok.elemen.mkCari.onkeydown({ key: 'Escape', stopPropagation() { diteruskan = true; }, preventDefault() {} });
+  assert.equal(diteruskan, false);
+});
+
+test('Master markup: panah atas/bawah, Enter, dan klik di luar pada daftar saran', async () => {
+  const dok = dokumenSaran();
+  const catatan = { api: [] };
+  const { ctx } = muatMaster({ document: dok, api: apiSaran(catatan), setTimeout: langsung });
+  ctx.formMarkupMaster();
+  await tunggu();
+  const kelas = [new Set(), new Set(), new Set()];
+  dok.elemen.mkSuggest.querySelectorAll = () => kelas.map(tombolPalsu);
+  dok.elemen.mkCari.onfocus();
+  await tunggu();
+  dok.elemen.mkCari.onkeydown({ key: 'ArrowDown', preventDefault() {}, stopPropagation() {} });
+  assert.equal(ctx.MARKUP_MASTER_SARAN_INDEX, 0);
+  assert.equal(kelas[0].has('is-cursor'), true);
+  dok.elemen.mkCari.onkeydown({ key: 'ArrowUp', preventDefault() {}, stopPropagation() {} });
+  assert.equal(ctx.MARKUP_MASTER_SARAN_INDEX, 2, 'panah ke atas dari baris pertama berputar ke baris terakhir');
+  assert.equal(kelas[2].has('is-cursor'), true);
+  assert.equal(kelas[0].has('is-cursor'), false);
+  dok.elemen.mkCari.onkeydown({ key: 'Enter', preventDefault() {}, stopPropagation() {} });
+  await tunggu();
+  assert.equal(dok.elemen.mkCari.value, 'PROMAG', 'Enter memilih baris yang sedang disorot');
+  assert.equal(dok.elemen.mkSuggest.hidden, true);
+  // Klik di luar kolom pencarian menutup daftar saran; klik di dalamnya tidak.
+  dok.elemen.mkCari.onfocus();
+  await tunggu();
+  assert.equal(dok.elemen.mkSuggest.hidden, false);
+  dok.pendengar.click[0]({ target: { closest: () => ({}) } });
+  assert.equal(dok.elemen.mkSuggest.hidden, false);
+  dok.pendengar.click[0]({ target: { closest: () => null } });
+  assert.equal(dok.elemen.mkSuggest.hidden, true);
+  assert.match(MASTER, /closest\('\.mk-cari'\)/);
 });
