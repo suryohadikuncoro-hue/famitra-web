@@ -37,7 +37,9 @@ vm.runInContext([
   extractFunction('markupPersenBeliKeInput'),
   extractFunction('hargaDariMarkupJS'),
   extractFunction('terapkanMarkupBaris'),
-  extractFunction('terapkanMarkupSemuaBaris')
+  extractFunction('terapkanMarkupSemuaBaris'),
+  extractFunction('kunciHargaFakturBeli'),
+  extractFunction('lepasKunciMarkupBeli')
 ].join('\n'), context);
 
 const item = {
@@ -86,6 +88,33 @@ const manualItem = { ...pricedItem, Harga_Jual_Umum_Baru: 1234, _manual: { Harga
 context.BELI.markup.umum = 150;
 context.terapkanMarkupBaris(manualItem);
 assert.equal(manualItem.Harga_Jual_Umum_Baru, 1234, 'manual sale price is never overwritten');
+
+// Mode ubah faktur: pengaman lama tidak boleh lagi mematikan perhitungan markup,
+// dan harga yang tercatat di faktur lama tidak boleh dihitung ulang saat dimuat.
+const pengamanMarkup = extractFunction('terapkanMarkupBaris');
+assert.match(pengamanMarkup, /if \(!BELI\.markup\.tersedia\) return;/, 'markup only stops when the settings are unavailable');
+assert.doesNotMatch(pengamanMarkup, /editNoFaktur/, 'edit mode no longer disables markup recalculation');
+assert.match(js, /kunciHargaFakturBeli\(BELI\.items\)[\s\S]*gambarBeli\(\)/, 'loading an old invoice locks the recorded prices before rendering');
+const fakturLama = {
+  Harga_Netto: 1000, Qty: 10, PPN: 10, Diskon: 0,
+  Harga_Jual_Umum_Baru: 2000, Harga_Khusus_Baru: 1800, Harga_Jual_Mutasi_Baru: 1600,
+  _manual: {}, _markupOtomatis: {}, _tercatat: {}
+};
+context.BELI = { editNoFaktur: 'PB-1', items: [fakturLama], markup: { tersedia: true, valid: true, umum: 100, nakes: 30, mutasi: 20, pembulatan: 100 } };
+context.kunciHargaFakturBeli(context.BELI.items);
+context.terapkanMarkupSemuaBaris();
+assert.equal(fakturLama.Harga_Jual_Umum_Baru, 2000, 'opening an old invoice keeps the recorded umum price');
+assert.equal(fakturLama.Harga_Khusus_Baru, 1800, 'opening an old invoice keeps the recorded nakes price');
+assert.equal(fakturLama.Harga_Jual_Mutasi_Baru, 1600, 'opening an old invoice keeps the recorded mutation price');
+context.lepasKunciMarkupBeli('umum');
+context.terapkanMarkupSemuaBaris();
+assert.equal(fakturLama.Harga_Jual_Umum_Baru, 2200, 'changing the umum markup recalculates umum in edit mode');
+assert.equal(fakturLama.Harga_Khusus_Baru, 1800, 'changing umum markup leaves nakes untouched');
+assert.equal(fakturLama.Harga_Jual_Mutasi_Baru, 1600, 'changing umum markup leaves mutation untouched');
+assert.equal(Math.round(context.marginPersenBeli(fakturLama.Harga_Jual_Umum_Baru, context.hargaModalEfektifBeli(fakturLama)) * 10) / 10, 50, 'margin follows the recalculated price realtime');
+context.lepasKunciMarkupBeli('nakes');
+context.terapkanMarkupSemuaBaris();
+assert.equal(fakturLama.Harga_Jual_Umum_Baru, 2200, 'nakes change does not reset the already recalculated umum price');
 
 assert.match(migration, /CREATE OR REPLACE FUNCTION public\.purchase_effective_unit_cost/i, 'SQL shares a single effective-cost function');
 assert.match(migration, /purchase_validate_items\(p_items\)/i, 'purchase RPC wrappers validate incoming line values');
