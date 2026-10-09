@@ -1757,3 +1757,80 @@ body{background:var(--shell)}
   .marketing-panel .table-wrap table { min-width: 620px; }
   .marketing-report-heading { margin-top: 26px; padding-top: 20px; }
 }
+
+
+/* Marketing layout refinement v2: normalize section rhythm and all lower content */
+body[data-hal="marketing"] .marketing-shell { width:100%; max-width:1320px; margin-inline:auto; padding:4px 0 40px; }
+body[data-hal="marketing"] .marketing-hero { min-height:unset; margin-bottom:20px; }
+body[data-hal="marketing"] .marketing-shortcuts { grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); margin:0 0 30px; }
+body[data-hal="marketing"] .marketing-section-heading { align-items:center; margin:0 0 14px; padding:0 2px; }
+body[data-hal="marketing"] .marketing-section-heading h3 { font-size:clamp(18px,2vw,22px); line-height:1.3; }
+body[data-hal="marketing"] .marketing-section-heading .sub { max-width:700px; font-size:12px; }
+body[data-hal="marketing"] .marketing-panel-wrap { margin:0 0 28px; scroll-margin-top:24px; }
+body[data-hal="marketing"] .marketing-panel { box-sizing:border-box; padding:22px; border-radius:16px; background:var(--surface,#fff); }
+body[data-hal="marketing"] .marketing-panel .card-head { display:flex; justify-content:space-between; align-items:center; padding:0 0 16px; margin:0 0 4px; border-bottom:1px solid var(--border,#e6e8eb); }
+body[data-hal="marketing"] .marketing-panel .card-head h3 { font-size:16px; line-height:1.4; }
+body[data-hal="marketing"] .marketing-panel .card-head .sub { max-width:680px; font-size:12px; }
+body[data-hal="marketing"] .marketing-panel-actions .btn { min-height:36px; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-list { padding:0; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-list h4 { margin:18px 0 4px !important; padding-bottom:10px; font-size:13px; border-bottom:1px solid var(--border,#e6e8eb); }
+body[data-hal="marketing"] .marketing-panel .crm-refill-item { display:grid; grid-template-columns:36px minmax(0,1fr) auto auto; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--border,#e6e8eb); }
+body[data-hal="marketing"] .marketing-panel .crm-refill-item:last-child { border-bottom:0; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-item .crm-avatar { margin:0; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-main { display:flex; flex-direction:column; gap:4px; min-width:0; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-main strong { font-size:13px; overflow-wrap:anywhere; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-main span { color:var(--muted,#6b7280); font-size:11px; line-height:1.6; overflow-wrap:anywhere; }
+body[data-hal="marketing"] #crmPromoReportKpi { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:0 0 22px; }
+body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi { min-width:0; display:flex; gap:12px; align-items:flex-start; padding:16px; border:1px solid var(--border,#e6e8eb); border-radius:14px; background:var(--paper,#fafbfc); box-shadow:none; }
+body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi > div { min-width:0; }
+body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi small { display:block; min-height:32px; font-size:10px; line-height:1.5; }
+body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi strong { display:block; margin:5px 0; font-size:clamp(16px,1.7vw,22px); line-height:1.3; overflow-wrap:anywhere; }
+body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi em { display:block; font-size:10px; line-height:1.5; }
+body[data-hal="marketing"] #crmPromoCampaignSummary { display:block; margin:0; }
+body[data-hal="marketing"] #crmPromoCampaignSummary .crm-detail-note { margin:0 0 22px !important; padding:14px 16px; border:1px solid #e6ebf2; border-radius:12px; background:#f7f9fc; color:#4c5868; font-size:11px; line-height:1.7; }
+body[data-hal="marketing"] #crmPromoCampaignSummary h4 { margin:24px 0 10px !important; font-size:14px; line-height:1.4; }
+body[data-hal="marketing"] #crmPromoCampaignSummary .table-wrap { margin-bottom:18px; }
+body[data-hal="marketing"] #crmPromoCampaignSummary table { min-width:920px; }
+body[data-hal="marketing"] #crmPromoReportCard > .table-wrap { margin-top:26px; }
+body[data-hal="marketing"] #crmPromoReportCard > .table-wrap:before { content:"Riwayat penggunaan promo"; display:block; padding:14px 15px; border-bottom:1px solid var(--border,#e6e8eb); font-size:13px; font-weight:750; background:var(--paper,#fafbfc); }
+body[data-hal="marketing"] #crmPromoReportCard > .table-wrap table { min-width:760px; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap { max-width:100%; overflow-x:auto; border:1px solid var(--border,#e6e8eb); border-radius:12px; background:var(--surface,#fff); }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap table { width:100%; margin:0; border-collapse:separate; border-spacing:0; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap th { position:sticky; top:0; background:var(--paper,#fafbfc); white-space:nowrap; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap th, body[data-hal="marketing"] #crmPromoReportCard .table-wrap td { padding:12px 14px; border-bottom:1px solid var(--border,#e6e8eb); font-size:11px; line-height:1.5; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap tbody tr:last-child td { border-bottom:0; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap td strong { display:block; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap td .cart-line-meta { display:block; margin-top:3px; white-space:normal; overflow-wrap:anywhere; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap td.empty { padding:28px 14px; text-align:center; }
+body[data-hal="marketing"] .marketing-report-heading { margin:8px 0 14px; padding:0 2px; border:0; }
+body[data-hal="marketing"] #mpCard { box-sizing:border-box; max-width:100%; }
+@media(max-width:1000px) {
+  body[data-hal="marketing"] #crmPromoReportKpi { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:700px) {
+  body[data-hal="marketing"] .marketing-shell { padding:0 0 24px; }
+  body[data-hal="marketing"] .marketing-hero { margin-bottom:14px; }
+  body[data-hal="marketing"] .marketing-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:24px; }
+  body[data-hal="marketing"] .marketing-shortcut { align-items:flex-start; gap:9px; padding:12px 10px; border-radius:12px; }
+  body[data-hal="marketing"] .marketing-shortcut-icon { flex-basis:34px; width:34px; height:34px; border-radius:10px; font-size:17px; }
+  body[data-hal="marketing"] .marketing-shortcut strong { font-size:11px; }
+  body[data-hal="marketing"] .marketing-shortcut small { font-size:9px; }
+  body[data-hal="marketing"] .marketing-shortcut-arrow { display:none; }
+  body[data-hal="marketing"] .marketing-section-heading { align-items:flex-start; gap:10px; }
+  body[data-hal="marketing"] .marketing-panel { padding:15px 12px; border-radius:13px; }
+  body[data-hal="marketing"] .marketing-panel .card-head { align-items:flex-start; }
+  body[data-hal="marketing"] .marketing-panel .crm-refill-item { grid-template-columns:32px minmax(0,1fr); gap:8px 10px; }
+  body[data-hal="marketing"] .marketing-panel .crm-refill-item .chip { grid-column:2; justify-self:start; }
+  body[data-hal="marketing"] .marketing-panel .crm-refill-item button { grid-column:2; justify-self:start; }
+  body[data-hal="marketing"] #crmPromoReportKpi { gap:8px; }
+  body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi { flex-direction:column; gap:8px; padding:12px 10px; border-radius:11px; }
+  body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi small { min-height:unset; font-size:9px; }
+  body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi strong { font-size:16px; }
+  body[data-hal="marketing"] #crmPromoCampaignSummary h4 { margin-top:20px !important; }
+  body[data-hal="marketing"] #crmPromoReportCard > .table-wrap { margin-top:20px; }
+}
+@media(max-width:380px) {
+  body[data-hal="marketing"] .marketing-shortcuts { grid-template-columns:minmax(0,1fr); }
+  body[data-hal="marketing"] #crmPromoReportKpi { grid-template-columns:minmax(0,1fr); }
+  body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi { flex-direction:row; }
+}
