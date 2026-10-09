@@ -144,6 +144,13 @@ function tandaiPreviewMarkupMasterKotor() {
   if (foot) Array.prototype.forEach.call(foot.querySelectorAll('button'), function (b) {
     if (b.textContent.indexOf('Terapkan setelah konfirmasi') >= 0) { b.disabled = true; b.title = 'Buat pratinjau ulang setelah mengubah nilai.'; }
   });
+  if (foot && !Array.prototype.some.call(foot.querySelectorAll('button'), function (b) { return b.textContent === 'Pratinjau'; })) {
+    var preview = document.createElement('button');
+    preview.className = 'btn btn-primary';
+    preview.textContent = 'Pratinjau';
+    preview.onclick = previewMarkupMaster;
+    foot.insertBefore(preview, foot.firstChild);
+  }
 }
 function tingkatMarkupMaster() { return [['mkUmum','umum'],['mkNakes','nakes'],['mkMutasi','mutasi']].filter(function (x) { return document.getElementById(x[0]).checked; }).map(function (x) { return x[1]; }); }
 function previewMarkupMaster() {

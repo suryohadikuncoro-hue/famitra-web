@@ -27,7 +27,8 @@ test('preview key changes when markup configuration changes', () => {
 
 test('Master markup invalidates stale preview and accumulates actual RPC results', () => {
   assert.match(js, /tandaiPreviewMarkupMasterKotor/);
-  assert.match(js, /Nilai markup atau lingkup berubah\. Buat pratinjau ulang sebelum menerapkan/);
+  assert.match(js, /Nilai berubah\. Klik Pratinjau kembali sebelum menerapkan/);
+  assert.match(js, /preview\.textContent = 'Pratinjau'/);
   assert.match(js, /markupMasterKey\(cfgMarkupMaster\(\)/);
   assert.match(js, /hasil\.berubah \+= Number\(r && r\.berubah\)/);
   assert.match(js, /hasil\.dilewati \+= Number\(r && r\.dilewati\)/);
