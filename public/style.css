@@ -1955,8 +1955,6 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
 #modal:has(#fbKode) .modal-body .sub,
 #modal:has(#fbKode) .modal-body .kpi-sub{line-height:1.45}
 @media(max-width:1180px) and (min-width:881px){
-  .bg-table th:nth-child(5),.bg-table td:nth-child(5),
-  .bg-table th:nth-child(8),.bg-table td:nth-child(8){display:none}
   .bg-table th:nth-child(1),.bg-table td:nth-child(1){width:8%}
   .bg-table th:nth-child(2),.bg-table td:nth-child(2){width:17%}
   .bg-table th:nth-child(3),.bg-table td:nth-child(3){width:12%}
@@ -1967,8 +1965,6 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
   .bg-table th:nth-child(10),.bg-table td:nth-child(10){width:23%}
 }
 @media(max-width:880px) and (min-width:561px){
-  .bg-table th:nth-child(5),.bg-table td:nth-child(5),
-  .bg-table th:nth-child(8),.bg-table td:nth-child(8){display:none}
   .bg-table{font-size:11.5px}
   .bg-table th,.bg-table td{padding:6px 4px}
   .bg-table td:last-child .btn{font-size:10.5px;padding:4px}
