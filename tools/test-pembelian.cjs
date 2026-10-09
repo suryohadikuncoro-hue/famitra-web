@@ -36,7 +36,8 @@ vm.runInContext([
   extractFunction('markupInputBeliKePersen'),
   extractFunction('markupPersenBeliKeInput'),
   extractFunction('hargaDariMarkupJS'),
-  extractFunction('terapkanMarkupBaris')
+  extractFunction('terapkanMarkupBaris'),
+  extractFunction('terapkanMarkupSemuaBaris')
 ].join('\n'), context);
 
 const item = {
@@ -69,6 +70,15 @@ assert.equal(pricedItem.Harga_Jual_Umum_Baru, 1500, 'inactive markup does not cl
 context.BELI.markup.umum = 150;
 context.terapkanMarkupBaris(pricedItem);
 assert.equal(pricedItem.Harga_Jual_Umum_Baru, 2500, 'active markup populates an automatic price');
+const existingRows = [
+  { Harga_Netto: 1000, Qty: 1, PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 0, _manual: {}, _markupOtomatis: {} },
+  { Harga_Netto: 2000, Qty: 1, PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 4321, _manual: { Harga_Jual_Umum_Baru: true }, _markupOtomatis: {} }
+];
+context.BELI.items = existingRows;
+context.BELI.markup.umum = 100;
+context.terapkanMarkupSemuaBaris();
+assert.equal(existingRows[0].Harga_Jual_Umum_Baru, 2000, 'markup changes recalculate existing automatic rows');
+assert.equal(existingRows[1].Harga_Jual_Umum_Baru, 4321, 'bulk recalculation preserves manual prices');
 context.BELI.markup.umum = null;
 context.terapkanMarkupBaris(pricedItem);
 assert.equal(pricedItem.Harga_Jual_Umum_Baru, 0, 'disabling markup clears only its previously automatic price');
