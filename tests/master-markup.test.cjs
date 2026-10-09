@@ -1,13 +1,19 @@
 'use strict';
-/* Uji alur markup Master Barang. Alur lama ("terapkan aturan borongan" dengan
-   tombol Pratinjau) sudah diganti daftar kerja per barang, jadi uji di berkas
-   ini menguji jaminan yang sama pada alur baru:
-   - rumus markup persen/rasio dan pembulatan ke atas
+/* Uji penetapan harga di form Ubah/Tambah barang (Master Barang).
+   Tombol "Terapkan markup" dan panel "Barang perlu ditinjau" sudah dihapus atas
+   keputusan pemilik: harga ditetapkan satu pintu per barang di dalam form Ubah
+   barang. Uji di berkas ini menjaga jaminan berikut:
+   - rumus markup persen/rasio dan pembulatan ke atas (hargaDariMarkupJS)
    - batas markup 0–1000% (dan rasio 1–11) tetap ditolak
-   - pemilihan barang (pilih semua / per baris) tetap bekerja
-   - penerapan tidak mungkin tanpa konfirmasi; pembatalan tidak mengirim apa pun
-   - harga yang belum disimpan tetap memberi peringatan saat panel ditutup
-   - tidak ada aksi API baru: hanya aksi lama yang dipakai. */
+   - tiga markup terpisah: satu persen tidak pernah dipakai untuk ketiga tingkat
+   - mengubah markup Umum hanya mengubah harga Umum
+   - harga yang diketik manual tidak ditimpa saat markup tingkat lain diubah
+   - margin terhitung benar dan warnanya mengikuti ambang 20%
+   - modal kosong atau 0 tidak menghasilkan perhitungan markup
+   - nilai bawaan markup dan mode diambil dari pengaturan tersimpan
+   - mode persen/rasio bisa ditukar dan angkanya dikonversi, bukan dikosongkan
+   - tombol dan panel markup lama benar-benar sudah tidak ada lagi
+   - tidak ada aksi API baru, dan mode hanya pilihan di form (tidak tersimpan). */
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -18,6 +24,7 @@ const root = path.resolve(__dirname, '..');
 const MASTER = fs.readFileSync(path.join(root, 'public/js_master.js'), 'utf8');
 const CORE = fs.readFileSync(path.join(root, 'public/js_core.js'), 'utf8');
 const TRX = fs.readFileSync(path.join(root, 'public/js_trx.js'), 'utf8');
+const CSS = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
 const API = fs.readFileSync(path.join(root, 'supabase/functions/api/index.ts'), 'utf8');
 
 /** Ambil satu fungsi global dari berkas sumber (gaya repo: `function nama(`). */
@@ -29,75 +36,129 @@ function extractFunction(nama, sumber) {
   return sumber.slice(start, end + 2);
 }
 
-/** DOM mini: cukup untuk getElementById, querySelectorAll, dan elemen palsu. */
-function dokumenMini(nilai, input) {
+/** DOM mini: cukup untuk getElementById dan elemen palsu dengan nilai/oninput. */
+function dokumenMini(nilai) {
   const elemen = {};
   Object.keys(nilai || {}).forEach((id) => {
-    elemen[id] = { value: String(nilai[id]), textContent: '', innerHTML: '', hidden: false, checked: false, disabled: false };
+    elemen[id] = { value: String(nilai[id]), textContent: '', innerHTML: '', hidden: false, checked: false, disabled: false, style: {} };
   });
   return {
     elemen,
     getElementById(id) { return elemen[id] || null; },
     querySelector() { return null; },
-    querySelectorAll() { return input || []; },
-    createElement() { return { style: {}, dataset: {}, className: '', appendChild() {} }; }
+    querySelectorAll() { return []; },
+    createElement() { return { style: {}, dataset: {}, className: '', appendChild() {} }; },
+    addEventListener() {}
   };
 }
 
-/** Satu kolom harga palsu seperti yang dirender htmlTingkatMarkupMaster(). */
-function inputHarga(kode, tingkat) {
-  const sel = { innerHTML: '' };
-  return {
-    value: '', textContent: '', style: {},
-    parentNode: { querySelector() { return sel; } },
-    getAttribute(nama) {
-      if (nama === 'data-markup-kode-baris') return kode;
-      if (nama === 'data-markup-harga') return tingkat;
-      return null;
-    },
-    selMargin: sel
+/** Id kolom yang dirender form Ubah barang (markup, harga, margin, padanan). */
+const ID_FORM = {
+  umum: { markup: 'fbMarkupUmum', harga: 'fbUmum', margin: 'fbMarginUmum', label: 'fbMarkupUmumLabel', pad: 'fbMarkupUmumPad' },
+  nakes: { markup: 'fbMarkupNakes', harga: 'fbKhusus', margin: 'fbMarginNakes', label: 'fbMarkupNakesLabel', pad: 'fbMarkupNakesPad' },
+  mutasi: { markup: 'fbMarkupMutasi', harga: 'fbMutasi', margin: 'fbMarginMutasi', label: 'fbMarkupMutasiLabel', pad: 'fbMarkupMutasiPad' }
+};
+const TINGKAT = ['umum', 'nakes', 'mutasi'];
+
+/** DOM dengan semua kolom harga/markup/margin form barang (nilai awal kosong). */
+function dokumenFormBarang(nilai) {
+  const awal = {
+    fbKode: 'OBT1', fbNama: 'Obat contoh', fbKat: '', fbSatuan: 'Pcs', fbMin: '10', fbGol: 'Bebas',
+    fbModal: '', fbPPN: '0', fbMarkupMode: 'persen', fbCatatan: ''
   };
+  TINGKAT.forEach((t) => {
+    awal[ID_FORM[t].markup] = '';
+    awal[ID_FORM[t].harga] = '0';
+    awal[ID_FORM[t].margin] = '';
+    awal[ID_FORM[t].label] = '';
+    awal[ID_FORM[t].pad] = '';
+  });
+  return dokumenMini(Object.assign(awal, nilai || {}));
 }
 
-function baris(kode, modal, harga, nilai) {
-  return JSON.parse(JSON.stringify({ kode, nama: 'Nama ' + kode, modal, harga: harga || {}, nilai: nilai || {} }));
+/** Barang contoh seperti baris Master Barang. */
+function barangContoh(ubah) {
+  return Object.assign({
+    Kode_Obat: 'OBT1', Nama_Obat: 'Obat contoh', Kategori: 'Bebas', Satuan: 'Pcs', Stok_Min: 10,
+    Golongan: 'Bebas', Harga_Modal: 1000, Harga_Jual_Umum: 1000, Harga_Khusus: 1000,
+    Harga_Jual_Mutasi: 1000, PPN: 0, Aktif: 'YA'
+  }, ubah || {});
 }
 
-/** Jalankan js_master.js di konteks vm dengan helper asli js_core/js_trx. */
+const PENGATURAN_BAWAAN = { mode: 'persen', markup_umum_persen: 20, markup_nakes_persen: 20, markup_mutasi_persen: 20, pembulatan: 100 };
+
+/** Jalankan js_master.js di konteks vm dengan helper asli js_core/js_trx.
+ *  modalBuka menangkap isi modal supaya kolom form bisa diperiksa. */
 function muatMaster(opts) {
   opts = opts || {};
-  const catatan = { api: [], toast: [], confirm: [], modalTutup: 0 };
-  const dok = opts.document || dokumenMini(opts.nilai, opts.input);
+  const catatan = { api: [], toast: [], modal: [], modalTutup: 0, confirm: [] };
+  const dok = opts.document || dokumenFormBarang(opts.nilai);
   const context = {
     VIEWS: {}, SESSION: { user: { role: 'Owner' } }, document: dok,
-    api(aksi, data) { catatan.api.push({ aksi, data }); return opts.api ? opts.api(aksi, data) : Promise.resolve({ berubah: 1, dilewati: 0 }); },
+    api(aksi, data) {
+      catatan.api.push({ aksi, data });
+      if (opts.api) return opts.api(aksi, data);
+      return Promise.resolve({ tersedia: true, tersimpan: true, pengaturan: PENGATURAN_BAWAAN });
+    },
     toast(pesan, buruk) { catatan.toast.push({ pesan, buruk: !!buruk }); },
-    confirm(pesan) { catatan.confirm.push(pesan); return opts.confirm === undefined ? true : opts.confirm; },
+    confirm(pesan) { catatan.confirm.push(pesan); return true; },
+    modalBuka(judul, html, tombol) { catatan.modal.push({ judul, html, tombol: tombol || [] }); },
     modalTutup() { catatan.modalTutup += 1; },
-    modalBuka() {},
     promoApi() { return Promise.resolve([]); },
     setTimeout() { return 0; },
-    clearTimeout() {}
+    clearTimeout() {},
+    window: { open() {} }
   };
   vm.createContext(context);
   vm.runInContext(['esc', 'angka', 'rupiah', 'val', 'numVal'].map((n) => extractFunction(n, CORE)).join('\n'), context);
-  vm.runInContext(['hargaDariMarkupJS', 'markupInputBeliKePersen', 'marginPersenBeli'].map((n) => extractFunction(n, TRX)).join('\n'), context);
+  vm.runInContext(['hargaDariMarkupJS', 'markupInputBeliKePersen', 'markupPersenBeliKeInput', 'marginPersenBeli'].map((n) => extractFunction(n, TRX)).join('\n'), context);
   vm.runInContext(MASTER, context);
   return { ctx: context, catatan, dok };
 }
 
-/** Beri kesempatan rantai promise simpanMarkupMaster() selesai. */
+/** Beri kesempatan rantai promise harga.pengaturan selesai. */
 function tunggu() { return new Promise((resolve) => setTimeout(resolve, 5)); }
 
-test('preview key changes when markup configuration changes', () => {
-  const context = vm.createContext({ JSON });
-  vm.runInContext(extractFunction('markupMasterKey', MASTER), context);
-  const base = { mode: 'rasio', umum: 1.25, nakes: 1.1, mutasi: 1, pembulatan: 0 };
-  const changed = { ...base, umum: 1.32 };
-  assert.notEqual(context.markupMasterKey(base, '', ['umum']), context.markupMasterKey(changed, '', ['umum']));
-  assert.notEqual(context.markupMasterKey(base, '', ['umum']), context.markupMasterKey(base, 'adem', ['umum']));
-  assert.equal(context.markupMasterKey(base, '', ['nakes', 'umum']), context.markupMasterKey(base, '', ['umum', 'nakes']));
-});
+/** Buka form Ubah barang. Kolom modal dan harga diisi seperti render asli,
+ *  jadi val() membaca nilai yang sama dengan yang dilihat pengguna. */
+function bukaForm(opts) {
+  opts = opts || {};
+  const barang = opts.barang === undefined ? barangContoh(opts.barangUbah) : opts.barang;
+  const opsi = Object.assign({}, opts, { barang });
+  if (!opts.document && !opts.nilai) {
+    const isi = barang || {};
+    opsi.nilai = {
+      fbModal: isi.Harga_Modal == null ? '' : String(isi.Harga_Modal),
+      fbUmum: String(isi.Harga_Jual_Umum || 0),
+      fbKhusus: String(isi.Harga_Khusus || 0),
+      fbMutasi: String(isi.Harga_Jual_Mutasi || 0)
+    };
+  }
+  const m = muatMaster(opsi);
+  m.ctx.formBarang(barang);
+  return m;
+}
+
+/** Tulis nilai ke kolom lalu jalankan oninput-nya seperti pengguna mengetik. */
+function ketik(dok, id, nilai) {
+  const el = dok.elemen[id];
+  assert.ok(el, `kolom ${id} ada di form`);
+  assert.equal(typeof el.oninput, 'function', `kolom ${id} punya pendengar oninput`);
+  el.value = String(nilai);
+  el.oninput();
+}
+
+/** Tukar mode markup seperti memilih opsi di <select id="fbMarkupMode">. */
+function tukarMode(dok, mode) {
+  const el = dok.elemen.fbMarkupMode;
+  assert.ok(el.onchange, 'pemilih mode punya pendengar onchange');
+  el.value = mode;
+  el.onchange();
+}
+
+function persenPengaturan(konfig) {
+  return Object.assign({ tersedia: true, tersimpan: true, pengaturan: Object.assign({}, PENGATURAN_BAWAAN, konfig || {}) }, {});
+}
 
 test('rumus markup persen dan pembulatan ke atas sama dengan aturan bisnis', () => {
   const { ctx } = muatMaster();
@@ -122,202 +183,350 @@ test('batas markup 0–1000 persen dan rasio 1–11 tetap ditolak di luar rentan
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.markupInputBeliKePersen(1, 'rasio'))), { valid: true, persen: 0 });
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.markupInputBeliKePersen(0.9, 'rasio'))), { valid: false, persen: null });
   assert.deepEqual(JSON.parse(JSON.stringify(ctx.markupInputBeliKePersen(11.5, 'rasio'))), { valid: false, persen: null });
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.markupPersenBeliKeInput(150, 'rasio'))), 2.5);
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.markupPersenBeliKeInput(null, 'persen'))), '');
 });
 
-test('margin Master Barang memakai rumus yang sama dengan modul Pembelian', () => {
+test('margin form barang memakai rumus modul Pembelian dengan ambang 20%', () => {
   const { ctx } = muatMaster();
-  assert.equal(ctx.marginMarkupMaster(1500, 1000), 33.33333333333333);
-  assert.equal(ctx.marginMarkupMaster(1000, 1000), 0);
-  assert.equal(ctx.marginMarkupMaster(800, 1000), -25);
-  assert.equal(ctx.marginMarkupMaster(null, 1000), null);
-  assert.equal(ctx.marginMarkupMaster(1500, null), null);
-  assert.equal(ctx.marginMarkupMaster(0, 1000), null);
+  assert.equal(ctx.ambangMarginBarang(), 20);
+  assert.equal(ctx.marginHargaBarang(1500, 1000), 33.33333333333333);
+  assert.equal(ctx.marginHargaBarang(1000, 1000), 0);
+  assert.equal(ctx.marginHargaBarang(800, 1000), -25);
+  assert.equal(ctx.marginHargaBarang(null, 1000), null);
+  assert.equal(ctx.marginHargaBarang(1500, null), null);
+  assert.equal(ctx.marginHargaBarang(0, 1000), null);
   for (const pasangan of [[1500, 1000], [1000, 1000], [800, 1000], [null, 1000], [1500, null], [0, 1000], [-10, 1000], [1200, 0]]) {
-    assert.equal(ctx.marginMarkupMaster(pasangan[0], pasangan[1]), ctx.marginPersenBeli(pasangan[0], pasangan[1]));
+    assert.equal(ctx.marginHargaBarang(pasangan[0], pasangan[1]), ctx.marginPersenBeli(pasangan[0], pasangan[1]));
   }
+  // Hijau mulai ambang 20%, merah di bawahnya, "—" bila modal belum diketahui.
+  const chip = (harga, modal) => String(ctx.htmlMarginBarang(harga, modal));
+  assert.match(chip(1250, 1000), /chip-ok/);
+  assert.match(chip(1250, 1000), /20,0%/);
+  assert.match(chip(1150, 1000), /chip-bad/);
+  assert.match(chip(1150, 1000), /13,0%/);
+  assert.match(chip(1249, 1000), /chip-bad/, '19,9% masih di bawah ambang');
+  assert.match(chip(1249, 1000), /19,9%/);
+  assert.match(chip(1250, 1000), /chip-ok/, 'tepat 20% sudah hijau');
+  assert.match(chip(1200, null), /margin —/);
+  assert.match(chip(0, 1000), /margin —/);
 });
 
-test('Master markup: margin per tingkat hijau mulai ambang dan merah di bawahnya', () => {
-  const { ctx } = muatMaster({ nilai: { mkAmbang: '20' } });
-  ctx.MARKUP_MASTER_ROWS = [
-    baris('A', 1000, { umum: { lama: 1250 } }),
-    baris('B', 1000, { umum: { lama: 1150 } }),
-    baris('C', 1000, { umum: { lama: 1500 } }, { umum: '1500' }),
-    baris('D', null, { umum: { lama: 1200 } })
-  ];
-  const teks = (i) => ctx.htmlIsiMarginMarkupMaster(ctx.MARKUP_MASTER_ROWS[i], 'umum');
-  assert.match(teks(0), /chip-ok/);
-  assert.match(teks(0), /20,0%/);
-  assert.match(teks(0), /kini/);
-  assert.match(teks(1), /chip-bad/);
-  assert.match(teks(1), /13,0%/);
-  assert.match(teks(2), /chip-ok/);
-  assert.match(teks(2), /33,3%/);
-  assert.doesNotMatch(teks(2), /kini/);
-  assert.match(teks(3), /margin —/);
+test('form Ubah barang memuat modal terakhir, mode markup, tiga markup, dan tiga margin', () => {
+  const m = bukaForm();
+  assert.equal(m.catatan.modal.length, 1);
+  assert.equal(m.catatan.modal[0].judul, 'Ubah Obat contoh');
+  const html = m.catatan.modal[0].html;
+  assert.match(html, /<label class="field"><span>Modal terakhir<\/span>/);
+  assert.match(html, /sudah termasuk PPN dan sudah dikurangi diskon pembelian/);
+  assert.match(html, /id="fbModal"/);
+  // Pemilih mode persen/rasio, seperti markup di menu Pembelian.
+  assert.match(html, /id="fbMarkupMode"/);
+  assert.match(html, /<option value="persen">Persen di atas modal \(%\)<\/option>/);
+  assert.match(html, /<option value="rasio">Rasio pengali modal \(×\)<\/option>/);
+  // Tiga kolom markup terpisah per tipe pelanggan, bukan satu kolom bersama.
+  assert.match(html, /id="fbMarkupUmum"/);
+  assert.match(html, /id="fbMarkupNakes"/);
+  assert.match(html, /id="fbMarkupMutasi"/);
+  assert.doesNotMatch(html, /id="fbMarkup"/);
+  assert.match(html, /Markup Umum \(%\)/);
+  assert.match(html, /Markup Nakes \(%\)/);
+  assert.match(html, /Markup Apotek lain \(%\)/);
+  // Harga jual tetap bisa diketik manual dan tiap tingkat punya tempat margin.
+  assert.match(html, /id="fbUmum"/);
+  assert.match(html, /id="fbKhusus"/);
+  assert.match(html, /id="fbMutasi"/);
+  assert.match(html, /id="fbMarginUmum"/);
+  assert.match(html, /id="fbMarginNakes"/);
+  assert.match(html, /id="fbMarginMutasi"/);
+  assert.match(html, /id="fbCatatan"/);
+  // Struktur modal tetap rapi (tiap <label> ditutup).
+  assert.equal((html.match(/<label/g) || []).length, (html.match(/<\/label>/g) || []).length);
+  // Catatan di bawah kolom harga menjelaskan cara hitungnya (modal tersedia).
+  assert.match(m.dok.elemen.fbCatatan.textContent, /Markup dihitung dari Modal terakhir/);
 });
 
-test('Master markup: urutan bawaan margin terendah lebih dulu', () => {
-  const { ctx, dok } = muatMaster({ nilai: { mkAmbang: '20', mkUrut: 'margin' } });
-  ctx.MARKUP_MASTER_ROWS = [
-    baris('A', 1000, { umum: { lama: 2000 } }),
-    baris('B', 1000, { umum: { lama: 1200 } }),
-    baris('C', 1000, { umum: { lama: 1500 } }),
-    baris('D', null, { umum: { lama: 1200 } })
-  ];
-  assert.deepEqual(Array.from(ctx.urutkanMarkupMaster(ctx.MARKUP_MASTER_ROWS)).map((x) => x.kode), ['B', 'C', 'A', 'D']);
-  assert.equal(ctx.marginTerendahMarkupMaster(ctx.MARKUP_MASTER_ROWS[3]), Infinity);
-  dok.elemen.mkUrut.value = 'nama';
-  assert.deepEqual(Array.from(ctx.urutkanMarkupMaster(ctx.MARKUP_MASTER_ROWS)).map((x) => x.kode), ['A', 'B', 'C', 'D']);
-});
-
-test('Master markup: pilihan golongan diambil dari data yang termuat', () => {
-  const dok = dokumenMini({ mkGol: 'Resep' });
-  const { ctx } = muatMaster({ document: dok });
-  ctx.MARKUP_MASTER_ROWS = [baris('A', 1000, {}), baris('B', 1000, {}), baris('C', 1000, {}), baris('D', 1000, {})];
-  ctx.MARKUP_MASTER_GOL = { A: 'Resep', B: 'Bebas', C: 'Resep', D: 'Khusus' };
-  ctx.perbaruiGolonganMarkupMaster();
-  assert.equal(dok.elemen.mkGol.innerHTML,
-    '<option value="">Semua golongan</option><option value="Bebas">Bebas</option><option value="Resep">Resep</option><option value="Khusus">Khusus</option>');
-  assert.equal(dok.elemen.mkGol.value, 'Resep');
-});
-
-test('Master markup: pilih semua dan pilih per baris selalu terbatas pada baris yang tampil', () => {
-  const { ctx, dok } = muatMaster({ nilai: { mkGol: '' } });
-  ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, { umum: { lama: 1200 } }), baris('OBT2', 1000, { umum: { lama: 1200 } }), baris('OBT3', 1000, { umum: { lama: 1200 } })];
-  ctx.MARKUP_MASTER_GOL = { OBT1: 'Bebas', OBT2: 'Resep', OBT3: 'Resep' };
-  ctx.MARKUP_MASTER_SELECTED = { OBT1: true };
-  ctx.MARKUP_MASTER_SELECT_ALL = false;
-  assert.deepEqual(Array.from(ctx.kodeMarkupMasterTerpilih()), ['OBT1']);
-  ctx.MARKUP_MASTER_SELECT_ALL = true;
-  assert.deepEqual(Array.from(ctx.kodeMarkupMasterTerpilih()).sort(), ['OBT1', 'OBT2', 'OBT3']);
-  dok.elemen.mkGol.value = 'Resep';
-  assert.deepEqual(Array.from(ctx.kodeMarkupMasterTerpilih()).sort(), ['OBT2', 'OBT3']);
-});
-
-test('Master markup: tombol Markup ___% mengisi kolom per baris tanpa mengunci harganya', () => {
-  const input = [inputHarga('OBT1', 'umum'), inputHarga('OBT1', 'nakes'), inputHarga('OBT1', 'mutasi')];
-  const { ctx } = muatMaster({ nilai: { mkPersen: '50', mkRound: '100' }, input });
-  ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, { umum: { lama: 1000 }, nakes: { lama: 1000 }, mutasi: { lama: 1000 } })];
-  ctx.isiMarkupMaster('OBT1');
-  assert.deepEqual(input.map((i) => i.value), ['1500', '1500', '1500']);
-  assert.deepEqual(JSON.parse(JSON.stringify(ctx.MARKUP_MASTER_ROWS[0].nilai)), { umum: '1500', nakes: '1500', mutasi: '1500' });
-  assert.match(extractFunction('htmlTingkatMarkupMaster', MASTER), /data-markup-harga/);
-  assert.doesNotMatch(extractFunction('htmlTingkatMarkupMaster', MASTER), /readonly|disabled/i);
-  assert.match(MASTER, /hanya mengisi kolom, tidak mengunci harga/);
-  assert.match(MASTER, /data-markup-isi=/);
-  assert.match(MASTER, /id="mkPilihSemua"/);
-  assert.match(MASTER, /ke baris terpilih/);
-  assert.match(MASTER, /Pilih minimal satu item obat/);
-});
-
-test('Master markup: harga baru dibalik ke markup persen dan dikirim lewat aksi lama tanpa pembulatan', async () => {
-  let panggil = 0;
-  const { ctx, catatan } = muatMaster({
-    nilai: { mkAmbang: '20' },
-    api() { panggil += 1; return Promise.resolve(panggil === 1 ? { berubah: 2, dilewati: 1 } : { berubah: 1, dilewati: 1 }); }
+test('form Ubah barang: nilai bawaan markup dan mode diambil dari pengaturan tersimpan', async () => {
+  const dok = dokumenFormBarang({ fbModal: '1000' });
+  const m = bukaForm({
+    document: dok,
+    barang: barangContoh({ Harga_Jual_Umum: 0, Harga_Khusus: 0, Harga_Jual_Mutasi: 0 }),
+    api: (aksi) => Promise.resolve(aksi === 'harga.pengaturan'
+      ? persenPengaturan({ mode: 'rasio', markup_umum_persen: 25, markup_nakes_persen: 10, markup_mutasi_persen: 0, pembulatan: 0 })
+      : { rows: [] })
   });
-  ctx.MARKUP_MASTER_ROWS = [
-    baris('OBT1', 1000, { umum: { lama: 1000 } }, { umum: '1500' }),
-    baris('OBT2', 2000, { umum: { lama: 2000 } }, { umum: '3000' }),
-    baris('OBT3', 1000, { umum: { lama: 1200 } }, { umum: '1150' })
-  ];
-  ctx.simpanMarkupMaster();
   await tunggu();
-  assert.equal(catatan.confirm.length, 1);
-  assert.match(catatan.confirm[0], /Anda akan mengubah 3 barang \(3 kolom harga\)/);
-  assert.match(catatan.confirm[0], /Di antaranya 1 barang marginnya masih di bawah ambang 20%/);
-  assert.match(catatan.confirm[0], /Lanjutkan\?/);
-  assert.deepEqual(catatan.api.map((x) => x.aksi), ['harga.markupTerapkan', 'harga.markupTerapkan']);
-  assert.deepEqual(JSON.parse(JSON.stringify(catatan.api[0].data)), {
-    kode_obat: ['OBT1', 'OBT2'], tingkat: ['umum'], mode: 'persen',
-    umum: 50, nakes: null, mutasi: null, pembulatan: 0, sumber: 'tinjau harga master'
+  assert.equal(m.catatan.api[0].aksi, 'harga.pengaturan');
+  assert.equal(dok.elemen.fbMarkupMode.value, 'rasio', 'mode bawaan ikut pengaturan tersimpan');
+  assert.equal(dok.elemen.fbMarkupUmum.value, '1.25', '25% ditampilkan sebagai rasio 1,25×');
+  assert.equal(dok.elemen.fbMarkupNakes.value, '1.1');
+  assert.equal(dok.elemen.fbMarkupMutasi.value, '1');
+  assert.equal(dok.elemen.fbMarkupUmumLabel.textContent, 'Markup Umum (×)');
+  assert.equal(dok.elemen.fbMarkupNakesLabel.textContent, 'Markup Nakes (×)');
+  assert.equal(dok.elemen.fbMarkupMutasiLabel.textContent, 'Markup Apotek lain (×)');
+  assert.equal(dok.elemen.fbMarkupUmumPad.textContent, '= 25%');
+  assert.equal(dok.elemen.fbMarkupNakesPad.textContent, '= 10%');
+  // Harga yang belum ditetapkan (0) terisi otomatis dari markup bawaan.
+  assert.equal(dok.elemen.fbUmum.value, '1250');
+  assert.equal(dok.elemen.fbKhusus.value, '1100');
+  assert.equal(dok.elemen.fbMutasi.value, '1000');
+  assert.match(dok.elemen.fbCatatan.textContent, /Markup dihitung dari Modal terakhir/);
+  assert.match(MASTER, /markup_umum_persen/);
+  assert.match(MASTER, /markup_nakes_persen/);
+  assert.match(MASTER, /markup_mutasi_persen/);
+});
+
+test('form Ubah barang: pengaturan mode persen menampilkan satuan % dan padanan rasio', async () => {
+  const dok = dokumenFormBarang({ fbModal: '1000' });
+  bukaForm({
+    document: dok,
+    api: (aksi) => Promise.resolve(aksi === 'harga.pengaturan'
+      ? persenPengaturan({ mode: 'persen', markup_umum_persen: 40, markup_nakes_persen: 0, markup_mutasi_persen: null, pembulatan: 100 })
+      : { rows: [] })
   });
-  assert.deepEqual(JSON.parse(JSON.stringify(catatan.api[1].data.kode_obat)), ['OBT3']);
-  assert.equal(catatan.api[1].data.umum, 15);
-  assert.equal(catatan.api[1].data.pembulatan, 0);
-  assert.equal(catatan.modalTutup, 1);
-  assert.match(catatan.toast.map((t) => t.pesan).join(' '), /Harga berubah: 3; dilewati: 2/);
-});
-
-test('Master markup: penerapan tidak mungkin tanpa konfirmasi dan pembatalan tidak mengirim apa pun', async () => {
-  const { ctx, catatan } = muatMaster({ nilai: { mkAmbang: '20' }, confirm: false });
-  ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, { umum: { lama: 1000 } }, { umum: '1500' })];
-  ctx.simpanMarkupMaster();
   await tunggu();
-  assert.equal(catatan.confirm.length, 1);
-  assert.equal(catatan.api.length, 0);
-  assert.equal(catatan.modalTutup, 0);
-  assert.match(catatan.toast.map((t) => t.pesan).join(' '), /^$/);
-  // Ringkasan hanya muncul setelah ada yang bisa dikirim; tanpa perubahan tidak ada pertanyaan.
-  const kosong = muatMaster({ confirm: false });
-  kosong.ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, { umum: { lama: 1000 } })];
-  kosong.ctx.simpanMarkupMaster();
+  assert.equal(dok.elemen.fbMarkupMode.value, 'persen');
+  assert.equal(dok.elemen.fbMarkupUmum.value, '40');
+  assert.equal(dok.elemen.fbMarkupUmumLabel.textContent, 'Markup Umum (%)');
+  assert.equal(dok.elemen.fbMarkupUmumPad.textContent, '= 1.40× rasio');
+  assert.equal(dok.elemen.fbMarkupNakes.value, '0');
+  assert.equal(dok.elemen.fbMarkupNakesPad.textContent, '= 1× rasio');
+  assert.equal(dok.elemen.fbMarkupMutasi.value, '', 'markup kosong di pengaturan dibiarkan kosong');
+  assert.equal(dok.elemen.fbMarkupMutasiPad.textContent, '');
+  // Modal 1.000 dengan markup 40% dan pembulatan ke atas Rp100.
+  assert.equal(dok.elemen.fbUmum.value, '1400');
+  assert.equal(dok.elemen.fbKhusus.value, '1000');
+  assert.equal(dok.elemen.fbMutasi.value, '0');
+});
+
+test('form Ubah barang: mengubah markup Umum hanya mengubah harga Umum', () => {
+  const m = bukaForm({ barang: barangContoh({ Harga_Modal: 4300, Harga_Jual_Umum: 4300, Harga_Khusus: 4300, Harga_Jual_Mutasi: 4300 }) });
+  const dok = m.dok;
+  ketik(dok, 'fbMarkupUmum', '39');
+  assert.equal(dok.elemen.fbUmum.value, '6000', 'modal 4.300 + 39% dibulatkan ke atas Rp100');
+  assert.equal(dok.elemen.fbKhusus.value, '4300', 'harga Nakes tidak disentuh');
+  assert.equal(dok.elemen.fbMutasi.value, '4300', 'harga Apotek lain tidak disentuh');
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /chip-ok/);
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /28,3%/, 'margin umum (6000-4300)/6000');
+  assert.match(dok.elemen.fbMarginNakes.innerHTML, /chip-bad/);
+  assert.match(dok.elemen.fbMarginNakes.innerHTML, /0,0%/);
+  // Perubahan harga hanya dikirim ke aksi lama barang.simpan, bukan aksi markup.
+  assert.deepEqual(m.catatan.api.map((x) => x.aksi), ['harga.pengaturan']);
+  assert.doesNotMatch(MASTER, /harga\.markupTerapkan/);
+  assert.doesNotMatch(MASTER, /harga\.markupPreview/);
+});
+
+test('form Ubah barang: tiga markup terpisah, satu persen tidak dipakai untuk ketiganya', () => {
+  const m = bukaForm({ barang: barangContoh({ Harga_Modal: 4300, Harga_Jual_Umum: 4300, Harga_Khusus: 4300, Harga_Jual_Mutasi: 4300 }) });
+  const dok = m.dok, ctx = m.ctx;
+  assert.deepEqual(Array.from(ctx.tingkatHargaBarang()), TINGKAT);
+  assert.notEqual(ctx.idMarkupBarang('umum'), ctx.idMarkupBarang('nakes'));
+  assert.notEqual(ctx.idMarkupBarang('nakes'), ctx.idMarkupBarang('mutasi'));
+  assert.equal(ctx.idMarkupBarang(), null, 'tingkat tak dikenal tidak menunjuk kolom mana pun');
+  assert.equal(ctx.idHargaBarang(), null);
+  assert.equal(ctx.satuanMarkupBarang('rasio'), '×');
+  assert.equal(ctx.satuanMarkupBarang('persen'), '%');
+  // Contoh nyata apotek: modal Rp4.300 -> umum Rp6.000, nakes Rp4.700, apotek lain Rp4.300.
+  ketik(dok, 'fbMarkupUmum', '39');
+  ketik(dok, 'fbMarkupNakes', '9');
+  ketik(dok, 'fbMarkupMutasi', '0');
+  assert.equal(ctx.persenMarkupBarang('umum'), 39);
+  assert.equal(ctx.persenMarkupBarang('nakes'), 9);
+  assert.equal(ctx.persenMarkupBarang('mutasi'), 0);
+  assert.equal(ctx.persenMarkupBarang(), null, 'tanpa argumen tingkat, persen tidak diambil dari kolom mana pun');
+  assert.deepEqual([dok.elemen.fbUmum.value, dok.elemen.fbKhusus.value, dok.elemen.fbMutasi.value], ['6000', '4700', '4300']);
+  assert.equal(new Set([dok.elemen.fbUmum.value, dok.elemen.fbKhusus.value, dok.elemen.fbMutasi.value]).size, 3, 'ketiga harga harus berbeda');
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /28,3%/);
+  assert.match(dok.elemen.fbMarginNakes.innerHTML, /8,5%/);
+  assert.match(dok.elemen.fbMarginMutasi.innerHTML, /0,0%/);
+  // Hanya kolom Nakes yang diisi: Umum dan Apotek lain milik pengguna (nilai
+  // awalnya), jadi markup Nakes tidak boleh mengisinya.
+  const lain = bukaForm({ barang: barangContoh({ Harga_Modal: 1000, Harga_Jual_Umum: 0, Harga_Khusus: 0, Harga_Jual_Mutasi: 0 }) });
+  ketik(lain.dok, 'fbMarkupNakes', '10');
+  assert.equal(lain.dok.elemen.fbKhusus.value, '1100');
+  assert.equal(lain.ctx.persenMarkupBarang('umum'), null, 'markup Umum yang kosong dibiarkan kosong');
+  assert.equal(lain.ctx.persenMarkupBarang('mutasi'), null);
+});
+
+test('form Ubah barang: harga manual tidak ditimpa saat markup tingkat lain diubah', () => {
+  const m = bukaForm({ barang: barangContoh({ Harga_Modal: 1000, Harga_Jual_Umum: 1000, Harga_Khusus: 1000, Harga_Jual_Mutasi: 1000 }) });
+  const dok = m.dok;
+  ketik(dok, 'fbUmum', '7000');
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /85,7%/, 'margin diperbarui langsung saat harga diketik');
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /chip-ok/);
+  ketik(dok, 'fbMarkupNakes', '10');
+  assert.equal(dok.elemen.fbKhusus.value, '1100', 'tingkat yang markupnya diubah dihitung ulang');
+  assert.equal(dok.elemen.fbUmum.value, '7000', 'harga manual Umum tidak ditimpa');
+  assert.equal(dok.elemen.fbMutasi.value, '1000', 'tingkat lain tidak disentuh');
+  // Markup Umum diubah lagi: sekarang harga Umum memang boleh dihitung ulang.
+  ketik(dok, 'fbMarkupUmum', '20');
+  assert.equal(dok.elemen.fbUmum.value, '1200', 'markup tingkat itu sendiri yang mengubah harganya');
+  assert.equal(dok.elemen.fbKhusus.value, '1100', 'harga manual Nakes tetap utuh');
+});
+
+test('form Ubah barang: modal kosong atau 0 tidak menghasilkan perhitungan markup', () => {
+  const kosong = bukaForm({ barang: barangContoh({ Harga_Modal: null, Harga_Jual_Umum: 0, Harga_Khusus: 0, Harga_Jual_Mutasi: 0 }) });
+  assert.equal(kosong.dok.elemen.fbModal.value, '');
+  ketik(kosong.dok, 'fbMarkupUmum', '40');
+  assert.equal(kosong.dok.elemen.fbUmum.value, '0', 'modal kosong: harga tidak dihitung');
+  assert.equal(kosong.dok.elemen.fbKhusus.value, '0');
+  assert.match(kosong.dok.elemen.fbCatatan.textContent, /Modal terakhir belum ada/);
+  assert.equal(kosong.catatan.toast[0].buruk, true);
+  assert.match(kosong.catatan.toast[0].pesan, /Modal terakhir belum ada, jadi markup Umum belum bisa dihitung/);
+
+  const nol = bukaForm({ barang: barangContoh({ Harga_Modal: 0, Harga_Jual_Umum: 0, Harga_Khusus: 0, Harga_Jual_Mutasi: 0 }) });
+  ketik(nol.dok, 'fbMarkupNakes', '50');
+  assert.equal(nol.dok.elemen.fbKhusus.value, '0', 'modal 0: markup tidak dihitung');
+  assert.match(nol.dok.elemen.fbMarginNakes.innerHTML, /margin —/);
+  assert.match(nol.dok.elemen.fbCatatan.textContent, /kosong atau 0/);
+  // Modal yang baru diisi langsung dipakai menghitung markup yang sudah diisi.
+  ketik(nol.dok, 'fbModal', '2000');
+  assert.equal(nol.dok.elemen.fbKhusus.value, '3000');
+  assert.match(nol.dok.elemen.fbMarginNakes.innerHTML, /33,3%/);
+});
+
+test('form Ubah barang: pemilih mode tersedia dan menukar mode mengonversi angka, bukan mengosongkan', () => {
+  const m = bukaForm({ barang: barangContoh({ Harga_Modal: 1000, Harga_Jual_Umum: 0, Harga_Khusus: 0, Harga_Jual_Mutasi: 0 }) });
+  const dok = m.dok, ctx = m.ctx;
+  assert.equal(dok.elemen.fbMarkupMode.value, 'persen');
+  assert.equal(ctx.modeMarkupBarang(), 'persen');
+  ketik(dok, 'fbMarkupUmum', '25');
+  assert.equal(dok.elemen.fbUmum.value, '1300', '1.000 + 25% dibulatkan ke atas Rp100');
+  assert.match(dok.elemen.fbMarkupUmumPad.textContent, /1\.25× rasio/);
+  // Pindah ke rasio: angka 25 menjadi 1,25× dan harga jualnya harus tetap sama.
+  tukarMode(dok, 'rasio');
+  assert.equal(ctx.modeMarkupBarang(), 'rasio');
+  assert.equal(dok.elemen.fbMarkupUmum.value, '1.25', 'angka dikonversi, bukan dikosongkan');
+  assert.equal(dok.elemen.fbMarkupUmumLabel.textContent, 'Markup Umum (×)');
+  assert.equal(dok.elemen.fbMarkupUmumPad.textContent, '= 25%');
+  assert.equal(ctx.persenMarkupBarang('umum'), 25);
+  assert.equal(dok.elemen.fbUmum.value, '1300', 'hasil harga jual tidak berubah oleh mode');
+  // Kembali ke persen: 1,25× menjadi 25% lagi.
+  tukarMode(dok, 'persen');
+  assert.equal(dok.elemen.fbMarkupUmum.value, '25');
+  assert.equal(dok.elemen.fbMarkupUmumLabel.textContent, 'Markup Umum (%)');
+  assert.equal(dok.elemen.fbUmum.value, '1300');
+  // Mode juga dikenali dari kolom pilihan, bukan dari nilai tersimpan.
+  dok.elemen.fbMarkupMode.value = 'rasio';
+  assert.equal(ctx.modeMarkupBarang(), 'rasio');
+});
+
+test('form Ubah barang: mode rasio, modal 1.000 dengan markup 2× menghasilkan harga 2.000', async () => {
+  const dok = dokumenFormBarang({ fbModal: '1000', fbMarkupMode: 'rasio' });
+  const m = bukaForm({
+    document: dok,
+    barang: barangContoh({ Harga_Modal: 1000, Harga_Jual_Umum: 0, Harga_Khusus: 0, Harga_Jual_Mutasi: 0 }),
+    api: (aksi) => Promise.resolve(aksi === 'harga.pengaturan'
+      ? persenPengaturan({ mode: 'rasio', markup_umum_persen: 100, markup_nakes_persen: 100, markup_mutasi_persen: 100, pembulatan: 0 })
+      : { rows: [] })
+  });
   await tunggu();
-  assert.equal(kosong.catatan.confirm.length, 0);
-  assert.equal(kosong.catatan.api.length, 0);
-  assert.match(kosong.catatan.toast[0].pesan, /Belum ada harga baru yang diisi/);
+  assert.equal(dok.elemen.fbMarkupUmum.value, '2', 'markup 100% tampil sebagai 2× di mode rasio');
+  assert.equal(dok.elemen.fbUmum.value, '2000');
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /50,0%/, 'margin 2.000 dari modal 1.000');
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /chip-ok/);
+  // Mengubah rasio ke 1,5× -> harga 1.500 dan margin 33,3%.
+  ketik(dok, 'fbMarkupUmum', '1.5');
+  assert.equal(dok.elemen.fbUmum.value, '1500');
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /33,3%/);
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /chip-ok/);
+  // Rasio 1,1× -> 1.100, margin 9,1% (merah).
+  ketik(dok, 'fbMarkupUmum', '1.1');
+  assert.equal(dok.elemen.fbUmum.value, '1100');
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /9,1%/);
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /chip-bad/);
 });
 
-test('Master markup: harga di luar rentang 0–1000% atau tanpa modal ditolak sebelum dikirim', async () => {
-  const { ctx, catatan } = muatMaster({ nilai: { mkAmbang: '20' } });
-  ctx.MARKUP_MASTER_ROWS = [
-    baris('OBT1', 1000, { umum: { lama: 1000 } }, { umum: '500' }),
-    baris('OBT2', 1000, { umum: { lama: 1000 } }, { umum: '20000' }),
-    baris('OBT3', null, { umum: { lama: 1000 } }, { umum: '1500' })
-  ];
-  ctx.simpanMarkupMaster();
-  await tunggu();
-  assert.equal(catatan.confirm.length, 0);
-  assert.equal(catatan.api.length, 0);
-  assert.equal(catatan.toast[0].buruk, true);
-  assert.match(catatan.toast[0].pesan, /belum bisa disimpan/);
+test('form Ubah barang: nilai di luar batas ditolak di kedua mode', () => {
+  const m = bukaForm({ barang: barangContoh({ Harga_Modal: 1000, Harga_Jual_Umum: 0, Harga_Khusus: 0, Harga_Jual_Mutasi: 0 }) });
+  const dok = m.dok, ctx = m.ctx;
+  ketik(dok, 'fbMarkupUmum', '1000');
+  assert.equal(dok.elemen.fbUmum.value, '11000', 'persen 1000% masih sah');
+  ketik(dok, 'fbMarkupUmum', '1001');
+  assert.equal(ctx.persenMarkupBarang('umum'), null);
+  assert.equal(ctx.validMarkupBarang(), false);
+  assert.equal(dok.elemen.fbUmum.value, '11000', 'nilai di luar batas tidak menghasilkan harga baru');
+  assert.match(dok.elemen.fbCatatan.textContent, /di luar batas: persen 0–1000% atau rasio 1–11/);
+  ketik(dok, 'fbMarkupUmum', '-5');
+  assert.equal(ctx.validMarkupBarang(), false);
+  assert.equal(dok.elemen.fbUmum.value, '11000');
+  // Mode rasio: batas 1–11.
+  ketik(dok, 'fbMarkupUmum', '');
+  tukarMode(dok, 'rasio');
+  ketik(dok, 'fbMarkupUmum', '11');
+  assert.equal(ctx.persenMarkupBarang('umum'), 1000);
+  assert.equal(dok.elemen.fbUmum.value, '11000');
+  ketik(dok, 'fbMarkupUmum', '11.5');
+  assert.equal(ctx.persenMarkupBarang('umum'), null);
+  assert.equal(dok.elemen.fbUmum.value, '11000');
+  ketik(dok, 'fbMarkupUmum', '0.9');
+  assert.equal(ctx.persenMarkupBarang('umum'), null);
+  assert.equal(ctx.validMarkupBarang(), false);
+  assert.equal(dok.elemen.fbUmum.value, '11000');
 });
 
-test('Master markup: harga baru yang belum disimpan memberi peringatan saat panel ditutup', async () => {
-  const ditahan = muatMaster({ nilai: { mkAmbang: '20' }, confirm: false });
-  ditahan.ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, { umum: { lama: 1000 } }, { umum: '1500' })];
-  ditahan.ctx.tutupMarkupMaster();
-  assert.equal(ditahan.catatan.confirm.length, 1);
-  assert.match(ditahan.catatan.confirm[0], /belum disimpan/);
-  assert.equal(ditahan.catatan.modalTutup, 0);
-
-  const lanjut = muatMaster({ nilai: { mkAmbang: '20' }, confirm: true });
-  lanjut.ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, { umum: { lama: 1000 } }, { umum: '1500' })];
-  lanjut.ctx.tutupMarkupMaster();
-  assert.equal(lanjut.catatan.modalTutup, 1);
-
-  const bersih = muatMaster({ confirm: false });
-  bersih.ctx.MARKUP_MASTER_ROWS = [baris('OBT1', 1000, { umum: { lama: 1000 } })];
-  bersih.ctx.tutupMarkupMaster();
-  assert.equal(bersih.catatan.confirm.length, 0);
-  assert.equal(bersih.catatan.modalTutup, 1);
+test('form Ubah barang: menukar mode saat angka di luar batas tidak mengubah arti angkanya', () => {
+  const m = bukaForm({ barang: barangContoh({ Harga_Modal: 1000, Harga_Jual_Umum: 1000, Harga_Khusus: 1000, Harga_Jual_Mutasi: 1000 }) });
+  const dok = m.dok;
+  ketik(dok, 'fbMarkupUmum', '2000');
+  assert.equal(dok.elemen.fbUmum.value, '1000');
+  tukarMode(dok, 'rasio');
+  assert.equal(dok.elemen.fbMarkupUmum.value, '2000', 'angka dibiarkan apa adanya supaya tidak berubah arti diam-diam');
+  assert.equal(dok.elemen.fbUmum.value, '1000', 'harga tidak dihitung dari angka yang tidak sah');
+  assert.match(dok.elemen.fbCatatan.textContent, /di luar batas/);
 });
 
-test('Master markup: respons pratinjau yang terlambat diabaikan', () => {
-  assert.match(MASTER, /request = \+\+MARKUP_MASTER_PREVIEW_REQUEST/);
-  assert.match(MASTER, /if \(request !== MARKUP_MASTER_PREVIEW_REQUEST\) return/);
-});
-
-test('Master markup mencari dengan jeda 350 ms dan menolak pencarian terlalu pendek', () => {
-  assert.match(MASTER, /MARKUP_MASTER_SEARCH_TIMER/);
-  assert.match(MASTER, /query\.length < 2/);
-  assert.match(MASTER, /setTimeout\(function \(\) \{ MARKUP_MASTER_SEARCH_TIMER = null; previewMarkupMaster\(\); \}, 350\)/);
-  assert.match(MASTER, /Ketik minimal 2 karakter untuk mencari nama atau kode obat/);
-  assert.match(MASTER, /id="mkCari"/);
-  assert.match(MASTER, /id="mkGol"/);
-  assert.match(MASTER, /id="mkAmbang"[^>]*value="20"/);
-  assert.match(MASTER, /function ambangMarkupMaster\(\)[\s\S]*?return 20;/);
-  assert.match(MASTER, /Margin terendah lebih dulu/);
-});
-
-test('Master markup tidak menambah aksi API baru', () => {
-  const blok = MASTER.slice(MASTER.indexOf('/* --- Daftar kerja markup'), MASTER.indexOf('/* Ubah stok langsung dari Master Barang'));
-  const dipakai = [...blok.matchAll(/api\('([^']+)'/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(dipakai)].sort(), ['barang.list', 'harga.markupPreview', 'harga.markupTerapkan', 'harga.pengaturan']);
-  const aksiHarga = [...API.matchAll(/"(harga\.[A-Za-z]+)"/g)].map((m) => m[1]);
+test('form Ubah barang tidak menyimpan mode/pengaturan cabang dan tidak menambah aksi API baru', () => {
+  const form = extractFunction('formBarang', MASTER);
+  const simpan = form.slice(form.indexOf("api('barang.simpan'"), form.indexOf('}).then(function () {'));
+  assert.match(simpan, /Harga_Jual_Umum: numVal\('fbUmum'\)/);
+  assert.match(simpan, /Harga_Khusus: numVal\('fbKhusus'\)/);
+  assert.match(simpan, /Harga_Jual_Mutasi: numVal\('fbMutasi'\)/);
+  assert.doesNotMatch(simpan, /fbMarkup|markup_/, 'mode dan markup tidak ikut dikirim ke barang.simpan');
+  // Mode hanya pilihan di form: pengaturan cabang tidak pernah ditulis dari sini.
+  assert.doesNotMatch(MASTER, /harga\.simpanPengaturan/);
+  assert.match(MASTER, /harga\.pengaturan/);
+  const blok = MASTER.slice(MASTER.indexOf('/* --- Penetapan harga di form Ubah barang'), MASTER.indexOf('/* Ubah stok langsung dari Master Barang'));
+  const dipakai = [...blok.matchAll(/api\('([^']+)'/g)].map((x) => x[1]);
+  assert.deepEqual([...new Set(dipakai)].sort(), ['harga.pengaturan'], 'blok harga hanya membaca pengaturan lewat aksi lama; harga disimpan lewat barang.simpan di form');
+  // Aksi lama tetap ada di Edge Function; Master Barang berhenti memakainya.
+  const aksiHarga = [...API.matchAll(/"(harga\.[A-Za-z]+)"/g)].map((x) => x[1]);
   assert.deepEqual([...new Set(aksiHarga)].sort(), ['harga.markupPreview', 'harga.markupTerapkan', 'harga.pengaturan', 'harga.simpanPengaturan']);
-  assert.match(API, /p_kode_obat: kode, p_tingkat: tingkat, p_markup_umum_persen: u/);
+});
+
+test('tombol dan panel markup lama sudah tidak ada lagi', () => {
+  // Penanda panel "Barang perlu ditinjau" (PR #94/#96) tidak boleh kembali.
+  for (const penanda of [
+    'bgMarkup', 'Terapkan markup', 'Barang perlu ditinjau', 'MARKUP_MASTER', 'formMarkupMaster',
+    'previewMarkupMaster', 'muatHalamanMarkupMaster', 'gambarMarkupMaster', 'sinkronkanMarkupMaster',
+    'gambarTombolMarkupMaster', 'muatPengaturanMarkupMaster', 'lengkapiGolonganMarkupMaster',
+    'simpanMarkupMaster', 'tutupMarkupMaster', 'isiMarkupMaster', 'boronganMarkupMaster',
+    'ketikMarkupMaster', 'klikMarkupMaster', 'ubahPenyaringMarkupMaster', 'potongMarkupMaster',
+    'htmlBarisMarkupMaster', 'htmlTingkatMarkupMaster', 'htmlIsiMarginMarkupMaster',
+    'urutkanMarkupMaster', 'barisMarkupMasterTampil', 'kodeMarkupMasterTerpilih',
+    'nilaiPersenMarkupMaster', 'persenMarkupMaster', 'teksTombolMarkupMaster',
+    'ambangMarkupMaster', 'marginMarkupMaster', 'marginTerendahMarkupMaster',
+    'SaranMarkupMaster', 'MARKUP_MASTER_SELECTED', 'data-markup', 'mkCari', 'mkGol', 'mkAmbang',
+    'mkPersenUmum', 'mkPersenNakes', 'mkPersenMutasi', 'mkRound', 'mkUrut', 'mkPilihSemua',
+    'mkBorongan', 'mkRingkas', 'mkPreview', 'mkLagi', 'mkApply', 'mkSuggest',
+    'harga.markupPreview', 'harga.markupTerapkan'
+  ]) {
+    assert.doesNotMatch(MASTER, new RegExp(penanda.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `js_master.js tidak boleh memuat ${penanda}`);
+  }
+  assert.doesNotMatch(MASTER, /function \w*MarkupMaster\(/);
+  // Fungsi panel digantikan fungsi form: tiga markup per tingkat tetap dijaga.
+  assert.match(MASTER, /function idMarkupBarang\(t\)/);
+  assert.match(MASTER, /function tingkatHargaBarang\(\)/);
+  assert.match(MASTER, /function hitungMarkupBarang\(manual, ubah\)/);
+  assert.match(MASTER, /function ubahModeMarkupBarang\(manual\)/);
+  // Tombol "Tambah barang" dan tombol Ubah per baris tetap ada.
+  assert.match(MASTER, /id="bgTambah"/);
+  assert.match(MASTER, /<button class="btn btn-sm" data-edit=/);
+  // CSS panel lama ikut dibuang, kelas .suggest milik kasir/Pembelian tetap ada.
+  assert.doesNotMatch(CSS, /\.mk-cari/);
+  assert.doesNotMatch(CSS, /\.mk-suggest/);
+  assert.match(CSS, /\.suggest\{/);
+  assert.match(CSS, /\.beli-suggest\{/);
 });
 
 test('Master Barang memakai istilah "Modal terakhir" dan tidak mengubah istilah Stok & Batch', () => {
@@ -325,14 +534,59 @@ test('Master Barang memakai istilah "Modal terakhir" dan tidak mengubah istilah 
   assert.doesNotMatch(MASTER, /<th class="r">Modal efektif<\/th>/);
   assert.match(MASTER, /<th class="r" title="Biaya modal efektif untuk batch ini setelah PPN dan diskon">Modal efektif batch<\/th>/);
   assert.match(MASTER, /data-label="Modal efektif"/);
-  assert.match(MASTER, /Harga jual berlaku per SKU dan tersimpan di Master Barang/);
   assert.match(MASTER, /sudah termasuk PPN dan sudah dikurangi diskon pembelian/);
-  assert.match(MASTER, /modalBuka\('Barang perlu ditinjau'/);
+  assert.match(MASTER, /Harga jual SKU/);
 });
 
 test('Stock & Batch exposes SKU sale prices and batch margins', () => {
-  assert.match(MASTER, /Harga jual SKU/);
   assert.match(MASTER, /Margin batch/);
   assert.match(MASTER, /Margin_Umum/);
   assert.match(MASTER, /function marginStok/);
+  assert.match(MASTER, /function marginStokCell/);
+});
+
+test('form Ubah barang: tombol Simpan perubahan mengirim harga hasil markup lewat barang.simpan', async () => {
+  const m = bukaForm({ barang: barangContoh({ Harga_Modal: 1000, Harga_Jual_Umum: 0, Harga_Khusus: 0, Harga_Jual_Mutasi: 0 }) });
+  const dok = m.dok;
+  ketik(dok, 'fbMarkupUmum', '25');
+  ketik(dok, 'fbMarkupNakes', '10');
+  assert.equal(dok.elemen.fbUmum.value, '1300');
+  assert.equal(dok.elemen.fbKhusus.value, '1100');
+  const simpan = m.catatan.modal[0].tombol.filter((t) => t.label === 'Simpan perubahan')[0];
+  assert.ok(simpan, 'form Ubah barang menyediakan tombol Simpan perubahan');
+  simpan.aksi();
+  await tunggu();
+  const kirim = m.catatan.api.filter((x) => x.aksi === 'barang.simpan')[0];
+  assert.ok(kirim, 'harga dikirim lewat aksi lama barang.simpan');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify({ mode: kirim.data.mode, modal: kirim.data.Harga_Modal, umum: kirim.data.Harga_Jual_Umum, khusus: kirim.data.Harga_Khusus, mutasi: kirim.data.Harga_Jual_Mutasi })),
+    { mode: 'edit', modal: 1000, umum: 1300, khusus: 1100, mutasi: 0 }
+  );
+  assert.equal(m.catatan.modalTutup, 1);
+  assert.match(m.catatan.toast.map((t) => t.pesan).join(' '), /Barang tersimpan/);
+});
+
+test('form Tambah barang baru: modal diisi, markup langsung mengisi harga jual', () => {
+  const m = bukaForm({ barang: null });
+  const dok = m.dok;
+  assert.equal(m.catatan.modal[0].judul, 'Tambah barang baru');
+  assert.equal(dok.elemen.fbModal.value, '');
+  ketik(dok, 'fbMarkupUmum', '25');
+  assert.equal(dok.elemen.fbUmum.value, '0', 'tanpa modal belum ada harga yang dihitung');
+  ketik(dok, 'fbModal', '4000');
+  assert.equal(dok.elemen.fbUmum.value, '5000', 'modal 4.000 + 25% dibulatkan ke atas Rp100');
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /20,0%/);
+  assert.match(dok.elemen.fbMarginUmum.innerHTML, /chip-ok/);
+  assert.match(dok.elemen.fbCatatan.textContent, /Markup dihitung dari Modal terakhir/);
+});
+
+test('form Ubah barang meng-escape teks dari data dan tidak merusak struktur modal', () => {
+  const m = bukaForm({ barang: barangContoh({ Nama_Obat: '<b>Obat</b> & "lain"', Kode_Obat: '<x>', Kategori: '<i>k</i>' }) });
+  const html = m.catatan.modal[0].html;
+  assert.doesNotMatch(html, /<b>Obat<\/b>/);
+  assert.match(html, /&lt;b&gt;Obat&lt;\/b&gt;/);
+  assert.doesNotMatch(html, /<x>/);
+  assert.doesNotMatch(html, /<i>k<\/i>/);
+  assert.equal((html.match(/<label/g) || []).length, (html.match(/<\/label>/g) || []).length);
+  assert.equal((html.match(/<input/g) || []).length, (html.match(/<input[^>]*>/g) || []).length, 'setiap input ditutup ">"');
 });

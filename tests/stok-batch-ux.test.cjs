@@ -52,15 +52,56 @@ function simpanFormBatch(state) {
   return state;
 }
 
-/** Jalankan muatStok() dengan DOM dan api tiruan untuk memeriksa baris yang dirender. */
-function jalankanMuatStok(rows, opsi) {
+/** Fungsi global Stok & Batch yang ikut dijalankan di vm (perilaku nyata, bukan tiruan). */
+const FUNGSI_STOK = [
+  'muatStok', 'gambarPagerStok', 'marginStok', 'marginStokChip', 'marginStokCell', 'marginTinjauStok',
+  'tipePerluTinjauStok', 'perluTinjauStok', 'ambangTinjauBawaan', 'ambangTinjauStok', 'ambangTinjauSatu',
+  'tinjauStokBadge', 'pesanKosongStok'
+];
+
+/** Daftar tipe pelanggan diambil dari sumbernya supaya tidak ada daftar kembar di uji. */
+const SUMBER_TIPE_STOK = js.match(/var STOK_TINJAU_TIPE = \[[\s\S]*?\];/)[0];
+
+/** Ambil source satu fungsi global dengan mencocokkan kurung kurawal penutupnya. */
+function sumberFungsiAman(nama) {
+  const awal = js.indexOf('function ' + nama + '(');
+  assert.notEqual(awal, -1, 'fungsi ' + nama + ' ada di js_master.js');
+  let dalam = 0;
+  for (let i = js.indexOf('{', awal); i < js.length; i++) {
+    if (js[i] === '{') dalam++;
+    else if (js[i] === '}') {
+      dalam--;
+      if (dalam === 0) return js.slice(awal, i + 1);
+    }
+  }
+  throw new Error('fungsi ' + nama + ' tidak tertutup');
+}
+
+/**
+ * Jalankan muatStok() dengan DOM dan api tiruan untuk memeriksa baris yang dirender.
+ * Opsi: sembunyikanKosong (sakelar stKosong), tinjau (sakelar stTinjau), ambang (isi
+ * kolom stTinjauAmbang), halaman(offset) untuk mengganti respons api per halaman.
+ */
+function jalankanMuatStokLengkap(rows, opsi) {
   opsi = opsi || {};
+  /** opsi.ambang boleh angka (semua tipe) atau objek { Umum, Nakes, Mutasi }. */
+  const nilaiAmbang = function (kunci) {
+    if (typeof opsi.ambang === 'number') return String(opsi.ambang);
+    const isi = (opsi.ambang || {})[kunci];
+    return isi == null ? '20' : String(isi);
+  };
   const dom = {
     stBody: { innerHTML: '' },
+    stPager: { innerHTML: '' },
     stHint: { textContent: '' },
     stKritis: { checked: false },
-    stKosong: { checked: opsi.sembunyikanKosong !== false }
+    stKosong: { checked: opsi.sembunyikanKosong !== false },
+    stTinjau: { checked: !!opsi.tinjau },
+    stTinjauAmbangUmum: { value: nilaiAmbang('Umum') },
+    stTinjauAmbangNakes: { value: nilaiAmbang('Nakes') },
+    stTinjauAmbangMutasi: { value: nilaiAmbang('Mutasi') }
   };
+  const panggilan = [];
   const context = vm.createContext({
     STOK_LIMIT: 50,
     STOK_OFFSET: 0,
@@ -68,14 +109,16 @@ function jalankanMuatStok(rows, opsi) {
     val: function (id) {
       if (id === 'stStatus') return 'semua';
       if (id === 'stUrut') return 'nama';
+      if (dom[id] && dom[id].value != null) return String(dom[id].value);
       return '';
     },
-    api: function () {
+    api: function (nama, isi) {
+      panggilan.push({ nama: nama, isi: isi });
+      const res = opsi.halaman
+        ? opsi.halaman(Number(isi.offset || 0))
+        : { rows: rows, total: rows.length, limit: 50, offset: 0, page_count: rows.length, has_more: false };
       return {
-        then: function (cb) {
-          cb({ rows: rows, total: rows.length, limit: 50, offset: 0, page_count: rows.length, has_more: false });
-          return { catch: function () {} };
-        }
+        then: function (cb) { cb(res); return { catch: function () {} }; }
       };
     },
     esc: function (v) { return String(v == null ? '' : v); },
@@ -83,16 +126,20 @@ function jalankanMuatStok(rows, opsi) {
     rupiah: function (v) { return String(v); },
     tglIndo: function (v) { return String(v || ''); },
     chipExpired: function () { return ''; },
-    marginStokCell: function () { return ''; },
-    gambarPagerStok: function () {},
     tabelKosong: function (pesan, kolom) {
       return '<tr><td colspan="' + (kolom || 8) + '" class="empty">' + pesan + '</td></tr>';
     },
-    Number: Number, String: String, Math: Math
+    isFinite: isFinite, Number: Number, String: String, Math: Math
   });
-  vm.runInContext(sumberFungsi('muatStok'), context);
+  for (const nama of FUNGSI_STOK) vm.runInContext(sumberFungsiAman(nama), context);
+  vm.runInContext(SUMBER_TIPE_STOK, context);
   context.muatStok(0);
-  return dom.stBody.innerHTML;
+  return { html: dom.stBody.innerHTML, pager: dom.stPager.innerHTML, hint: dom.stHint.textContent, panggilan: panggilan };
+}
+
+/** HTML baris tabel hasil muatStok() saja (kontrak lama tetap dipertahankan). */
+function jalankanMuatStok(rows, opsi) {
+  return jalankanMuatStokLengkap(rows, opsi).html;
 }
 
 /** Atribut boolean pada tag <input id="..."> hasil render modal. */
@@ -254,4 +301,223 @@ test('sakelar stKosong aktif bawaan dan menyaring baris berstok nol', () => {
 
   const kosongSemua = jalankanMuatStok([rows[1]]);
   assert.match(kosongSemua, /berstok 0 dan disembunyikan/);
+});
+
+/* ------------------------------------------- Penyaring "Perlu ditinjau" --- */
+
+/**
+ * Baris ujian penyaring per tipe. Angka Margin_* di sini adalah angka yang sama
+ * dengan yang dirender kolom "Margin batch", jadi hasil penyaringan bisa
+ * dibandingkan langsung dengan isi kolom.
+ */
+const BARIS_TINJAU = [
+  { Nama_Obat: 'Lolos semua tipe', Kode_Obat: 'OB1', Kode_Batch: 'B1', Expired_Date: '2027-01-01', Stok_Real: 5, Harga_Modal_Batch: 5000, Margin_Umum: 40, Margin_Nakes: 35, Margin_Mutasi: 30 },
+  { Nama_Obat: 'Gagal di Nakes', Kode_Obat: 'OB2', Kode_Batch: 'B2', Expired_Date: '2027-01-01', Stok_Real: 4, Harga_Modal_Batch: 9000, Margin_Umum: 30, Margin_Nakes: 5, Margin_Mutasi: 25 },
+  { Nama_Obat: 'Gagal di Apotek lain', Kode_Obat: 'OB3', Kode_Batch: 'B3', Expired_Date: '2027-01-01', Stok_Real: 3, Harga_Modal_Batch: 9000, Margin_Umum: 30, Margin_Nakes: 25, Margin_Mutasi: 2 },
+  { Nama_Obat: 'Margin negatif', Kode_Obat: 'OB4', Kode_Batch: 'B4', Expired_Date: '2027-01-01', Stok_Real: 2, Harga_Modal_Batch: 12000, Margin_Umum: -15, Margin_Nakes: -20, Margin_Mutasi: -25 },
+  { Nama_Obat: 'Modal kosong', Kode_Obat: 'OB5', Kode_Batch: 'B5', Expired_Date: '2027-01-01', Stok_Real: 1, Harga_Modal_Batch: null, Margin_Umum: null, Margin_Nakes: null, Margin_Mutasi: null }
+];
+
+/** Ambang uji bawaan: sama untuk ketiga tipe, seperti nilai bawaan di aplikasi. */
+const AMBANG_UJI = { Umum: 20, Nakes: 20, Mutasi: 20 };
+
+/** Hitung sendiri dari angka kolom: perlu ditinjau bila satu tipe saja di bawah ambangnya. */
+function perluTinjauDariKolom(row, ambang) {
+  return ['Umum', 'Nakes', 'Mutasi'].some(function (kunci) {
+    const m = row['Margin_' + kunci];
+    return m == null || m < ambang[kunci];
+  });
+}
+
+/** Render layar Stok & Batch utuh dengan DOM tiruan; dipakai memeriksa deretan penyaring. */
+function renderStok() {
+  const dom = {};
+  const elemenKosong = function () {
+    return {
+      innerHTML: '', textContent: '', value: '', checked: false, placeholder: '',
+      onclick: null, onchange: null, oninput: null,
+      addEventListener: function () {}, closest: function () { return null; }
+    };
+  };
+  const context = vm.createContext({
+    VIEWS: {},
+    document: { getElementById: function (id) { if (!dom[id]) dom[id] = elemenKosong(); return dom[id]; } },
+    val: function () { return ''; },
+    api: function () { return { then: function () { return { catch: function () {} }; } }; },
+    esc: function (v) { return String(v == null ? '' : v); },
+    angka: function (v) { return String(v); },
+    rupiah: function (v) { return String(v); },
+    tglIndo: function (v) { return String(v || ''); },
+    chipExpired: function () { return ''; },
+    tabelKosong: function () { return ''; },
+    clearTimeout: function () {}, setTimeout: function () {},
+    isFinite: isFinite, Number: Number, String: String, Math: Math
+  });
+  vm.runInContext(js, context);
+  vm.runInContext('VIEWS.stok.render(document.getElementById("app"))', context);
+  return dom.app.innerHTML;
+}
+
+test('penyaring "Perlu ditinjau" tersedia di Stok & Batch, mati bawaan, dengan satu ambang per tipe', () => {
+  const html = renderStok();
+  const tag = html.match(/<input id="stTinjau"[^>]*>/);
+  assert.ok(tag, 'sakelar "Perlu ditinjau" dirender di deretan penyaring Stok & Batch');
+  assert.equal(/\bchecked\b/.test(tag[0]), false, 'sakelar "Perlu ditinjau" mati secara bawaan');
+  assert.match(html, /Sembunyikan stok kosong/);
+
+  // Tiga kolom ambang, satu per tipe, masing-masing bertipe number dengan bawaan 20%.
+  for (const [label, id] of [['Umum', 'stTinjauAmbangUmum'], ['Nakes', 'stTinjauAmbangNakes'], ['Apotek lain', 'stTinjauAmbangMutasi']]) {
+    const input = html.match(new RegExp('<input id="' + id + '"[^>]*>'));
+    assert.ok(input, 'kolom ambang ' + label + ' dirender');
+    assert.match(input[0], /type="number"/);
+    assert.match(input[0], /value="20"/, 'ambang ' + label + ' bawaan 20%');
+    assert.match(html, new RegExp(label + ' <input id="' + id + '"'), 'label ' + label + ' menempel pada kolomnya');
+  }
+  assert.equal((html.match(/<input id="stTinjauAmbang/g) || []).length, 3, 'tepat tiga kolom ambang');
+
+  // Angka bawaan 20% hanya hidup di satu fungsi kecil yang mudah diganti sumbernya.
+  assert.match(js, /function ambangTinjauBawaan\(\) \{\s+return \{ Umum: 20, Nakes: 20, Mutasi: 20 \};/);
+  assert.equal((js.match(/Umum: 20, Nakes: 20, Mutasi: 20/g) || []).length, 1, 'bawaan 20% tidak disebar');
+  assert.match(js, /label: 'Apotek lain'/, 'tipe ketiga dilabeli "Apotek lain" seperti Master Barang');
+
+  assert.match(js, /document\.getElementById\('stTinjau'\)\.onchange = function \(\) \{ muatStok\(0\); \}/);
+  assert.match(js, /var tinjauAktif = document\.getElementById\('stTinjau'\)\.checked;/);
+  assert.match(js, /perluTinjauStok\(s, ambangTinjau\)/);
+  // Penyaring hanya di sisi tampilan: tidak ada nama aksi API baru.
+  assert.doesNotMatch(js, /api\('stok\.tinjau/);
+});
+
+test('baris tampil bila satu tipe gagal di ambang tipe itu, dan hilang bila ketiganya lolos', () => {
+  const mati = jalankanMuatStok(BARIS_TINJAU);
+  for (const row of BARIS_TINJAU) assert.ok(mati.includes(row.Nama_Obat), row.Nama_Obat + ' tampil saat penyaring mati');
+
+  const aktif = jalankanMuatStok(BARIS_TINJAU, { tinjau: true });
+  assert.ok(!aktif.includes('Lolos semua tipe'), 'lolos di ketiga tipe disembunyikan');
+  assert.ok(aktif.includes('Gagal di Nakes'), 'lolos di Umum tetapi gagal di Nakes tetap tampil');
+  assert.ok(aktif.includes('Gagal di Apotek lain'), 'lolos di Nakes tetapi gagal di Apotek lain tetap tampil');
+  assert.ok(aktif.includes('Margin negatif'), 'margin negatif tetap tampil');
+  assert.ok(aktif.includes('Modal kosong'), 'baris bermodal kosong tetap tampil');
+
+  // Setiap baris cocok dengan perhitungan dari angka kolom "Margin batch".
+  for (const row of BARIS_TINJAU) {
+    assert.equal(aktif.includes(row.Nama_Obat), perluTinjauDariKolom(row, AMBANG_UJI),
+      row.Nama_Obat + ' sesuai angka kolom Margin batch');
+  }
+});
+
+test('penanda menyebut tipe yang memicu dan angkanya sama dengan kolom "Margin batch"', () => {
+  const aktif = jalankanMuatStok(BARIS_TINJAU, { tinjau: true });
+  const baris = function (nama) {
+    const mulai = aktif.indexOf(nama);
+    assert.notEqual(mulai, -1, 'baris ' + nama + ' ada');
+    return aktif.slice(mulai, aktif.indexOf('</tr>', mulai));
+  };
+  assert.match(baris('Gagal di Nakes'), /Nakes: 5,0% < 20,0%/, 'penanda menyebut Nakes beserta angkanya');
+  assert.doesNotMatch(baris('Gagal di Nakes'), /Umum: /, 'Umum 30% yang lolos tidak ikut ditandai');
+  assert.match(baris('Gagal di Apotek lain'), /Apotek lain: 2,0% < 20,0%/, 'penanda menyebut Apotek lain');
+  assert.match(baris('Margin negatif'), /Umum: -15,0% < 20,0%/, 'penanda margin negatif memakai angkanya');
+  assert.match(baris('Modal kosong'), /Modal batch kosong/);
+
+  // Angka di penanda identik dengan chip di kolom Margin batch baris yang sama.
+  for (const [nama, angka] of [['Gagal di Nakes', '5,0%'], ['Gagal di Apotek lain', '2,0%'], ['Margin negatif', '-15,0%']]) {
+    const jumlah = (baris(nama).match(new RegExp(angka, 'g')) || []).length;
+    assert.ok(jumlah >= 2, 'kolom dan penanda memakai angka ' + angka + ' yang sama pada ' + nama);
+  }
+
+  // Tanpa penyaring, tidak ada penanda tambahan.
+  assert.doesNotMatch(jalankanMuatStok(BARIS_TINJAU), /st-tinjau-badge/);
+});
+
+test('mengubah salah satu ambang hanya menggeser tipe itu', () => {
+  // Ambang Nakes diturunkan ke 3%: baris dengan Nakes 5% kembali lolos di semua tipe.
+  const longgar = jalankanMuatStok(BARIS_TINJAU, { tinjau: true, ambang: { Nakes: 3 } });
+  assert.ok(!longgar.includes('Gagal di Nakes'), 'Nakes 5% tidak lagi di bawah ambang 3%');
+  assert.ok(longgar.includes('Gagal di Apotek lain'), 'ambang Apotek lain tidak ikut berubah');
+
+  // Ambang Umum dinaikkan ke 35%: Umum 40% masih aman, Umum 30% ikut memicu.
+  const ketat = jalankanMuatStok(BARIS_TINJAU, { tinjau: true, ambang: { Umum: 35 } });
+  assert.ok(!ketat.includes('Lolos semua tipe'), 'Umum 40% masih di atas ambang 35%');
+  assert.match(ketat, /Umum: 30,0% < 35,0%/, 'penanda memakai ambang baru');
+
+  // Ambang kosong atau tidak sah kembali ke bawaan 20%.
+  const bawaan = jalankanMuatStok(BARIS_TINJAU, { tinjau: true, ambang: { Nakes: '', Mutasi: 'abc' } });
+  assert.match(bawaan, /Nakes: 5,0% < 20,0%/, 'ambang kosong kembali ke bawaan');
+  assert.match(bawaan, /Apotek lain: 2,0% < 20,0%/, 'ambang tidak sah kembali ke bawaan');
+});
+
+test('baris yang harganya belum ada tetap tampil dan ditandai, bukan dibuang', () => {
+  const aktif = jalankanMuatStok(BARIS_TINJAU, { tinjau: true });
+  assert.ok(aktif.includes('Modal kosong'));
+  assert.match(aktif, /Modal batch kosong/);
+  assert.match(aktif, /st-tinjau-badge/);
+
+  const tanpaHarga = jalankanMuatStok([{
+    Nama_Obat: 'Harga Nakes kosong', Kode_Obat: 'OB8', Kode_Batch: 'B8', Expired_Date: '2027-01-01',
+    Stok_Real: 2, Harga_Modal_Batch: 5000, Margin_Umum: 40, Margin_Nakes: null, Margin_Mutasi: 30
+  }], { tinjau: true });
+  assert.match(tanpaHarga, /Harga Nakes kosong/, 'harga satu tipe yang kosong tetap ditinjau');
+  assert.match(tanpaHarga, /Nakes: harga jual belum ada/);
+});
+
+test('penyaring "Perlu ditinjau" bekerja bersama sakelar "Sembunyikan stok kosong"', () => {
+  const rows = BARIS_TINJAU.concat([
+    { Nama_Obat: 'Kosong perlu tinjau', Kode_Obat: 'OB6', Kode_Batch: 'B6', Expired_Date: '2027-01-01', Stok_Real: 0, Harga_Modal_Batch: 8000, Margin_Umum: -3, Margin_Nakes: 10, Margin_Mutasi: 25 },
+    { Nama_Obat: 'Kosong lolos tipe', Kode_Obat: 'OB7', Kode_Batch: 'B7', Expired_Date: '2027-01-01', Stok_Real: 0, Harga_Modal_Batch: 8000, Margin_Umum: 60, Margin_Nakes: 60, Margin_Mutasi: 60 }
+  ]);
+
+  const keduanya = jalankanMuatStokLengkap(rows, { tinjau: true });
+  assert.ok(!keduanya.html.includes('Kosong perlu tinjau'), 'stok 0 tetap disembunyikan stKosong');
+  assert.ok(!keduanya.html.includes('Kosong lolos tipe'), 'stok 0 yang lolos tipe tetap disembunyikan');
+  assert.ok(keduanya.html.includes('Gagal di Nakes') && keduanya.html.includes('Modal kosong'));
+  assert.match(keduanya.pager, /baris berstok 0 disembunyikan/);
+  assert.match(keduanya.pager, /baris margin di atas ambang disembunyikan/);
+
+  const hanyaTinjau = jalankanMuatStokLengkap(rows, { tinjau: true, sembunyikanKosong: false });
+  assert.ok(hanyaTinjau.html.includes('Kosong perlu tinjau'), 'stKosong mati menampilkan stok 0 yang perlu ditinjau');
+  assert.ok(!hanyaTinjau.html.includes('Kosong lolos tipe'), 'stok 0 yang lolos tipe tetap disaring penyaring tinjau');
+  assert.doesNotMatch(hanyaTinjau.pager, /baris berstok 0 disembunyikan/);
+
+  const hanyaKosong = jalankanMuatStokLengkap(rows, { tinjau: false });
+  assert.ok(hanyaKosong.html.includes('Lolos semua tipe'), 'tinjau mati: baris sehat kembali tampil');
+  assert.ok(!hanyaKosong.html.includes('Kosong lolos tipe'), 'stKosong tetap bekerja sendiri');
+  assert.doesNotMatch(hanyaKosong.pager, /margin di atas ambang disembunyikan/);
+  assert.match(hanyaKosong.pager, /baris berstok 0 disembunyikan/);
+
+  // Penyaring ini hanya menyaring tampilan: permintaan ke api tidak berubah.
+  const kirim = jalankanMuatStokLengkap(BARIS_TINJAU, { tinjau: true }).panggilan;
+  assert.equal(kirim.length, 1);
+  assert.equal(kirim[0].nama, 'stok.list');
+  assert.deepEqual(Object.keys(kirim[0].isi).sort(), ['jenis', 'kritis', 'limit', 'offset', 'q', 'sort', 'status']);
+});
+
+test('catatan jumlah baris yang disembunyikan muncul seperti pola sakelar stok kosong', () => {
+  const aktif = jalankanMuatStokLengkap(BARIS_TINJAU, { tinjau: true });
+  assert.match(aktif.pager, /1 baris margin di atas ambang disembunyikan/);
+  assert.doesNotMatch(jalankanMuatStokLengkap(BARIS_TINJAU).pager, /margin di atas ambang disembunyikan/,
+    'catatan tidak muncul saat penyaring mati');
+
+  const sehat2 = Object.assign({}, BARIS_TINJAU[0], { Nama_Obat: 'Lolos semua tipe juga', Margin_Umum: 50, Margin_Nakes: 50, Margin_Mutasi: 50 });
+  const dua = jalankanMuatStokLengkap([BARIS_TINJAU[0], sehat2, BARIS_TINJAU[1]], { tinjau: true });
+  assert.match(dua.pager, /2 baris margin di atas ambang disembunyikan/);
+});
+
+test('halaman yang tersaring habis karena "Perlu ditinjau" maju otomatis ke halaman berikutnya', () => {
+  const hasil = jalankanMuatStokLengkap([], {
+    tinjau: true,
+    halaman: function (offset) {
+      return offset === 0
+        ? { rows: [BARIS_TINJAU[0]], total: 2, limit: 50, offset: 0, page_count: 1, has_more: true, next_offset: 50 }
+        : { rows: [BARIS_TINJAU[1]], total: 2, limit: 50, offset: offset, page_count: 1, has_more: false };
+    }
+  });
+  assert.ok(hasil.html.includes('Gagal di Nakes'), 'halaman berikutnya dimuat otomatis');
+  assert.doesNotMatch(hasil.html, /tidak lolos penyaring/);
+});
+
+test('halaman yang seluruhnya tersaring memberi pesan yang menyebut penyaring Perlu ditinjau', () => {
+  const hasil = jalankanMuatStokLengkap([BARIS_TINJAU[0]], { tinjau: true });
+  assert.match(hasil.html, /tidak lolos penyaring "Perlu ditinjau"/);
+  assert.match(hasil.hint, /Umum, Nakes, Apotek lain/);
+  assert.match(hasil.pager, /1 baris margin di atas ambang disembunyikan/);
+  assert.doesNotMatch(hasil.pager, /berstok 0/, 'catatan stok kosong tidak dipakai saat penyebabnya ambang margin');
 });
