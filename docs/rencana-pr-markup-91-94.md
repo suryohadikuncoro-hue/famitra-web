@@ -23,6 +23,9 @@ Margin → dihitung per batch
 - Perubahan Edge Function pada PR #90 memerlukan deploy function `api`, tetapi tidak memerlukan `db push`.
 - PR #91 sudah diimplementasikan pada branch `feat/markup-ux-improvement` dan siap dibuat menjadi pull request.
 - PR #91 hanya mengubah frontend dan test; tidak mengubah Edge Function atau database.
+- PR #91 sudah di-merge ke `main` pada commit `f0b49b4`.
+- PR #92 sudah diimplementasikan pada branch `feat/test-stok-pricing-contract` dan siap dibuat menjadi pull request.
+- PR #92 hanya menambahkan regression test kontrak API; tidak mengubah production code, Edge Function, atau database.
 
 ---
 
@@ -189,6 +192,28 @@ Dokumentasikan dan uji field berikut:
 - `Margin_Mutasi`;
 - `Belum_Ada_Batch`.
 
+### Implementasi PR #92
+
+File baru:
+
+```text
+tests/stok-pricing-contract.test.cjs
+```
+
+Test mencakup enam area: kontrak field response, rumus margin, pemetaan harga SKU, seluruh jalur query `stok.list`, pagination/isolasi cabang, serta semantics barang tanpa batch dan modal tidak tersedia.
+
+Validasi lokal PR #92:
+
+```text
+node --test tests/*.test.cjs      → 120 lulus
+node tools/test-pembelian.cjs     → lulus
+node --check public/js_master.js  → lulus
+node --check public/js_trx.js     → lulus
+git diff --check                  → lulus
+```
+
+PR #92 tidak memerlukan deployment production. Jika nanti kontrak API diubah sebagai tindak lanjut test, barulah deploy Edge Function `api` perlu dipertimbangkan.
+
 ### 2. Pengujian rumus margin
 
 Rumus yang harus dipertahankan:
@@ -245,14 +270,14 @@ Pastikan endpoint:
 
 ## Acceptance criteria PR #92
 
-- [ ] Kontrak response `stok.list` terdokumentasi dalam test.
-- [ ] Semua kasus rumus margin utama memiliki test.
-- [ ] Nilai tidak diketahui tetap `NULL`/`—`, bukan 0 palsu.
-- [ ] Harga jual terbukti berasal dari `master_barang`.
-- [ ] Modal terbukti berasal dari batch yang sedang ditampilkan.
-- [ ] Filter dan pagination memiliki coverage.
-- [ ] Isolasi cabang memiliki coverage.
-- [ ] Test lama seluruh repository tetap lulus.
+- [x] Kontrak response `stok.list` terdokumentasi dalam test.
+- [x] Semua kasus rumus margin utama memiliki test.
+- [x] Nilai tidak diketahui tetap `NULL`/`—`, bukan 0 palsu.
+- [x] Harga jual terbukti berasal dari `master_barang`.
+- [x] Modal terbukti berasal dari batch yang sedang ditampilkan.
+- [x] Filter dan pagination memiliki coverage.
+- [x] Isolasi cabang memiliki coverage.
+- [x] Test lama seluruh repository tetap lulus.
 
 ## Deployment PR #92
 
