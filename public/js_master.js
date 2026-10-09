@@ -751,17 +751,71 @@ VIEWS.crm = {
 VIEWS.marketing = {
   title: 'Marketing',
   render: function (el) {
+    var isOwner = SESSION && SESSION.user && SESSION.user.role === 'Owner';
     el.innerHTML =
-      '<div class="crm-shell">' +
-      '<div class="crm-head"><div><div class="eyebrow">MARKETING PERFORMANCE</div><h2>Marketing</h2><p class="sub">Kelola kampanye, kupon, fixed bundle, dan ukur efektivitas promosi per cabang.</p></div>' +
-      '<button id="lotOpen" class="btn btn-primary">Kupon Undian</button></div>' +
-      '<div id="crmPromoCard" class="card crm-refill" style="display:none"><div class="card-head"><div><h3>Manajemen Promo</h3><p class="sub">Buat kupon berdasarkan segmen pelanggan.</p></div><button id="crmBundleTambah" class="btn btn-sm">+ Bundle</button><button id="crmPromoTambah" class="btn btn-primary">+ Kampanye</button></div><div id="crmPromoForm" class="crm-refill-form" hidden></div><div id="crmPromoList" class="crm-refill-list"></div><div id="crmBundleList" class="crm-refill-list"></div></div>'  + '<div id=\"crmPromoReportCard\" class=\"card crm-directory\" style=\"display:none\"><div class=\"card-head\"><div><h3>Efektivitas kampanye</h3><p class=\"sub\">Pantau penggunaan kupon, pelanggan unik, dan total subsidi promo.</p></div><button id=\"crmPromoReportRefresh\" class=\"btn btn-sm\">Muat ulang</button></div><div id=\"crmPromoReportKpi\" class=\"crm-kpi-grid\"></div><div id=\"crmPromoCampaignSummary\" style=\"margin:14px 0\"></div><div class=\"table-wrap\"><table><thead><tr><th>Tanggal</th><th>Kampanye</th><th>Kupon</th><th>Pelanggan</th><th>Invoice</th><th class=\"r\">Diskon</th><th>Status</th></tr></thead><tbody id=\"crmPromoReportBody\"></tbody></table></div></div>' +
+      '<div class="crm-shell marketing-shell">' +
+        '<section class="marketing-hero">' +
+          '<div class="marketing-hero-copy">' +
+            '<div class="marketing-eyebrow"><span class="marketing-live-dot"></span> MARKETING WORKSPACE</div>' +
+            '<h2>Marketing &amp; Promosi</h2>' +
+            '<p>Kelola kampanye, kupon, bundle, dan loyalitas pelanggan dari satu tempat. Pantau hasilnya agar setiap promo punya tujuan yang jelas.</p>' +
+            '<div class="marketing-hero-meta"><span>◷ Performa promo</span><span>↗ Aktivasi pelanggan</span><span>◎ Loyalitas</span></div>' +
+          '</div>' +
+          '<div class="marketing-hero-actions">' +
+            '<button id="crmPromoTambahHero" class="btn btn-primary"><span aria-hidden="true">＋</span> Buat kampanye</button>' +
+            '<button id="lotOpen" class="btn marketing-btn-ghost">Kupon undian <span aria-hidden="true">↗</span></button>' +
+          '</div>' +
+          '<div class="marketing-hero-orb marketing-orb-one"></div><div class="marketing-hero-orb marketing-orb-two"></div>' +
+        '</section>' +
+        '<section class="marketing-shortcuts" aria-label="Akses cepat">' +
+          '<button type="button" class="marketing-shortcut" data-marketing-jump="marketing-campaign-section"><span class="marketing-shortcut-icon icon-promo">%</span><span><strong>Promo &amp; bundle</strong><small>Buat dan kelola penawaran</small></span><span class="marketing-shortcut-arrow">→</span></button>' +
+          '<button type="button" class="marketing-shortcut" data-marketing-jump="marketing-report-section"><span class="marketing-shortcut-icon icon-report">↗</span><span><strong>Efektivitas promo</strong><small>Pantau omzet dan ROI</small></span><span class="marketing-shortcut-arrow">→</span></button>' +
+          '<button type="button" class="marketing-shortcut" id="marketingShortcutLottery"><span class="marketing-shortcut-icon icon-lottery">✦</span><span><strong>Kupon undian</strong><small>Campaign, peserta, pemenang</small></span><span class="marketing-shortcut-arrow">→</span></button>' +
+          (isOwner ? '<button type="button" class="marketing-shortcut" data-marketing-jump="mpCard"><span class="marketing-shortcut-icon icon-loyalty">♡</span><span><strong>Poin &amp; reward</strong><small>Program loyalitas pelanggan</small></span><span class="marketing-shortcut-arrow">→</span></button>' : '') +
+          (isOwner && MENU.some(function (m) { return m.id === 'targetOmset'; }) ? '<button type="button" class="marketing-shortcut" id="marketingShortcutTarget"><span class="marketing-shortcut-icon icon-target">◎</span><span><strong>Target omset</strong><small>Target dan laba setelah target</small></span><span class="marketing-shortcut-arrow">→</span></button>' : '') +
+        '</section>' +
+        '<div class="marketing-section-heading"><div><span class="marketing-section-kicker">KELOLA AKTIVITAS</span><h3>Promo yang sedang berjalan</h3><p class="sub">Atur penawaran untuk pelanggan dan evaluasi dampaknya.</p></div>' +
+          '<button id="crmPromoTambah" class="btn btn-primary">＋ Kampanye baru</button>' +
+        '</div>' +
+        '<section id="marketing-campaign-section" class="marketing-panel-wrap">' +
+          '<div id="crmPromoCard" class="card crm-refill marketing-panel" style="display:none">' +
+            '<div class="card-head"><div><h3>Manajemen promo</h3><p class="sub">Kelola kupon berdasarkan segmen pelanggan serta fixed bundle.</p></div><div class="marketing-panel-actions"><button id="crmBundleTambah" class="btn btn-sm">＋ Bundle</button></div></div>' +
+            '<div id="crmPromoForm" class="crm-refill-form" hidden></div>' +
+            '<div id="crmPromoList" class="crm-refill-list"></div>' +
+            '<div id="crmBundleList" class="crm-refill-list"></div>' +
+          '</div>' +
+        '</section>' +
+        '<section id="marketing-report-section" class="marketing-panel-wrap">' +
+          '<div class="marketing-section-heading marketing-report-heading"><div><span class="marketing-section-kicker">HASIL &amp; ANALITIK</span><h3>Efektivitas kampanye</h3><p class="sub">Lihat pendapatan, subsidi diskon, laba, ROAS, dan ROI promo.</p></div><button id="crmPromoReportRefresh" class="btn btn-sm">↻ Muat ulang</button></div>' +
+          '<div id="crmPromoReportCard" class="card crm-directory marketing-panel" style="display:none">' +
+            '<div id="crmPromoReportKpi" class="crm-kpi-grid"></div>' +
+            '<div id="crmPromoCampaignSummary" class="marketing-campaign-summary"></div>' +
+            '<div class="table-wrap"><table><thead><tr><th>Tanggal</th><th>Kampanye</th><th>Kupon</th><th>Pelanggan</th><th>Invoice</th><th class="r">Diskon</th><th>Status</th></tr></thead><tbody id="crmPromoReportBody"></tbody></table></div>' +
+          '</div>' +
+        '</section>' +
       '</div>';
+    var tambah = document.getElementById('crmPromoTambah');
+    var tambahHero = document.getElementById('crmPromoTambahHero');
+    if (tambah) tambah.onclick = function () { formPromoKampanye(); };
+    if (tambahHero) tambahHero.onclick = function () { formPromoKampanye(); };
+    el.querySelectorAll('[data-marketing-jump]').forEach(function (b) {
+      b.onclick = function () {
+        var target = document.getElementById(b.getAttribute('data-marketing-jump'));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+    });
     var lotBtn = document.getElementById('lotOpen');
-    if (lotBtn) lotBtn.onclick = function () {
-      el.innerHTML = '<div id="lottery-root" style="padding:16px;"></div>';
+    var lotShortcut = document.getElementById('marketingShortcutLottery');
+    function bukaLottery() {
+      el.innerHTML = '<div class="crm-shell marketing-shell marketing-subpage"><button type="button" class="btn marketing-back" id="marketingBack">← Kembali ke Marketing</button><div class="marketing-subpage-heading"><span class="marketing-section-kicker">MARKETING WORKSPACE</span><h2>Kupon Undian</h2><p class="sub">Kelola campaign, peserta, hadiah, dan laporan undian.</p></div><div id="lottery-root"></div></div>';
+      var back = document.getElementById('marketingBack');
+      if (back) back.onclick = function () { gantiHalaman('marketing'); };
       if (window.MarketingLottery) window.MarketingLottery.mount('lottery-root');
-    };
+    }
+    if (lotBtn) lotBtn.onclick = bukaLottery;
+    if (lotShortcut) lotShortcut.onclick = bukaLottery;
+    var targetBtn = document.getElementById('marketingShortcutTarget');
+    if (targetBtn) targetBtn.onclick = function () { gantiHalaman('targetOmset'); };
     muatPromo();
     muatPromoReport();
   }
