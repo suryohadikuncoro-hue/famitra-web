@@ -569,10 +569,27 @@ function konfirmasiNonaktif(kode) {
 
 var STOK_OFFSET = 0;
 var STOK_LIMIT = 50;
+/** Tipe pelanggan pada kolom "Margin batch": kunci kolom Margin_* dan label UI-nya
+ *  (sejalan dengan labelTingkatHargaBarang di Master Barang). */
+var STOK_TINJAU_TIPE = [
+  { kunci: 'Umum', label: 'Umum' },
+  { kunci: 'Nakes', label: 'Nakes' },
+  { kunci: 'Mutasi', label: 'Apotek lain' }
+];
+
+/**
+ * Ambang margin (%) bawaan penyaring "Perlu ditinjau", satu nilai per tipe pelanggan.
+ * Ini satu-satunya tempat angka bawaan 20% berada, supaya nanti sumbernya bisa
+ * diganti (mis. pengaturan per cabang) tanpa menyentuh logika penyaring.
+ */
+function ambangTinjauBawaan() {
+  return { Umum: 20, Nakes: 20, Mutasi: 20 };
+}
 
 VIEWS.stok = {
   title: 'Stok & Batch',
   render: function (el) {
+    var ambangBawaan = ambangTinjauBawaan();
     el.innerHTML =
       '<div class="card"><div class="card-head">' +
         '<h3>Stok per batch</h3>' +
@@ -590,6 +607,15 @@ VIEWS.stok = {
           'Segera kedaluwarsa</label>' +
         '<label class="chip st-filter-check" style="cursor:pointer" title="Baris dengan stok 0 tidak ditampilkan"><input id="stKosong" type="checkbox" checked style="margin-right:5px">' +
           'Sembunyikan stok kosong</label>' +
+        '<label class="chip st-filter-check" style="cursor:pointer" title="Tampilkan hanya baris yang margin salah satu tipenya di bawah ambang tipe itu; baris bermodal kosong tetap tampil"><input id="stTinjau" type="checkbox" style="margin-right:5px">' +
+          'Perlu ditinjau</label>' +
+        '<span class="chip st-filter-check st-filter-ambang-wrap" title="Ambang margin (%) tiap tipe pelanggan untuk penyaring Perlu ditinjau">' +
+          'Ambang perlu ditinjau' +
+          STOK_TINJAU_TIPE.map(function (tipe) {
+            return '<label class="st-filter-ambang-item">' + tipe.label +
+              ' <input id="stTinjauAmbang' + tipe.kunci + '" class="st-filter-ambang" type="number" min="0" step="1" inputmode="decimal" value="' + ambangBawaan[tipe.kunci] + '" aria-label="Ambang margin ' + tipe.label + '">%</label>';
+          }).join('') +
+        '</span>' +
         '<button id="stTambah" class="btn btn-primary">Tambah batch</button></div>' +
       '<p id="stHint" class="kpi-sub st-filter-hint" style="margin-top:0">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</p>' +
       '<div class="st-legend" aria-label="Keterangan margin"><span><i class="st-dot st-dot-ok"></i>Margin tersedia</span><span><i class="st-dot st-dot-bad"></i>Margin negatif</span><span><i class="st-dot st-dot-muted"></i>Belum tersedia</span></div>' +
@@ -601,6 +627,7 @@ VIEWS.stok = {
     document.getElementById('stTambah').onclick = function () { formBatch(null); };
     document.getElementById('stKritis').onchange = function () { muatStok(0); };
     document.getElementById('stKosong').onchange = function () { muatStok(0); };
+    document.getElementById('stTinjau').onchange = function () { muatStok(0); };
     document.getElementById('stStatus').onchange = function () { muatStok(0); };
     document.getElementById('stUrut').onchange = function () { muatStok(0); };
     document.getElementById('stCariJenis').onchange = function () {
@@ -610,6 +637,12 @@ VIEWS.stok = {
     var t = null;
     document.getElementById('stCari').addEventListener('input', function () {
       clearTimeout(t); t = setTimeout(function () { muatStok(0); }, 250);
+    });
+    STOK_TINJAU_TIPE.forEach(function (tipe) {
+      document.getElementById('stTinjauAmbang' + tipe.kunci).addEventListener('input', function () {
+        if (!document.getElementById('stTinjau').checked) return;
+        clearTimeout(t); t = setTimeout(function () { muatStok(0); }, 250);
+      });
     });
     muatStok(0);
   }
@@ -621,9 +654,11 @@ function muatStok(offset) {
   if (!tb) return;
   var status = val('stStatus') || 'semua', sort = val('stUrut') || 'nama';
   var hint = document.getElementById('stHint');
-  if (hint) hint.textContent = sort === 'nama' && status === 'semua' && !document.getElementById('stKritis').checked
-    ? 'Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.'
-    : 'Filter dan urutan diterapkan pada seluruh hasil batch, bukan hanya halaman yang terlihat.';
+  if (hint) hint.textContent = document.getElementById('stTinjau').checked
+    ? 'Baris ditampilkan bila margin salah satu tipe (Umum, Nakes, Apotek lain) di bawah ambang tipe itu; baris bermodal kosong tetap ditampilkan.'
+    : sort === 'nama' && status === 'semua' && !document.getElementById('stKritis').checked
+      ? 'Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.'
+      : 'Filter dan urutan diterapkan pada seluruh hasil batch, bukan hanya halaman yang terlihat.';
   tb.innerHTML = '<tr><td colspan="9" class="empty">Memuat…</td></tr>';
   api('stok.list', { q: val('stCari'), jenis: val('stCariJenis') || 'barang', kritis: document.getElementById('stKritis').checked, status: status, sort: sort, limit: STOK_LIMIT, offset: STOK_OFFSET })
     .then(function (res) {
@@ -632,24 +667,26 @@ function muatStok(offset) {
         muatStok(Math.floor((res.total - 1) / STOK_LIMIT) * STOK_LIMIT); return;
       }
       var sembunyikanKosong = document.getElementById('stKosong').checked;
-      var tersembunyi = 0;
+      var tinjauAktif = document.getElementById('stTinjau').checked;
+      var ambangTinjau = ambangTinjauStok();
+      var tersembunyi = 0, tersembunyiTinjau = 0;
       var baris = rows.filter(function (s) {
-        if (!sembunyikanKosong) return true;
-        var kosong = Number(s.Stok_Real || 0) <= 0;
-        if (kosong) tersembunyi++;
-        return !kosong;
+        if (sembunyikanKosong) {
+          var kosong = Number(s.Stok_Real || 0) <= 0;
+          if (kosong) { tersembunyi++; return false; }
+        }
+        if (tinjauAktif && !perluTinjauStok(s, ambangTinjau)) { tersembunyiTinjau++; return false; }
+        return true;
       });
       if (!baris.length) {
-        if (tersembunyi && res.has_more) {
+        if ((tersembunyi || tersembunyiTinjau) && res.has_more) {
           muatStok(Number(res.next_offset || STOK_OFFSET + STOK_LIMIT)); return;
         }
-        gambarPagerStok(res, tersembunyi, true);
-        tb.innerHTML = tabelKosong(tersembunyi
-          ? 'Semua baris di halaman ini berstok 0 dan disembunyikan. Matikan "Sembunyikan stok kosong" untuk melihatnya.'
-          : 'Tidak ada barang atau batch yang cocok.', 9);
+        gambarPagerStok(res, tersembunyi, true, tersembunyiTinjau, tinjauAktif);
+        tb.innerHTML = tabelKosong(pesanKosongStok(tersembunyi, tersembunyiTinjau), 9);
         return;
       }
-      gambarPagerStok(res, tersembunyi);
+      gambarPagerStok(res, tersembunyi, false, tersembunyiTinjau, tinjauAktif);
       tb.innerHTML = baris.map(function (s, posisi) {
         var belumAdaBatch = s.Belum_Ada_Batch;
         return '<tr>' +
@@ -660,7 +697,7 @@ function muatStok(offset) {
           '<td data-label="Sisa waktu">' + (belumAdaBatch ? '—' : chipExpired(s.sisa_hari, s.Expired_Date)) + '</td>' +
           '<td data-label="Stok" class="c num">' + angka(s.Stok_Real || 0) + '</td>' +
           '<td data-label="Modal efektif" class="r num">' + (belumAdaBatch || s.Harga_Modal_Batch == null ? '—' : rupiah(s.Harga_Modal_Batch)) + '</td>' +
-          '<td data-label="Margin batch" class="r num">' + marginStokCell(s) + '</td>' +
+          '<td data-label="Margin batch" class="r num">' + marginStokCell(s) + tinjauStokBadge(s, tinjauAktif, ambangTinjau) + '</td>' +
           '<td class="c tk-aksi">' + (belumAdaBatch
             ? '<button class="btn btn-sm btn-primary" data-produk-index="' + posisi + '">Tambah batch</button>'
             : '<button class="btn btn-sm" data-batch=\'' + esc(JSON.stringify(s)) + '\'>Ubah</button>') + '</td>' +
@@ -689,18 +726,100 @@ function marginStokChip(v) {
 function marginStokCell(s) {
   return '<div class="st-margin-list" aria-label="Margin batch"><div><span>Umum</span>' + marginStokChip(s.Margin_Umum) + '</div>' +
     '<div><span>Nakes</span>' + marginStokChip(s.Margin_Nakes) + '</div>' +
-    '<div><span>Mutasi</span>' + marginStokChip(s.Margin_Mutasi) + '</div></div>';
+    '<div><span>Apotek lain</span>' + marginStokChip(s.Margin_Mutasi) + '</div></div>';
 }
 
-function gambarPagerStok(res, tersembunyi, semuaTersembunyi) {
+/**
+ * Dasar penyaring "Perlu ditinjau": margin tiap tipe pada kolom "Margin batch" —
+ * (harga jual tipe itu − modal batch) ÷ harga jual tipe itu × 100 — yaitu
+ * Margin_Umum, Margin_Nakes, dan Margin_Mutasi dari Edge Function yang sama.
+ * Penyaring memakai angka yang persis sama dengan yang tampil di kolom, jadi
+ * angka kolom dan hasil penyaringan tidak pernah berbeda. Baris yang marginnya
+ * belum bisa dihitung (modal batch kosong atau harga jual belum ada) dihitung
+ * sebagai perlu ditinjau, bukan dibuang.
+ */
+function marginTinjauStok(s, kunci) {
+  var v = s['Margin_' + kunci];
+  return v == null ? null : Number(v);
+}
+
+/** Tipe-tipe yang membuat baris ini perlu ditinjau, beserta marginnya. */
+function tipePerluTinjauStok(s, ambang) {
+  var gagal = [];
+  STOK_TINJAU_TIPE.forEach(function (tipe) {
+    var m = marginTinjauStok(s, tipe.kunci);
+    if (m === null || !isFinite(m) || m < ambang[tipe.kunci]) {
+      gagal.push({ kunci: tipe.kunci, label: tipe.label, margin: m === null || !isFinite(m) ? null : m });
+    }
+  });
+  return gagal;
+}
+
+/** Baris perlu ditinjau bila margin salah satu tipe ada di bawah ambang tipe itu. */
+function perluTinjauStok(s, ambang) {
+  return tipePerluTinjauStok(s, ambang).length > 0;
+}
+
+/** Ambang margin (%) yang sedang dipakai, satu nilai per tipe pelanggan. */
+function ambangTinjauStok() {
+  var bawaan = ambangTinjauBawaan(), hasil = {};
+  STOK_TINJAU_TIPE.forEach(function (tipe) {
+    hasil[tipe.kunci] = ambangTinjauSatu('stTinjauAmbang' + tipe.kunci, bawaan[tipe.kunci]);
+  });
+  return hasil;
+}
+
+/** Satu ambang dari kolom isian; jatuh ke nilai bawaan bila kosong atau tidak sah. */
+function ambangTinjauSatu(id, bawaan) {
+  var teks = val(id);
+  if (teks === '') return bawaan;
+  var v = Number(teks);
+  return isFinite(v) ? v : bawaan;
+}
+
+/** Penanda tipe mana yang memicu penyaring, hanya saat penyaring aktif. */
+function tinjauStokBadge(s, aktif, ambang) {
+  if (!aktif) return '';
+  var gagal = tipePerluTinjauStok(s, ambang);
+  if (!gagal.length) return '';
+  if (s.Harga_Modal_Batch == null) {
+    return '<div class="st-tinjau-badges"><span class="chip chip-warn st-tinjau-badge" title="Modal batch belum ada, jadi margin semua tipe belum bisa dihitung">Modal batch kosong</span></div>';
+  }
+  return '<div class="st-tinjau-badges">' + gagal.map(function (g) {
+    var nilai = g.margin === null
+      ? 'harga jual belum ada'
+      : marginStok(g.margin) + ' < ' + marginStok(ambang[g.kunci]);
+    return '<span class="chip chip-warn st-tinjau-badge" title="Margin ' + esc(g.label) + ' di bawah ambang tipe ini">' + esc(g.label) + ': ' + nilai + '</span>';
+  }).join('') + '</div>';
+}
+
+/** Pesan tabel saat seluruh baris halaman ini tersaring habis. */
+function pesanKosongStok(tersembunyi, tersembunyiTinjau) {
+  if (!tersembunyiTinjau) {
+    return tersembunyi
+      ? 'Semua baris di halaman ini berstok 0 dan disembunyikan. Matikan "Sembunyikan stok kosong" untuk melihatnya.'
+      : 'Tidak ada barang atau batch yang cocok.';
+  }
+  if (!tersembunyi) {
+    return 'Semua baris di halaman ini tidak lolos penyaring "Perlu ditinjau". Matikan penyaring itu atau naikkan ambang marginnya.';
+  }
+  return 'Semua baris di halaman ini tersaring: ' + angka(tersembunyi) + ' baris berstok 0 dan ' +
+    angka(tersembunyiTinjau) + ' baris bermargin di atas ambang.';
+}
+
+function gambarPagerStok(res, tersembunyi, semuaTersembunyi, tersembunyiTinjau, tinjauAktif) {
   var el = document.getElementById('stPager');
   if (!el) return;
   var sembunyikanKosong = document.getElementById('stKosong').checked;
   var catatan = '';
-  if (sembunyikanKosong && (tersembunyi || semuaTersembunyi)) {
-    catatan = tersembunyi
-      ? '<span class="sub">' + angka(tersembunyi) + ' baris berstok 0 disembunyikan.</span>'
-      : '<span class="sub">Semua baris di halaman ini berstok 0.</span>';
+  if (sembunyikanKosong && tersembunyi) {
+    catatan = '<span class="sub">' + angka(tersembunyi) + ' baris berstok 0 disembunyikan.</span>';
+  } else if (sembunyikanKosong && semuaTersembunyi && !(res.rows || []).length) {
+    // Halaman memang kosong dari server, bukan karena penyaring margin.
+    catatan = '<span class="sub">Semua baris di halaman ini berstok 0.</span>';
+  }
+  if (tinjauAktif && tersembunyiTinjau) {
+    catatan += '<span class="sub">' + angka(tersembunyiTinjau) + ' baris margin di atas ambang disembunyikan.</span>';
   }
   var total = Number(res.total) || 0, limit = Number(res.limit) || STOK_LIMIT, offset = Number(res.offset) || 0;
   if (!total) { el.innerHTML = ''; return; }
