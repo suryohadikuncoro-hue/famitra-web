@@ -1615,3 +1615,295 @@ body{background:var(--shell)}
 .riwayat-nota-detail .rn-meta-item strong{font-size:13px;overflow-wrap:anywhere}
 .riwayat-nota-detail h4{margin:12px 0 8px}
 .riwayat-nota-detail .table-wrap{overflow-x:auto}
+
+
+/* ============================================================
+   Marketing workspace refresh — isolated to the Marketing view
+   ============================================================ */
+.marketing-shell { max-width: 1440px; margin: 0 auto; padding-bottom: 32px; }
+.marketing-hero {
+  position: relative; isolation: isolate; overflow: hidden; display: flex;
+  align-items: center; justify-content: space-between; gap: 28px;
+  min-height: 220px; margin: 0 0 18px; padding: 30px 32px;
+  color: #fff; border-radius: 22px;
+  background: linear-gradient(120deg, #20242b 0%, #303944 54%, #5b282a 100%);
+  box-shadow: 0 14px 32px rgba(26, 31, 38, .14);
+}
+.marketing-hero-copy, .marketing-hero-actions { position: relative; z-index: 2; }
+.marketing-hero-copy { max-width: 720px; }
+.marketing-eyebrow, .marketing-section-kicker {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 10px;
+  font-weight: 800; letter-spacing: .15em; text-transform: uppercase;
+}
+.marketing-eyebrow { color: #f3b2b2; }
+.marketing-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #70d6a5; box-shadow: 0 0 0 4px rgba(112,214,165,.14); }
+.marketing-hero h2 { margin: 12px 0 9px; color: #fff; font-size: clamp(26px, 3vw, 36px); line-height: 1.15; letter-spacing: -.04em; }
+.marketing-hero p { max-width: 620px; margin: 0; color: rgba(255,255,255,.78); font-size: 14px; line-height: 1.75; }
+.marketing-hero-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.marketing-hero-meta span { padding: 6px 10px; border: 1px solid rgba(255,255,255,.17); border-radius: 999px; color: rgba(255,255,255,.9); font-size: 11px; }
+.marketing-hero-actions { display: flex; flex-direction: column; align-items: stretch; gap: 10px; min-width: 175px; }
+.marketing-hero-actions .btn { min-height: 42px; justify-content: center; white-space: nowrap; }
+.marketing-hero-actions .btn-primary { background: #d43a3a; border-color: #d43a3a; }
+.marketing-btn-ghost { color: #fff; border: 1px solid rgba(255,255,255,.32); background: rgba(255,255,255,.08); }
+.marketing-btn-ghost:hover { background: rgba(255,255,255,.16); }
+.marketing-hero-orb { position: absolute; z-index: -1; border-radius: 50%; pointer-events: none; }
+.marketing-orb-one { width: 290px; height: 290px; right: 13%; top: -170px; border: 1px solid rgba(255,255,255,.11); box-shadow: 0 0 0 28px rgba(255,255,255,.025), 0 0 0 58px rgba(255,255,255,.02); }
+.marketing-orb-two { width: 220px; height: 220px; right: 24%; bottom: -175px; background: rgba(206,44,43,.16); }
+.marketing-shortcuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 12px; margin-bottom: 30px; }
+.marketing-shortcut { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 15px 14px; text-align: left; border: 1px solid var(--border, #e6e8eb); border-radius: 15px; background: var(--surface, #fff); color: var(--text, #20242b); cursor: pointer; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.marketing-shortcut:hover { transform: translateY(-2px); border-color: rgba(206,44,43,.35); box-shadow: 0 8px 20px rgba(25,30,36,.06); }
+.marketing-shortcut > span:nth-child(2) { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.marketing-shortcut strong { font-size: 12px; font-weight: 750; }
+.marketing-shortcut small { color: var(--muted, #707782); font-size: 10px; line-height: 1.5; }
+.marketing-shortcut-arrow { color: #9aa1ab; font-size: 19px; }
+.marketing-shortcut-icon { display: grid; flex: 0 0 42px; width: 42px; height: 42px; place-items: center; border-radius: 12px; font-size: 20px; font-weight: 800; }
+.icon-promo { color: #bd3434; background: #fff0ef; }
+.icon-report { color: #167c64; background: #e8f7f1; }
+.icon-lottery { color: #91650c; background: #fff5d9; }
+.icon-loyalty { color: #8b4f8e; background: #f8ebf8; }
+.icon-target { color: #3166aa; background: #eaf2ff; }
+.marketing-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 0 0 13px; }
+.marketing-section-heading h3 { margin: 5px 0 4px; font-size: 20px; letter-spacing: -.025em; }
+.marketing-section-heading .sub { margin: 0; line-height: 1.6; }
+.marketing-section-kicker { color: #a33a3a; font-size: 9px; }
+.marketing-panel-wrap { scroll-margin-top: 18px; margin-bottom: 22px; }
+.marketing-panel { margin: 0; padding: 22px; border: 1px solid var(--border, #e6e8eb); border-radius: 17px; box-shadow: 0 4px 16px rgba(26,31,38,.035); }
+.marketing-panel .card-head { align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.marketing-panel .card-head h3 { margin: 0 0 5px; font-size: 17px; }
+.marketing-panel .card-head .sub { margin: 0; line-height: 1.6; }
+.marketing-panel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.marketing-report-heading { margin-top: 28px; }
+.marketing-campaign-summary { margin: 14px 0; }
+.marketing-panel .crm-kpi-grid { margin-bottom: 12px; }
+.marketing-panel .crm-kpi { min-width: 0; }
+.marketing-panel .crm-refill-item { padding: 14px 4px; gap: 12px; border-bottom: 1px solid var(--border, #e6e8eb); }
+.marketing-panel .crm-refill-item:last-child { border-bottom: 0; }
+.marketing-panel .crm-refill-main { min-width: 0; }
+.marketing-panel .crm-refill-main strong { line-height: 1.45; }
+.marketing-panel .crm-refill-main span { line-height: 1.6; overflow-wrap: anywhere; }
+.marketing-subpage { padding-top: 4px; }
+.marketing-back { margin: 0 0 18px; }
+.marketing-subpage-heading { margin-bottom: 20px; }
+.marketing-subpage-heading h2 { margin: 6px 0; font-size: 27px; letter-spacing: -.035em; }
+.marketing-subpage-heading .sub { margin: 0; line-height: 1.65; }
+#mpCard { margin-top: 24px; padding: 22px; border: 1px solid var(--border, #e6e8eb); border-radius: 17px; box-shadow: 0 4px 16px rgba(26,31,38,.035); }
+#mpCard .card-head { align-items: flex-start; gap: 14px; }
+#mpCard .card-head > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+#mpCard h4 { margin-top: 22px !important; }
+@media (max-width: 720px) {
+  .marketing-hero { align-items: stretch; flex-direction: column; gap: 20px; padding: 24px 20px; border-radius: 17px; }
+  .marketing-hero-actions { flex-direction: row; flex-wrap: wrap; }
+  .marketing-hero-actions .btn { flex: 1 1 145px; }
+  .marketing-hero-meta { gap: 6px; }
+  .marketing-hero-meta span { font-size: 10px; }
+  .marketing-shortcuts { grid-template-columns: 1fr; gap: 9px; }
+  .marketing-shortcut { padding: 12px; }
+  .marketing-section-heading { align-items: flex-start; flex-direction: column; }
+  .marketing-section-heading > .btn { width: 100%; justify-content: center; }
+  .marketing-panel { padding: 16px 13px; border-radius: 14px; }
+  .marketing-panel .card-head { flex-direction: column; }
+  .marketing-panel-actions { width: 100%; }
+  .marketing-panel-actions .btn { flex: 1; }
+  #mpCard { padding: 16px 13px; }
+  #mpCard .card-head { flex-direction: column; }
+}
+
+
+/* Marketing: perapian seluruh konten di bawah hero, daftar, KPI, dan laporan */
+.marketing-shell { color: var(--text, #20242b); }
+.marketing-panel-wrap { min-width: 0; }
+.marketing-panel { min-width: 0; overflow: hidden; }
+.marketing-panel .card-head { flex-wrap: wrap; }
+.marketing-panel .card-head > div:first-child { min-width: 0; }
+.marketing-panel .card-head > div:last-child { min-width: 0; }
+.marketing-panel .crm-refill-list,
+.marketing-panel #crmPromoList,
+.marketing-panel #crmBundleList { min-width: 0; }
+.marketing-panel .crm-refill-item { display: flex; align-items: center; flex-wrap: wrap; padding: 15px 0; }
+.marketing-panel .crm-refill-item > * { min-width: 0; }
+.marketing-panel .crm-refill-main { flex: 1 1 220px; }
+.marketing-panel .crm-refill-item .btn,
+.marketing-panel .crm-refill-item button { flex: 0 0 auto; }
+#crmPromoReportKpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+#crmPromoReportKpi > * { min-width: 0; }
+#crmPromoCampaignSummary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+#crmPromoCampaignSummary > * { min-width: 0; }
+.marketing-panel .table-wrap { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid var(--border, #e6e8eb); border-radius: 12px; }
+.marketing-panel .table-wrap table { min-width: 680px; margin: 0; }
+.marketing-panel .table-wrap th { white-space: nowrap; }
+.marketing-panel .table-wrap td { vertical-align: top; }
+.marketing-panel .table-wrap td, .marketing-panel .table-wrap th { padding: 11px 12px; }
+.marketing-panel .table-wrap tr:last-child td { border-bottom: 0; }
+.marketing-report-heading { margin-top: 34px; padding-top: 24px; border-top: 1px solid var(--border, #e6e8eb); }
+.marketing-panel .crm-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.marketing-panel .crm-kpi { overflow-wrap: anywhere; }
+.marketing-panel .crm-kpi strong { font-size: clamp(18px, 2vw, 25px); line-height: 1.25; }
+.marketing-panel .crm-kpi small, .marketing-panel .crm-kpi span { line-height: 1.5; }
+.marketing-panel .empty-state, .marketing-panel .empty { padding: 28px 16px; text-align: center; }
+@media (max-width: 980px) {
+  #crmPromoReportKpi, .marketing-panel .crm-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #crmPromoCampaignSummary { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 600px) {
+  .marketing-panel-wrap { margin-bottom: 18px; }
+  .marketing-panel { padding: 15px 12px; }
+  .marketing-panel .card-head { gap: 12px; }
+  .marketing-panel .crm-refill-item { align-items: flex-start; gap: 10px; }
+  .marketing-panel .crm-refill-main { flex-basis: calc(100% - 8px); }
+  .marketing-panel .crm-refill-item .btn,
+  .marketing-panel .crm-refill-item button { margin-left: 0; }
+  #crmPromoReportKpi, .marketing-panel .crm-kpi-grid { gap: 9px; }
+  .marketing-panel .crm-kpi { padding: 13px 11px; }
+  .marketing-panel .table-wrap table { min-width: 620px; }
+  .marketing-report-heading { margin-top: 26px; padding-top: 20px; }
+}
+
+
+/* Marketing layout refinement v2: normalize section rhythm and all lower content */
+body[data-hal="marketing"] .marketing-shell { width:100%; max-width:1320px; margin-inline:auto; padding:4px 0 40px; }
+body[data-hal="marketing"] .marketing-hero { min-height:unset; margin-bottom:20px; }
+body[data-hal="marketing"] .marketing-shortcuts { grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); margin:0 0 30px; }
+body[data-hal="marketing"] .marketing-section-heading { align-items:center; margin:0 0 14px; padding:0 2px; }
+body[data-hal="marketing"] .marketing-section-heading h3 { font-size:clamp(18px,2vw,22px); line-height:1.3; }
+body[data-hal="marketing"] .marketing-section-heading .sub { max-width:700px; font-size:12px; }
+body[data-hal="marketing"] .marketing-panel-wrap { margin:0 0 28px; scroll-margin-top:24px; }
+body[data-hal="marketing"] .marketing-panel { box-sizing:border-box; padding:22px; border-radius:16px; background:var(--surface,#fff); }
+body[data-hal="marketing"] .marketing-panel .card-head { display:flex; justify-content:space-between; align-items:center; padding:0 0 16px; margin:0 0 4px; border-bottom:1px solid var(--border,#e6e8eb); }
+body[data-hal="marketing"] .marketing-panel .card-head h3 { font-size:16px; line-height:1.4; }
+body[data-hal="marketing"] .marketing-panel .card-head .sub { max-width:680px; font-size:12px; }
+body[data-hal="marketing"] .marketing-panel-actions .btn { min-height:36px; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-list { padding:0; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-list h4 { margin:18px 0 4px !important; padding-bottom:10px; font-size:13px; border-bottom:1px solid var(--border,#e6e8eb); }
+body[data-hal="marketing"] .marketing-panel .crm-refill-item { display:grid; grid-template-columns:36px minmax(0,1fr) auto auto; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--border,#e6e8eb); }
+body[data-hal="marketing"] .marketing-panel .crm-refill-item:last-child { border-bottom:0; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-item .crm-avatar { margin:0; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-main { display:flex; flex-direction:column; gap:4px; min-width:0; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-main strong { font-size:13px; overflow-wrap:anywhere; }
+body[data-hal="marketing"] .marketing-panel .crm-refill-main span { color:var(--muted,#6b7280); font-size:11px; line-height:1.6; overflow-wrap:anywhere; }
+body[data-hal="marketing"] #crmPromoReportKpi { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:0 0 22px; }
+body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi { min-width:0; display:flex; gap:12px; align-items:flex-start; padding:16px; border:1px solid var(--border,#e6e8eb); border-radius:14px; background:var(--paper,#fafbfc); box-shadow:none; }
+body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi > div { min-width:0; }
+body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi small { display:block; min-height:32px; font-size:10px; line-height:1.5; }
+body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi strong { display:block; margin:5px 0; font-size:clamp(16px,1.7vw,22px); line-height:1.3; overflow-wrap:anywhere; }
+body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi em { display:block; font-size:10px; line-height:1.5; }
+body[data-hal="marketing"] #crmPromoCampaignSummary { display:block; margin:0; }
+body[data-hal="marketing"] #crmPromoCampaignSummary .crm-detail-note { margin:0 0 22px !important; padding:14px 16px; border:1px solid #e6ebf2; border-radius:12px; background:#f7f9fc; color:#4c5868; font-size:11px; line-height:1.7; }
+body[data-hal="marketing"] #crmPromoCampaignSummary h4 { margin:24px 0 10px !important; font-size:14px; line-height:1.4; }
+body[data-hal="marketing"] #crmPromoCampaignSummary .table-wrap { margin-bottom:18px; }
+body[data-hal="marketing"] #crmPromoCampaignSummary table { min-width:920px; }
+body[data-hal="marketing"] #crmPromoReportCard > .table-wrap { margin-top:26px; }
+body[data-hal="marketing"] #crmPromoReportCard > .table-wrap:before { content:"Riwayat penggunaan promo"; display:block; padding:14px 15px; border-bottom:1px solid var(--border,#e6e8eb); font-size:13px; font-weight:750; background:var(--paper,#fafbfc); }
+body[data-hal="marketing"] #crmPromoReportCard > .table-wrap table { min-width:760px; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap { max-width:100%; overflow-x:auto; border:1px solid var(--border,#e6e8eb); border-radius:12px; background:var(--surface,#fff); }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap table { width:100%; margin:0; border-collapse:separate; border-spacing:0; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap th { position:sticky; top:0; background:var(--paper,#fafbfc); white-space:nowrap; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap th, body[data-hal="marketing"] #crmPromoReportCard .table-wrap td { padding:12px 14px; border-bottom:1px solid var(--border,#e6e8eb); font-size:11px; line-height:1.5; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap tbody tr:last-child td { border-bottom:0; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap td strong { display:block; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap td .cart-line-meta { display:block; margin-top:3px; white-space:normal; overflow-wrap:anywhere; }
+body[data-hal="marketing"] #crmPromoReportCard .table-wrap td.empty { padding:28px 14px; text-align:center; }
+body[data-hal="marketing"] .marketing-report-heading { margin:8px 0 14px; padding:0 2px; border:0; }
+body[data-hal="marketing"] #mpCard { box-sizing:border-box; max-width:100%; }
+@media(max-width:1000px) {
+  body[data-hal="marketing"] #crmPromoReportKpi { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:700px) {
+  body[data-hal="marketing"] .marketing-shell { padding:0 0 24px; }
+  body[data-hal="marketing"] .marketing-hero { margin-bottom:14px; }
+  body[data-hal="marketing"] .marketing-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:24px; }
+  body[data-hal="marketing"] .marketing-shortcut { align-items:flex-start; gap:9px; padding:12px 10px; border-radius:12px; }
+  body[data-hal="marketing"] .marketing-shortcut-icon { flex-basis:34px; width:34px; height:34px; border-radius:10px; font-size:17px; }
+  body[data-hal="marketing"] .marketing-shortcut strong { font-size:11px; }
+  body[data-hal="marketing"] .marketing-shortcut small { font-size:9px; }
+  body[data-hal="marketing"] .marketing-shortcut-arrow { display:none; }
+  body[data-hal="marketing"] .marketing-section-heading { align-items:flex-start; gap:10px; }
+  body[data-hal="marketing"] .marketing-panel { padding:15px 12px; border-radius:13px; }
+  body[data-hal="marketing"] .marketing-panel .card-head { align-items:flex-start; }
+  body[data-hal="marketing"] .marketing-panel .crm-refill-item { grid-template-columns:32px minmax(0,1fr); gap:8px 10px; }
+  body[data-hal="marketing"] .marketing-panel .crm-refill-item .chip { grid-column:2; justify-self:start; }
+  body[data-hal="marketing"] .marketing-panel .crm-refill-item button { grid-column:2; justify-self:start; }
+  body[data-hal="marketing"] #crmPromoReportKpi { gap:8px; }
+  body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi { flex-direction:column; gap:8px; padding:12px 10px; border-radius:11px; }
+  body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi small { min-height:unset; font-size:9px; }
+  body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi strong { font-size:16px; }
+  body[data-hal="marketing"] #crmPromoCampaignSummary h4 { margin-top:20px !important; }
+  body[data-hal="marketing"] #crmPromoReportCard > .table-wrap { margin-top:20px; }
+}
+@media(max-width:380px) {
+  body[data-hal="marketing"] .marketing-shortcuts { grid-template-columns:minmax(0,1fr); }
+  body[data-hal="marketing"] #crmPromoReportKpi { grid-template-columns:minmax(0,1fr); }
+  body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi { flex-direction:row; }
+}
+
+
+/* Marketing bottom section: Poin & Reward card (injected by js_marketing_poin.js) */
+body[data-hal="marketing"] #mpCard {
+  display:block; width:100%; max-width:100%; min-width:0; box-sizing:border-box;
+  margin:0 0 30px; padding:24px; overflow:hidden;
+  border:1px solid var(--border,#e5e7eb); border-radius:16px;
+  background:var(--surface,#fff); box-shadow:0 4px 18px rgba(20,30,50,.035);
+}
+body[data-hal="marketing"] #mpCard > .card-head {
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:18px; flex-wrap:wrap; padding:0 0 18px; margin:0 0 18px;
+  border-bottom:1px solid var(--border,#e5e7eb);
+}
+body[data-hal="marketing"] #mpCard > .card-head > div:first-child { flex:1 1 280px; min-width:0; }
+body[data-hal="marketing"] #mpCard > .card-head > div:first-child h3 { margin:0 0 6px; font-size:18px; line-height:1.35; }
+body[data-hal="marketing"] #mpCard > .card-head > div:first-child .sub { max-width:660px; margin:0; font-size:12px; line-height:1.7; }
+body[data-hal="marketing"] #mpCard > .card-head > div:last-child {
+  display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px;
+}
+body[data-hal="marketing"] #mpCard > .card-head > div:last-child .btn { margin:0; min-height:36px; }
+body[data-hal="marketing"] #mpCard #mpPerolehan {
+  margin:0 0 22px !important; padding:14px 16px;
+  border:1px solid #e2e8f0; border-radius:12px; background:#f8fafc;
+  color:#475569; font-size:12px; line-height:1.8; overflow-wrap:anywhere;
+}
+body[data-hal="marketing"] #mpCard > h4 {
+  display:flex; align-items:center; gap:10px;
+  margin:24px 0 12px !important; padding:0 0 10px;
+  border-bottom:1px solid var(--border,#e5e7eb);
+  font-size:14px; line-height:1.45; font-weight:750;
+}
+body[data-hal="marketing"] #mpCard > h4:first-of-type { margin-top:0 !important; }
+body[data-hal="marketing"] #mpReward,
+body[data-hal="marketing"] #mpRiwayat { min-width:0; width:100%; }
+body[data-hal="marketing"] #mpCard .table-wrap {
+  width:100%; max-width:100%; min-width:0; overflow:auto;
+  border:1px solid var(--border,#e5e7eb); border-radius:12px;
+  background:var(--surface,#fff); overscroll-behavior-x:contain;
+}
+body[data-hal="marketing"] #mpCard .table-wrap table {
+  width:100%; min-width:760px; margin:0; border-collapse:separate; border-spacing:0;
+}
+body[data-hal="marketing"] #mpCard #mpRiwayat .table-wrap table { min-width:850px; }
+body[data-hal="marketing"] #mpCard .table-wrap th {
+  padding:12px 14px; background:#f8fafc; color:#475569;
+  border-bottom:1px solid var(--border,#e5e7eb);
+  font-size:10px; font-weight:750; letter-spacing:.025em;
+  text-align:left; white-space:nowrap;
+}
+body[data-hal="marketing"] #mpCard .table-wrap td {
+  padding:12px 14px; border-bottom:1px solid var(--border,#edf0f3);
+  font-size:11px; line-height:1.55; vertical-align:middle;
+}
+body[data-hal="marketing"] #mpCard .table-wrap tbody tr:last-child td { border-bottom:0; }
+body[data-hal="marketing"] #mpCard .table-wrap tbody tr:hover { background:#fafbfc; }
+body[data-hal="marketing"] #mpCard .table-wrap td strong { display:block; font-size:11px; }
+body[data-hal="marketing"] #mpCard .table-wrap td .cart-line-meta {
+  display:block; margin-top:3px; color:var(--muted,#6b7280);
+  font-size:10px; line-height:1.5; white-space:normal; overflow-wrap:anywhere;
+}
+body[data-hal="marketing"] #mpCard .table-wrap td .btn { margin:2px 3px 2px 0; white-space:nowrap; }
+body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center; line-height:1.7; }
+@media(max-width:700px) {
+  body[data-hal="marketing"] #mpCard { padding:16px 12px; margin-bottom:22px; border-radius:13px; }
+  body[data-hal="marketing"] #mpCard > .card-head { gap:12px; padding-bottom:14px; margin-bottom:14px; }
+  body[data-hal="marketing"] #mpCard > .card-head > div:last-child { justify-content:flex-start; width:100%; }
+  body[data-hal="marketing"] #mpCard > .card-head > div:last-child .btn { flex:1 1 auto; }
+  body[data-hal="marketing"] #mpCard #mpPerolehan { padding:12px; font-size:11px; }
+  body[data-hal="marketing"] #mpCard > h4 { margin-top:20px !important; }
+  body[data-hal="marketing"] #mpCard .table-wrap table { min-width:720px; }
+  body[data-hal="marketing"] #mpCard #mpRiwayat .table-wrap table { min-width:820px; }
+}
