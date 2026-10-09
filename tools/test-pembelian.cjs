@@ -32,7 +32,11 @@ vm.runInContext([
   'function brutoBaris(it) { return (Number(it.Harga_Netto) || 0) * (Number(it.Qty) || 0) * (1 + (Number(it.PPN) || 0) / 100); }',
   extractFunction('diskonRupiahBaris'),
   extractFunction('hargaModalEfektifBeli'),
-  extractFunction('labaPersenBeli')
+  extractFunction('marginPersenBeli'),
+  extractFunction('markupInputBeliKePersen'),
+  extractFunction('markupPersenBeliKeInput'),
+  extractFunction('hargaDariMarkupJS'),
+  extractFunction('terapkanMarkupBaris')
 ].join('\n'), context);
 
 const item = {
@@ -44,18 +48,41 @@ const item = {
   Jual_Umum_Kini: 0
 };
 assert.equal(context.diskonRupiahBaris(item), 1110, '10% discount is applied to gross including PPN');
-assert.equal(context.hargaModalEfektifBeli(item), 900, 'modal cost excludes PPN and includes the discount');
-assert.equal(context.labaPersenBeli(item), 40, 'margin uses the discounted effective cost');
-assert.equal(context.hargaModalEfektifBeli({ ...item, Diskon: 0 }), 1000, 'zero discount keeps the netto cost');
+assert.equal(context.hargaModalEfektifBeli(item), 999, 'modal cost includes PPN and applies the discount percentage');
+assert.equal(Math.round(context.marginPersenBeli(item.Harga_Jual_Umum_Baru, context.hargaModalEfektifBeli(item)) * 10) / 10, 33.4, 'margin uses the discounted effective cost including PPN');
+assert.equal(context.hargaModalEfektifBeli({ ...item, Diskon: 0 }), 1110, 'zero discount keeps PPN in the effective modal');
 assert.equal(context.hargaModalEfektifBeli({ ...item, Diskon: 100 }), 0, 'full discount cannot produce a negative modal');
-assert.equal(context.labaPersenBeli({ ...item, PPN: -100 }), null, 'invalid tax rate does not produce a misleading margin');
+assert.equal(context.marginPersenBeli(item.Harga_Jual_Umum_Baru, context.hargaModalEfektifBeli({ ...item, PPN: -100 })), null, 'invalid tax rate does not produce a misleading margin');
+const ratio = context.markupInputBeliKePersen('2.5', 'rasio');
+assert.equal(ratio.valid, true, 'ratio 2.5 is accepted');
+assert.equal(ratio.persen, 150, 'ratio 2.5 maps to the canonical 150 percent');
+assert.equal(context.markupPersenBeliKeInput(150, 'rasio'), 2.5, 'saved 150 percent reloads as ratio 2.5');
+assert.equal(context.markupInputBeliKePersen('11', 'rasio').persen, 1000, 'ratio 11 is the upper limit');
+assert.equal(context.markupInputBeliKePersen('12', 'rasio').valid, false, 'ratio above 11 is rejected');
+assert.equal(context.markupInputBeliKePersen('1001', 'persen').valid, false, 'percent above 1000 is rejected');
+assert.equal(context.hargaDariMarkupJS(999, ratio.persen, 100), 2500, 'ratio markup uses canonical percent and required rounding');
+assert.equal(context.hargaDariMarkupJS(999, 1001, 0), null, 'markup formula rejects a percent above the allowed range');
+context.BELI = { editNoFaktur: null, markup: { tersedia: true, valid: true, umum: null, nakes: null, mutasi: null, pembulatan: 0 } };
+const pricedItem = { Harga_Netto: 1000, Qty: 1, PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 1500, _manual: {}, _markupOtomatis: {} };
+context.terapkanMarkupBaris(pricedItem);
+assert.equal(pricedItem.Harga_Jual_Umum_Baru, 1500, 'inactive markup does not clear the current master price');
+context.BELI.markup.umum = 150;
+context.terapkanMarkupBaris(pricedItem);
+assert.equal(pricedItem.Harga_Jual_Umum_Baru, 2500, 'active markup populates an automatic price');
+context.BELI.markup.umum = null;
+context.terapkanMarkupBaris(pricedItem);
+assert.equal(pricedItem.Harga_Jual_Umum_Baru, 0, 'disabling markup clears only its previously automatic price');
+const manualItem = { ...pricedItem, Harga_Jual_Umum_Baru: 1234, _manual: { Harga_Jual_Umum_Baru: true }, _markupOtomatis: {} };
+context.BELI.markup.umum = 150;
+context.terapkanMarkupBaris(manualItem);
+assert.equal(manualItem.Harga_Jual_Umum_Baru, 1234, 'manual sale price is never overwritten');
 
 assert.match(migration, /CREATE OR REPLACE FUNCTION public\.purchase_effective_unit_cost/i, 'SQL shares a single effective-cost function');
 assert.match(migration, /purchase_validate_items\(p_items\)/i, 'purchase RPC wrappers validate incoming line values');
 assert.match(migration, /purchase_validate_category\(p_kategori, p_items\)/i, 'purchase RPC wrappers validate category and tax consistency');
 assert.match(migration, /Kategori Tidak Berpajak harus menggunakan PPN 0 persen/i, 'untaxed purchases cannot carry non-zero tax');
 assert.match(migration, /v_ppn < 0 OR v_ppn > 100/i, 'backend rejects invalid tax rates');
-assert.match(migration, /v_diskon < 0 OR v_diskon > v_bruto/i, 'backend rejects negative or over-gross discounts');
+assert.match(migration, /v_diskon < 0 OR v_diskon > 100/i, 'backend rejects negative or above-100-percent discounts');
 assert.match(migration, /purchase_payment_save/i, 'migration provides an atomic payment RPC');
 assert.match(migration, /FOR UPDATE/i, 'payment RPC locks its invoice before checking balance');
 assert.match(migration, /sum\(p\.jumlah_bayar\)/i, 'payment RPC checks the current active paid amount');

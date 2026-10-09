@@ -1,6 +1,6 @@
 /* ================== Pembelian (Bab 5), Biaya (8.1), Laporan (Bab 7) ====== */
 
-var BELI = { items: [], riwayatQuery: '', riwayatOffset: 0, riwayatHasMore: false, riwayatRequest: 0, riwayatTimer: null, editNoFaktur: null, markup: { tersedia: false, mode: 'persen', umum: null, nakes: null, mutasi: null, pembulatan: 100 } };
+var BELI = { items: [], riwayatQuery: '', riwayatOffset: 0, riwayatHasMore: false, riwayatRequest: 0, riwayatTimer: null, editNoFaktur: null, markup: { tersedia: false, valid: true, mode: 'persen', umum: null, nakes: null, mutasi: null, pembulatan: 100 } };
 var BELI_SUGGEST = { timer: null, request: 0, rows: [], index: -1, input: null };
 var HUTANG_FN_URL = 'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/hutang';
 function apiHutang(action, data) {
@@ -90,7 +90,8 @@ VIEWS.beli = {
     document.getElementById('blTanggal').value = new Date().toISOString().substring(0, 10);
     document.getElementById('blTambahItem').onclick = function () { BELI.items.push(barisKosong()); gambarBeli(); };
     document.getElementById('blSimpan').onclick = simpanPembelian;
-    ['blMarkupMode','blMarkupUmum','blMarkupNakes','blMarkupMutasi','blMarkupPembulatan'].forEach(function (id) { document.getElementById(id).oninput = bacaMarkupBeli; document.getElementById(id).onchange = bacaMarkupBeli; });
+    document.getElementById('blMarkupMode').onchange = ubahModeMarkupBeli;
+    ['blMarkupUmum','blMarkupNakes','blMarkupMutasi','blMarkupPembulatan'].forEach(function (id) { document.getElementById(id).oninput = bacaMarkupBeli; document.getElementById(id).onchange = bacaMarkupBeli; });
     document.getElementById('blMarkupSimpan').onclick = simpanBawaanMarkupBeli;
     document.getElementById('blSupplierBaru').onclick = formSupplier;
     document.getElementById('blBatalUbah').onclick = batalUbahFaktur;
@@ -120,7 +121,7 @@ VIEWS.beli = {
 function barisKosong() {
   return { Kode_Obat: '', Nama_Obat: '', Kode_Batch: '', Expired_Date: '', Qty: 0, Harga_Netto: 0,
            PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 0, Harga_Khusus_Baru: 0, Harga_Jual_Mutasi_Baru: 0,
-           Stok_Tersedia: null, Jual_Umum_Kini: 0, Jual_Khusus_Kini: 0, Jual_Mutasi_Kini: 0, _manual: {} };
+           Stok_Tersedia: null, Jual_Umum_Kini: 0, Jual_Khusus_Kini: 0, Jual_Mutasi_Kini: 0, _manual: {}, _markupOtomatis: {} };
 }
 
 // Harga modal efektif termasuk PPN dan setelah diskon persentase pada baris.
@@ -137,25 +138,41 @@ function marginPersenBeli(harga, modal) {
 function htmlLabaBeli(it) {
   var modal = hargaModalEfektifBeli(it);
   var levels = [['Umum', Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0], ['Nakes', Number(it.Harga_Khusus_Baru) || Number(it.Jual_Khusus_Kini) || 0], ['Apotek', Number(it.Harga_Jual_Mutasi_Baru) || Number(it.Jual_Mutasi_Kini) || 0]];
-  return levels.map(function (x) { var l = marginPersenBeli(x[1], modal); if (l === null) return '<div class="kpi-sub">' + x[0] + ': —</div>'; var kelas = l < 0 ? 'chip-bad' : (l < 10 ? 'chip-warn' : 'chip-ok'); return '<div><span class="kpi-sub">' + x[0] + ' </span><span class="chip ' + kelas + '">' + l.toFixed(1).replace('.', ',') + '%</span></div>'; }).join('');
+  return levels.map(function (x) { var l = marginPersenBeli(x[1], modal); if (l === null) return '<div class="kpi-sub">' + x[0] + ': —</div>'; var kelas = l < 0 ? 'chip-bad' : (l > 0 && l < 10 ? 'chip-warn' : 'chip-ok'); return '<div><span class="kpi-sub">' + x[0] + ' </span><span class="chip ' + kelas + '">' + l.toFixed(1).replace('.', ',') + '%</span></div>'; }).join('');
 }
 function hargaDariMarkupJS(modal, persen, pembulatan) {
-  if (modal === null || Number(modal) <= 0 || persen === null || persen === undefined || Number(persen) < 0) return null;
+  if (modal === null || !isFinite(Number(modal)) || Number(modal) <= 0 || persen === null || persen === undefined || !isFinite(Number(persen)) || Number(persen) < 0 || Number(persen) > 1000) return null;
   var mentah = Math.round(Number(modal) * (1 + Number(persen) / 100) * 100) / 100;
   if (Number(persen) === 0) return mentah;
   return Number(pembulatan) > 0 ? Math.ceil(mentah / Number(pembulatan)) * Number(pembulatan) : mentah;
 }
-function markupKePersenBeli(v) {
-  if (v === null || v === undefined || v === '') return null;
-  var n = Number(v); return BELI.markup.mode === 'rasio' ? (n - 1) * 100 : n;
+function markupInputBeliKePersen(v, mode) {
+  if (v === null || v === undefined || v === '') return { valid: true, persen: null };
+  var n = Number(v);
+  if (!isFinite(n)) return { valid: false, persen: null };
+  if (mode === 'rasio') {
+    if (n < 1 || n > 11) return { valid: false, persen: null };
+    return { valid: true, persen: (n - 1) * 100 };
+  }
+  if (n < 0 || n > 1000) return { valid: false, persen: null };
+  return { valid: true, persen: n };
+}
+function markupPersenBeliKeInput(persen, mode) {
+  if (persen === null || persen === undefined) return '';
+  return mode === 'rasio' ? 1 + Number(persen) / 100 : Number(persen);
 }
 function terapkanMarkupBaris(it) {
   if (!BELI.markup.tersedia || BELI.editNoFaktur) return;
   var modal = hargaModalEfektifBeli(it), m = BELI.markup;
+  it._markupOtomatis = it._markupOtomatis || {};
   [['umum','Harga_Jual_Umum_Baru'], ['nakes','Harga_Khusus_Baru'], ['mutasi','Harga_Jual_Mutasi_Baru']].forEach(function (x) {
     if (it._manual && it._manual[x[1]]) return;
-    var pct = markupKePersenBeli(m[x[0]]), harga = hargaDariMarkupJS(modal, pct, m.pembulatan);
-    if (harga !== null && harga > 0) it[x[1]] = harga;
+    var harga = m.valid ? hargaDariMarkupJS(modal, m[x[0]], m.pembulatan) : null;
+    if (harga !== null && harga > 0) {
+      it[x[1]] = harga; it._markupOtomatis[x[1]] = true;
+    } else if (it._markupOtomatis[x[1]]) {
+      it[x[1]] = 0; delete it._markupOtomatis[x[1]];
+    }
   });
 }
 function sinkronkanHargaMarkupBaris(tr, it) {
@@ -164,24 +181,52 @@ function sinkronkanHargaMarkupBaris(tr, it) {
   var lab = tr.querySelector('[data-laba]'); if (lab) lab.innerHTML = htmlLabaBeli(it);
 }
 function padananMarkupBeli() {
-  [['Umum','blMarkupUmum','blMarkupUmumPad'],['Nakes','blMarkupNakes','blMarkupNakesPad'],['Mutasi','blMarkupMutasi','blMarkupMutasiPad']].forEach(function (x) { var v = val(x[1]), el = document.getElementById(x[2]); if (!el) return; var n = Number(v); el.textContent = v === '' || !isFinite(n) ? '' : '= ' + (BELI.markup.mode === 'rasio' ? ((n - 1) * 100).toFixed(2).replace(/\.00$/, '') : (n / 100 + 1).toFixed(2).replace(/\.00$/, '') + '× rasio'); });
+  [['Umum','blMarkupUmum','blMarkupUmumPad'],['Nakes','blMarkupNakes','blMarkupNakesPad'],['Mutasi','blMarkupMutasi','blMarkupMutasiPad']].forEach(function (x) {
+    var v = val(x[1]), el = document.getElementById(x[2]); if (!el) return;
+    var n = Number(v), ratioMode = BELI.markup.mode === 'rasio';
+    var valid = v !== '' && isFinite(n) && (ratioMode ? n >= 1 && n <= 11 : n >= 0 && n <= 1000);
+    el.textContent = !valid ? '' : ratioMode
+      ? '= ' + ((n - 1) * 100).toFixed(2).replace(/\.00$/, '') + '%'
+      : '= ' + (n / 100 + 1).toFixed(2).replace(/\.00$/, '') + '× rasio';
+  });
 }
 function muatPengaturanMarkup() {
   api('harga.pengaturan', {}).then(function (res) {
     var status = document.getElementById('blMarkupStatus'), card = document.getElementById('blMarkupCard');
     if (!res.tersedia) { BELI.markup.tersedia = false; if (status) status.textContent = res.pesan; return; }
-    var c = res.pengaturan || {}; BELI.markup.tersedia = true; BELI.markup.mode = c.mode || 'persen'; BELI.markup.umum = c.markup_umum_persen == null ? null : Number(c.markup_umum_persen); BELI.markup.nakes = c.markup_nakes_persen == null ? null : Number(c.markup_nakes_persen); BELI.markup.mutasi = c.markup_mutasi_persen == null ? null : Number(c.markup_mutasi_persen); BELI.markup.pembulatan = Number(c.pembulatan) || 0;
+    var c = res.pengaturan || {}; BELI.markup.tersedia = true; BELI.markup.mode = c.mode === 'rasio' ? 'rasio' : 'persen'; BELI.markup.umum = c.markup_umum_persen == null ? null : Number(c.markup_umum_persen); BELI.markup.nakes = c.markup_nakes_persen == null ? null : Number(c.markup_nakes_persen); BELI.markup.mutasi = c.markup_mutasi_persen == null ? null : Number(c.markup_mutasi_persen); BELI.markup.pembulatan = Number(c.pembulatan) || 0;
+    BELI.markup.valid = [BELI.markup.umum, BELI.markup.nakes, BELI.markup.mutasi].every(function (p) { return p === null || (isFinite(p) && p >= 0 && p <= 1000); });
     ['blMarkupMode','blMarkupPembulatan'].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = id === 'blMarkupMode' ? BELI.markup.mode : String(BELI.markup.pembulatan); });
-    [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) { var el = document.getElementById(x[0]); if (el) { var pct = BELI.markup[x[1]]; el.value = pct == null ? '' : BELI.markup.mode === 'rasio' ? (1 + pct / 100) : pct; } });
-    if (status) status.textContent = res.tersimpan ? 'Bawaan cabang dimuat' : 'Belum ada bawaan; isi untuk faktur ini';
+    [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) { var el = document.getElementById(x[0]); if (el) el.value = markupPersenBeliKeInput(BELI.markup[x[1]], BELI.markup.mode); });
+    if (status) status.textContent = !BELI.markup.valid ? 'Bawaan markup tidak valid; periksa nilai 0–1000% atau rasio 1–11' : (res.tersimpan ? 'Bawaan cabang dimuat' : 'Belum ada bawaan; isi untuk faktur ini');
     if (card) card.hidden = false; var save = document.getElementById('blMarkupSimpan'); if (save) save.hidden = !(SESSION && SESSION.user && SESSION.user.role === 'Owner');
     padananMarkupBeli(); gambarBeli();
   }).catch(function (e) { var status = document.getElementById('blMarkupStatus'); if (status) status.textContent = e.message; });
 }
 function bacaMarkupBeli() {
-  BELI.markup.mode = val('blMarkupMode') || 'persen'; BELI.markup.umum = val('blMarkupUmum') === '' ? null : Number(val('blMarkupUmum')); BELI.markup.nakes = val('blMarkupNakes') === '' ? null : Number(val('blMarkupNakes')); BELI.markup.mutasi = val('blMarkupMutasi') === '' ? null : Number(val('blMarkupMutasi')); BELI.markup.pembulatan = Number(val('blMarkupPembulatan')) || 0; padananMarkupBeli(); gambarBeli();
+  var mode = val('blMarkupMode') === 'rasio' ? 'rasio' : 'persen';
+  var values = [markupInputBeliKePersen(val('blMarkupUmum'), mode), markupInputBeliKePersen(val('blMarkupNakes'), mode), markupInputBeliKePersen(val('blMarkupMutasi'), mode)];
+  BELI.markup.mode = mode; BELI.markup.valid = values.every(function (x) { return x.valid; });
+  BELI.markup.umum = BELI.markup.valid ? values[0].persen : null;
+  BELI.markup.nakes = BELI.markup.valid ? values[1].persen : null;
+  BELI.markup.mutasi = BELI.markup.valid ? values[2].persen : null;
+  BELI.markup.pembulatan = Number(val('blMarkupPembulatan')) || 0;
+  var status = document.getElementById('blMarkupStatus');
+  if (status) status.textContent = BELI.markup.valid ? 'Draf untuk faktur ini' : 'Nilai tidak valid: persen 0–1000 atau rasio 1–11';
+  padananMarkupBeli(); gambarBeli();
 }
-function simpanBawaanMarkupBeli() { var m = BELI.markup; api('harga.simpanPengaturan', { mode: m.mode, markup_umum_persen: m.umum, markup_nakes_persen: m.nakes, markup_mutasi_persen: m.mutasi, pembulatan: m.pembulatan }).then(function () { toast('Bawaan markup tersimpan.'); }).catch(function (e) { toast(e.message, true); }); }
+function ubahModeMarkupBeli() {
+  var m = BELI.markup, mode = val('blMarkupMode') === 'rasio' ? 'rasio' : 'persen';
+  if (!m.valid) { bacaMarkupBeli(); return; }
+  m.mode = mode;
+  [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) { var el = document.getElementById(x[0]); if (el) el.value = markupPersenBeliKeInput(m[x[1]], mode); });
+  padananMarkupBeli(); gambarBeli();
+}
+function simpanBawaanMarkupBeli() {
+  var m = BELI.markup;
+  if (!m.valid) { toast('Periksa markup: persen harus 0–1000 atau rasio 1–11.', true); return; }
+  api('harga.simpanPengaturan', { mode: m.mode, markup_umum_persen: m.umum, markup_nakes_persen: m.nakes, markup_mutasi_persen: m.mutasi, pembulatan: m.pembulatan }).then(function () { toast('Bawaan markup tersimpan.'); }).catch(function (e) { toast(e.message, true); });
+}
 
 // Nilai baris sebelum diskon: netto x qty + PPN.
 function brutoBaris(it) {
