@@ -94,6 +94,10 @@ var PERM = {
   "beli.simpanSupplier": ["Owner", "Apoteker"],
   "beli.detail": ["Owner", "Apoteker"],
   "beli.batal": ["Owner", "Apoteker"],
+  "harga.pengaturan": ["Owner", "Apoteker"],
+  "harga.simpanPengaturan": ["Owner"],
+  "harga.markupPreview": ["Owner"],
+  "harga.markupTerapkan": ["Owner"],
   "loyalty.expire": ["Owner", "Apoteker"],
   "biaya.list": ["Owner", "Kasir"],
   "biaya.simpan": ["Owner", "Kasir"],
@@ -772,6 +776,72 @@ async function action(name, data, s) {
       }
       throw new Error(detail && (detail.message || detail.details) || text || "Pembelian gagal.");
     }
+    return await r.json();
+  }
+  if (name === "harga.pengaturan") {
+    const cab = cabangSesi(s);
+    const r = await db("pengaturan_harga", `?cabang_id=eq.${encodeURIComponent(cab)}&select=cabang_id,mode,markup_umum_persen,markup_nakes_persen,markup_mutasi_persen,pembulatan,updated_by,updated_at&limit=1`);
+    if (!r.ok) {
+      const text = await r.text();
+      if (/PGRST205|relation .* does not exist|pengaturan_harga/i.test(text)) return { tersedia: false, pesan: "Markup harga belum tersedia karena migrasi database belum diterapkan." };
+      throw new Error(text);
+    }
+    const rows = await r.json();
+    return { tersedia: true, tersimpan: rows.length > 0, pengaturan: rows[0] || { mode: "persen", markup_umum_persen: null, markup_nakes_persen: null, markup_mutasi_persen: null, pembulatan: 100 } };
+  }
+  if (name === "harga.simpanPengaturan") {
+    const cab = cabangSesi(s);
+    const mode = String(data.mode || "persen");
+    if (!["persen", "rasio"].includes(mode)) throw new Error("Mode markup tidak valid.");
+    const pct = (v, label) => {
+      if (v === null || v === undefined || v === "") return null;
+      const n = Number(v); if (!Number.isFinite(n) || n < 0 || n > 1000) throw new Error(label + " harus 0 sampai 1000 persen."); return n;
+    };
+    const pembulatan = Number(data.pembulatan);
+    if (![0, 100, 500, 1000].includes(pembulatan)) throw new Error("Pembulatan tidak valid.");
+    const payload = { cabang_id: cab, mode, markup_umum_persen: pct(data.markup_umum_persen, "Markup umum"), markup_nakes_persen: pct(data.markup_nakes_persen, "Markup nakes"), markup_mutasi_persen: pct(data.markup_mutasi_persen, "Markup mutasi"), pembulatan, updated_by: s.username };
+    const r = await db("pengaturan_harga", `?cabang_id=eq.${encodeURIComponent(cab)}`, { method: "PATCH", headers: { ...headers, Prefer: "return=representation" }, body: JSON.stringify(payload) });
+    if (!r.ok) {
+      const text = await r.text();
+      if (/PGRST205|relation .* does not exist|pengaturan_harga/i.test(text)) throw new Error("Markup harga belum tersedia karena migrasi database belum diterapkan.");
+      throw new Error(text);
+    }
+    const rows = await r.json();
+    if (!rows.length) {
+      const c = await db("pengaturan_harga", "", { method: "POST", headers: { ...headers, Prefer: "return=representation" }, body: JSON.stringify(payload) });
+      if (!c.ok) throw new Error(await c.text());
+      return (await c.json())[0];
+    }
+    return rows[0];
+  }
+  if (name === "harga.markupPreview") {
+    const cab = encodeURIComponent(cabangSesi(s));
+    const limit = 100, offset = Math.max(0, Math.floor(Number(data.offset) || 0));
+    const q = String(data.q || "").trim().slice(0, 80);
+    const filter = q ? `&or=(kode_obat.ilike.${polaCari(q)},nama_obat.ilike.${polaCari(q)})` : "";
+    const r = await db("master_barang", `?cabang_id=eq.${cab}&aktif=eq.YA${filter}&select=kode_obat,nama_obat,harga_modal,harga_jual_umum,harga_khusus,harga_jual_mutasi&order=nama_obat.asc,kode_obat.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+    if (!r.ok) throw new Error(await r.text());
+    const total = Number(String(r.headers.get("content-range") || "").split("/")[1]) || 0;
+    const rows = await r.json();
+    const cfg = data.cfg || {};
+    const mode = cfg.mode === "rasio" ? "rasio" : "persen";
+    const toPct = (v) => { if (v === null || v === undefined || v === "") return null; const n = Number(v); return mode === "rasio" ? (n - 1) * 100 : n; };
+    const round = Number(cfg.pembulatan);
+    if (![0,100,500,1000].includes(round)) throw new Error("Pembulatan tidak valid.");
+    const price = (m, v) => { const pct = toPct(v); if (m == null || Number(m) <= 0 || pct == null || pct < 0 || pct > 1000) return null; const raw = Math.round(Number(m) * (1 + pct / 100) * 100) / 100; return pct === 0 ? raw : (round > 0 ? Math.ceil(raw / round) * round : raw); };
+    const calc = (b, field, key) => ({ tingkat: key, lama: Number(b[field] || 0), baru: price(b.harga_modal, cfg[key]), modal: b.harga_modal, markup_persen: toPct(cfg[key]) });
+    return { total, offset, limit, rows: rows.map((b) => ({ kode_obat: b.kode_obat, nama_obat: b.nama_obat, modal: b.harga_modal, harga: [calc(b, "harga_jual_umum", "umum"), calc(b, "harga_khusus", "nakes"), calc(b, "harga_jual_mutasi", "mutasi")] })) };
+  }
+  if (name === "harga.markupTerapkan") {
+    const kode = Array.isArray(data.kode_obat) ? data.kode_obat.map(String).filter(Boolean).slice(0, 200) : [];
+    const tingkat = Array.isArray(data.tingkat) ? data.tingkat.filter((x) => ["umum", "nakes", "mutasi"].includes(x)) : [];
+    if (!kode.length || !tingkat.length) throw new Error("Pilih minimal satu barang dan satu tingkat harga.");
+    const toPct = (v) => v === null || v === undefined || v === "" ? null : (data.mode === "rasio" ? (Number(v) - 1) * 100 : Number(v));
+    const u = toPct(data.umum), n = toPct(data.nakes), m = toPct(data.mutasi), round = Number(data.pembulatan);
+    for (const [v, label] of [[u,"Markup umum"],[n,"Markup nakes"],[m,"Markup mutasi"]]) if (v !== null && (!Number.isFinite(v) || v < 0 || v > 1000)) throw new Error(label + " harus 0 sampai 1000 persen.");
+    if (![0,100,500,1000].includes(round)) throw new Error("Pembulatan tidak valid.");
+    const r = await db("rpc/harga_markup_terapkan", "", { method: "POST", headers: { ...headers }, body: JSON.stringify({ p_username: s.username, p_cabang_id: cabangSesi(s), p_kode_obat: kode, p_tingkat: tingkat, p_markup_umum_persen: u, p_markup_nakes_persen: n, p_markup_mutasi_persen: m, p_pembulatan: round, p_sumber: data.sumber || "markup master" }) });
+    if (!r.ok) throw new Error(await r.text());
     return await r.json();
   }
   if (name === "beli.list") {
