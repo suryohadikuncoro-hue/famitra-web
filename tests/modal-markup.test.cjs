@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const sql = ['20261009130000_pembelian_diskon_hutang_atomik.sql','20261009130100_purchase_effective_unit_cost_ppn.sql','20261009130200_pos_checkout_shift_boundaries.sql','20261009140000_markup_harga.sql'].map(f => fs.readFileSync(path.join(root, 'supabase/migrations', f), 'utf8')).join('\n');
+const sql = ['20261009130000_pembelian_diskon_hutang_atomik.sql','20261009130100_purchase_effective_unit_cost_ppn.sql','20261009130200_pos_checkout_shift_boundaries.sql','20261009140000_markup_harga.sql','20261009150000_purchase_discount_percent_repair.sql'].map(f => fs.readFileSync(path.join(root, 'supabase/migrations', f), 'utf8')).join('\n');
 const js = fs.readFileSync(path.join(root, 'public/js_trx.js'), 'utf8');
 
 function harga(modal, persen, pembulatan) {
@@ -36,15 +36,36 @@ test('vektor modal termasuk PPN setelah diskon', () => {
   assert.equal(modal(1000, 1, 0, 10), 900);
 });
 
+test('diskon modul Pembelian berkontrak persen 0–100, bukan nominal', () => {
+  assert.equal(modal(1000, 1, 11, 10), 999, '10 percent of Rp1,110 leaves modal Rp999');
+  assert.match(sql, /1\s*-\s*least\(greatest\(coalesce\(p_diskon, 0\), 0\), 100\)\s*\/\s*100/i);
+  assert.match(sql, /p_diskon adalah persentase 0\.\.100/i);
+});
+
+test('pemulihan diskon membedakan baris duplikat dan migrasi historis memakai subtotal', () => {
+  const cleanup = fs.readFileSync(path.join(root, 'supabase/migrations', '20261009150000_purchase_discount_percent_repair.sql'), 'utf8');
+  assert.match(cleanup, /WITH ORDINALITY AS x\(value, ordinality\)/i);
+  assert.match(cleanup, /row_number\(\) OVER \([\s\S]*?ORDER BY d\.id/i);
+  assert.match(cleanup, /v_updated <> v_item_count/i);
+  assert.match(cleanup, /d\.diskon > 100[\s\S]*subtotal/i);
+  assert.match(cleanup, /round\(\(r\.bruto - r\.subtotal\) \/ nullif\(r\.bruto, 0\) \* 100, 8\)/i);
+  assert.match(cleanup, /purchase_refresh_costs\(v\.cabang_id, v\.kode_obat\)/i);
+  assert.doesNotMatch(cleanup, /SET subtotal\s*=|UPDATE public\.trx_pembelian\s+SET/i);
+});
+
+test('margin tepat 0% bukan warning visual', () => {
+  assert.match(js, /l > 0 && l < 10 \? 'chip-warn'/);
+});
+
 test('frontend memuat rumus dan pengaturan yang diwajibkan', () => {
   for (const needle of ['hargaDariMarkupJS', 'Harga_Jual_Mutasi_Baru', 'harga.pengaturan', 'Harga yang diketik manual tidak ditimpa', 'termasuk PPN']) assert.match(js, new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(js, /di luar PPN|sebelum PPN/);
 });
 
 test('migrasi aman: tabel baru hanya terbuka untuk service_role dan RLS aktif', () => {
-  for (const table of ['pengaturan_harga', 'log_perubahan_harga']) {
+  for (const table of ['pengaturan_harga', 'log_perubahan_harga', 'purchase_discount_percent_repair_backup']) {
     assert.match(sql, new RegExp(`alter table public\\.${table} enable row level security`, 'i'));
-    assert.match(sql, new RegExp(`create policy \\w+ on public\\.${table}`, 'i'));
+    assert.match(sql, new RegExp(`create policy \\w+\\s+on public\\.${table}`, 'i'));
     assert.match(sql, new RegExp(`grant [^;]+ on public\\.${table} to service_role`, 'i'));
     assert.match(sql, new RegExp(`revoke all on public\\.${table} from public, anon, authenticated`, 'i'));
   }
