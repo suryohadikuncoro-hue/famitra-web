@@ -2,27 +2,6 @@
 
 /* ----------------------------------------------- Master Barang (Bab 4) --- */
 
-var MARKUP_MASTER_ROWS = [];                    // barang yang termuat + harga baru yang diketik
-var MARKUP_MASTER_TOTAL = 0;                    // total barang di server untuk pencarian aktif
-var MARKUP_MASTER_Q = '';                       // pencarian yang sedang dipakai
-var MARKUP_MASTER_OFFSET = 0;                   // offset halaman berikutnya
-var MARKUP_MASTER_MUAT_KEY = '';                // tanda daftar termuat cocok dengan pencarian dan cfg
-var MARKUP_MASTER_CFG = null;                   // markup bawaan cabang (kolom saran harga baru)
-var MARKUP_MASTER_GOL = Object.create(null);    // kode obat -> golongan (dilengkapi dari barang.list)
-var MARKUP_MASTER_GOL_HAL = 0;                  // halaman barang.list terakhir yang diambil
-var MARKUP_MASTER_GOL_Q = null;                 // pemilik cache golongan
-var MARKUP_MASTER_PREVIEW_REQUEST = 0;
-var MARKUP_MASTER_SELECTED = Object.create(null);
-var MARKUP_MASTER_SELECT_ALL = false;
-var MARKUP_MASTER_SEARCH_TIMER = null;
-var MARKUP_MASTER_SARAN = [];                   // daftar saran kolom pencarian yang sedang tampil
-var MARKUP_MASTER_SARAN_Q = null;               // kata kunci yang sedang tampil di daftar saran
-var MARKUP_MASTER_SARAN_INDEX = -1;             // sorotan papan tik (panah atas/bawah) di daftar saran
-var MARKUP_MASTER_SARAN_REQUEST = 0;
-var MARKUP_MASTER_SARAN_TIMER = null;           // jeda ketik sebelum saran dimuat ulang
-var MARKUP_MASTER_SARAN_MUAT = null;            // kata kunci yang saran-nya sedang dimuat
-var MARKUP_MASTER_SARAN_KLIK_LUAR = false;      // penjaga agar pendengar klik luar hanya dipasang sekali
-
 VIEWS.barang = {
   title: 'Master Barang',
   render: function (el) {
@@ -30,7 +9,7 @@ VIEWS.barang = {
       '<div class="card"><div class="card-head">' +
         '<h3>Katalog produk</h3>' +
         '<input id="bgCari" class="inp" style="max-width:230px" placeholder="Cari nama, kode, kategori">' +
-        '<button id="bgTambah" class="btn btn-primary"><span class="hanya-desktop">Tambah barang</span><span class="hanya-hp">+ Barang</span></button>' + ((SESSION && SESSION.user && SESSION.user.role === 'Owner') ? '<button id="bgMarkup" class="btn">Terapkan markup</button>' : '') + '</div>' +
+        '<button id="bgTambah" class="btn btn-primary"><span class="hanya-desktop">Tambah barang</span><span class="hanya-hp">+ Barang</span></button></div>' +
       // Di HP daftar tampil sebagai kartu (#bgKartu); tabel disembunyikan.
       '<div id="bgKartu" class="m-list hanya-hp"></div>' +
       '<div class="table-wrap hanya-desktop"><table data-tk-off="1"><thead><tr>' +
@@ -41,7 +20,6 @@ VIEWS.barang = {
       '<div id="bgPager" class="pager"></div></div>';
 
     document.getElementById('bgTambah').onclick = function () { formBarang(null); };
-    var markup = document.getElementById('bgMarkup'); if (markup) markup.onclick = formMarkupMaster;
     var t = null;
     document.getElementById('bgCari').addEventListener('input', function () {
       clearTimeout(t); t = setTimeout(function () { muatBarang(1); }, 250);
@@ -120,614 +98,191 @@ function muatBarang(hal) {
   });
 }
 
-/* --- Daftar kerja markup (Owner) ------------------------------------------
-   Dulu panel ini menerapkan satu aturan markup borongan ke banyak barang
-   sekaligus. Sekarang bentuknya daftar kerja per barang: tiap barang dapat
-   disunting di tempat, modal dan margin tampil berdampingan, dan margin
-   dihitung ulang setiap kali pengguna mengetik. Sumber data tetap aksi lama
-   harga.markupPreview; tidak ada aksi API baru yang ditambahkan.
-   Markup tombol bantu diisi per tipe pelanggan (Umum / Nakes / Apotek lain)
-   dan harga hasil hitungan dikirim per tingkat lewat harga.markupTerapkan,
-   karena di apotek ini markup tiap tipe pelanggan memang berbeda. */
+/* --- Penetapan harga di form Ubah barang (satu pintu per barang) ---------
+   Keputusan pemilik: tombol markup dan panel daftar kerja markup di Master
+   Barang dihapus, penetapan harga dilebur ke dalam form Ubah/Tambah barang.
+   Modal terakhir sudah termasuk PPN dan sudah dikurangi diskon pembelian;
+   markup Umum, Nakes, dan Apotek lain diisi di kolom terpisah supaya satu
+   persen tidak pernah diam-diam dipakai untuk ketiga tingkat. Rumus harga dan
+   mode input (persen 0–1000% atau rasio 1–11) mengikuti modul Pembelian:
+   hargaDariMarkupJS, markupInputBeliKePersen, dan markupPersenBeliKeInput
+   dipakai apa adanya dari js_trx.js supaya angkanya sama. Harga jual tetap
+   bisa diketik manual di form ini. */
 
-/** Label tingkat harga. 'mutasi' ditampilkan sebagai "Apotek lain" sesuai
- *  kolom harga_jual_mutasi di Master Barang. */
-function labelMarkupMaster(t) { return t === 'umum' ? 'Umum' : (t === 'nakes' ? 'Nakes' : 'Apotek lain'); }
-/** Id kolom markup tombol bantu; satu kolom untuk tiap tingkat supaya Umum,
- *  Nakes, dan Apotek lain bisa diisi persen yang berbeda. */
-function idPersenMarkupMaster(t) { return t === 'umum' ? 'mkPersenUmum' : (t === 'nakes' ? 'mkPersenNakes' : (t === 'mutasi' ? 'mkPersenMutasi' : null)); }
-/** Markup tombol bantu untuk SATU tingkat. Tanpa argumen tingkat hasilnya null
- *  supaya satu persen tidak pernah diam-diam dipakai untuk ketiga tingkat. */
-function nilaiPersenMarkupMaster(t) {
-  var v = val(idPersenMarkupMaster(t)); if (v === '') return null;
-  var n = Number(v);
-  return isFinite(n) && n >= 0 && n <= 1000 ? n : null;
+/** Bawaan cabang dari pengaturan_harga; diisi muatPengaturanMarkupBarang(). */
+var MARKUP_BARANG = { mode: 'persen', pembulatan: 100 };
+/** Nama kolom pengaturan_harga untuk tiap tingkat markup. */
+var MARKUP_BARANG_KOLOM = { umum: 'markup_umum_persen', nakes: 'markup_nakes_persen', mutasi: 'markup_mutasi_persen' };
+
+function tingkatHargaBarang() { return ['umum', 'nakes', 'mutasi']; }
+/** Label tingkat harga; 'mutasi' ditampilkan "Apotek lain" seperti kolom
+ *  harga_jual_mutasi di Master Barang. */
+function labelTingkatHargaBarang(t) { return t === 'umum' ? 'Umum' : (t === 'nakes' ? 'Nakes' : 'Apotek lain'); }
+/** Id kolom markup; satu kolom untuk tiap tingkat. Tanpa argumen tingkat
+ *  hasilnya null supaya satu persen tidak pernah dipakai untuk ketiganya. */
+function idMarkupBarang(t) { return t === 'umum' ? 'fbMarkupUmum' : (t === 'nakes' ? 'fbMarkupNakes' : (t === 'mutasi' ? 'fbMarkupMutasi' : null)); }
+/** Id kolom harga jual tiap tingkat di form barang. */
+function idHargaBarang(t) { return t === 'umum' ? 'fbUmum' : (t === 'nakes' ? 'fbKhusus' : (t === 'mutasi' ? 'fbMutasi' : null)); }
+/** Id tempat margin tiap tingkat ditampilkan. */
+function idMarginBarang(t) { return t === 'umum' ? 'fbMarginUmum' : (t === 'nakes' ? 'fbMarginNakes' : (t === 'mutasi' ? 'fbMarginMutasi' : null)); }
+/** Id label kolom markup (satuannya ikut mode) dan padanan nilainya. */
+function idLabelMarkupBarang(t) { return t === 'umum' ? 'fbMarkupUmumLabel' : (t === 'nakes' ? 'fbMarkupNakesLabel' : (t === 'mutasi' ? 'fbMarkupMutasiLabel' : null)); }
+function idPadananMarkupBarang(t) { return t === 'umum' ? 'fbMarkupUmumPad' : (t === 'nakes' ? 'fbMarkupNakesPad' : (t === 'mutasi' ? 'fbMarkupMutasiPad' : null)); }
+/** Mode markup yang dipilih di form; hanya pilihan tampilan form dan tidak
+ *  pernah mengubah pengaturan cabang saat barang disimpan. */
+function modeMarkupBarang() { return val('fbMarkupMode') === 'rasio' ? 'rasio' : 'persen'; }
+/** Satuan yang sesuai mode: persen (%) atau rasio (×). */
+function satuanMarkupBarang(mode) { return mode === 'rasio' ? '×' : '%'; }
+/** Markup satu tingkat, dinormalkan ke persen memakai batas modul Pembelian
+ *  (persen 0–1000, rasio 1–11); null bila kolomnya kosong atau di luar batas. */
+function persenMarkupBarang(t) {
+  var h = markupInputBeliKePersen(val(idMarkupBarang(t)), MARKUP_BARANG.mode);
+  return h.valid ? h.persen : null;
 }
-/** Ringkasan ketiga markup tombol bantu, mis. "Umum 40% · Nakes 10% · Apotek lain 0%". */
-function teksRingkasPersenMarkupMaster() {
-  return tingkatMarkupMaster().map(function (t) {
-    var persen = nilaiPersenMarkupMaster(t);
-    return labelMarkupMaster(t) + ' ' + (persen === null ? '—' : angka(persen)) + '%';
-  }).join(' · ');
+/** Semua kolom markup yang terisi harus di dalam batas mode yang aktif. */
+function validMarkupBarang() {
+  var sah = true;
+  tingkatHargaBarang().forEach(function (t) {
+    if (!markupInputBeliKePersen(val(idMarkupBarang(t)), MARKUP_BARANG.mode).valid) sah = false;
+  });
+  return sah;
 }
-function teksTombolMarkupMaster() { return 'Markup ' + teksRingkasPersenMarkupMaster(); }
-/** Markup bawaan cabang; dipakai harga.markupPreview untuk kolom saran harga
- *  baru (angka abu-abu) supaya Owner tahu usulan sistem. */
-function cfgMarkupMaster() {
-  return MARKUP_MASTER_CFG || { mode: 'persen', umum: null, nakes: null, mutasi: null, pembulatan: 100 };
-}
-function tingkatMarkupMaster() { return ['umum', 'nakes', 'mutasi']; }
-function markupMasterKey(cfg, q, tingkat) { return JSON.stringify({ cfg: cfg, q: q, tingkat: (tingkat || []).slice().sort() }); }
-/** Ambang margin (%) yang dianggap aman; bawaan 20%. */
-function ambangMarkupMaster() {
-  var v = val('mkAmbang'); if (v === '') return 20;
-  var n = Number(v);
-  return isFinite(n) && n >= 0 ? n : 20;
-}
-/** Margin % = (harga jual − modal) ÷ harga jual, sama dengan modul lain. */
-function marginMarkupMaster(harga, modal) {
+/** Ambang margin (%) yang dianggap aman di form barang; bawaan 20%. */
+function ambangMarginBarang() { return 20; }
+/** Margin % = (harga jual - modal) / harga jual, sama dengan modul lain. */
+function marginHargaBarang(harga, modal) {
   harga = Number(harga) || 0;
   return harga > 0 && modal != null && Number(modal) > 0 ? (harga - Number(modal)) / harga * 100 : null;
 }
-function golonganMarkupMaster(kode) { return MARKUP_MASTER_GOL[String(kode)] || ''; }
-function cariBarisMarkupMaster(kode) {
-  for (var i = 0; i < MARKUP_MASTER_ROWS.length; i++) if (MARKUP_MASTER_ROWS[i].kode === kode) return MARKUP_MASTER_ROWS[i];
-  return null;
-}
-function nilaiMarkupMaster(x, t) {
-  var v = x.nilai[t];
-  if (v === undefined || v === null || v === '') return null;
-  var n = Number(v);
-  return isFinite(n) ? n : null;
-}
-/** Harga untuk menghitung margin: harga baru bila sudah diisi pengguna, bila
- *  belum harga jual yang berlaku sekarang supaya barang bermargin rendah
- *  langsung terlihat pada pengurutan bawaan. */
-function hargaEfektifMarkupMaster(x, t) {
-  var n = nilaiMarkupMaster(x, t);
-  if (n !== null) return n;
-  return x.harga[t] ? Number(x.harga[t].lama) : null;
-}
-function marginBarisMarkupMaster(x, t) { return marginMarkupMaster(hargaEfektifMarkupMaster(x, t), x.modal); }
-/** Tingkat yang harganya diisi pengguna dan berbeda dari harga sekarang. */
-function tingkatBerubahMarkupMaster(x) {
-  return tingkatMarkupMaster().filter(function (t) {
-    var n = nilaiMarkupMaster(x, t);
-    if (n === null) return false;
-    return x.harga[t] ? n !== Number(x.harga[t].lama) : true;
-  });
-}
-function marginDiBawahAmbangMarkupMaster(x, t) {
-  var m = marginBarisMarkupMaster(x, t);
-  return m !== null && m < ambangMarkupMaster();
-}
-function barisMarkupMasterBerubah() {
-  return MARKUP_MASTER_ROWS.filter(function (x) { return tingkatBerubahMarkupMaster(x).length > 0; });
-}
-/** Margin terburuk sebuah barang; dipakai pengurutan bawaan (terendah dulu).
- *  Barang yang modalnya belum diketahui ditaruh paling akhir. */
-function marginTerendahMarkupMaster(x) {
-  var m = null;
-  tingkatMarkupMaster().forEach(function (t) {
-    var n = marginBarisMarkupMaster(x, t);
-    if (n !== null && (m === null || n < m)) m = n;
-  });
-  return m === null ? Infinity : m;
-}
-function htmlIsiMarginMarkupMaster(x, t) {
-  var m = marginBarisMarkupMaster(x, t);
+/** Chip margin satu tingkat: hijau mulai ambang 20%, merah di bawahnya. */
+function htmlMarginBarang(harga, modal) {
+  var m = marginHargaBarang(harga, modal);
   if (m === null) return '<span class="kpi-sub">margin —</span>';
-  var kelas = m >= ambangMarkupMaster() ? 'chip-ok' : 'chip-bad';
-  var kini = nilaiMarkupMaster(x, t) === null ? '<span class="kpi-sub">kini </span>' : '';
-  return kini + '<span class="chip ' + kelas + '">' + m.toFixed(1).replace('.', ',') + '%</span>';
+  return '<span class="chip ' + (m >= ambangMarginBarang() ? 'chip-ok' : 'chip-bad') + '">' + m.toFixed(1).replace('.', ',') + '%</span>';
 }
-function htmlTingkatMarkupMaster(x, t) {
-  var h = x.harga[t] || {};
-  var label = labelMarkupMaster(t);
-  var nilai = x.nilai[t] === undefined ? '' : String(x.nilai[t]);
-  var saran = h.baru == null ? '' : String(h.baru);
-  return '<label class="field" style="margin-bottom:0"><span>' + label + ' · sekarang ' + (h.lama == null ? '—' : rupiah(h.lama)) + '</span>' +
-    '<input class="inp num" type="number" min="0" step="any" data-markup-harga="' + t + '" data-markup-kode-baris="' + esc(x.kode) + '" value="' + esc(nilai) + '" placeholder="' + esc(saran) + '">' +
-    '<small data-markup-margin="' + t + '">' + htmlIsiMarginMarkupMaster(x, t) + '</small></label>';
+/** Modal terakhir dari form; null bila kosong atau 0 (markup tidak dihitung). */
+function modalFormBarang() {
+  var v = val('fbModal'); if (v === '') return null;
+  var n = Number(v);
+  return isFinite(n) && n > 0 ? n : null;
 }
-function htmlBarisMarkupMaster(x) {
-  var kode = esc(x.kode);
-  return '<div data-markup-baris="' + kode + '" style="border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px">' +
-    '<div class="pay-row" style="justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
-      '<label class="kpi-sub" style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;flex:1;min-width:190px">' +
-        '<input type="checkbox" data-markup-kode value="' + kode + '" style="margin-top:3px" aria-label="Pilih ' + esc(x.nama) + '">' +
-        '<span><strong>' + esc(x.nama) + '</strong><br>' + kode + ' · golongan ' + esc(golonganMarkupMaster(x.kode) || '—') + '</span>' +
-      '</label>' +
-      '<div class="kpi-sub" style="text-align:right">Modal terakhir <strong>' + (x.modal == null ? '—' : rupiah(x.modal)) + '</strong><br>' +
-        '<button type="button" class="btn btn-sm" data-markup-isi="' + kode + '">' + esc(teksTombolMarkupMaster()) + '</button></div>' +
-    '</div>' +
-    '<div class="grid g3">' + tingkatMarkupMaster().map(function (t) { return htmlTingkatMarkupMaster(x, t); }).join('') + '</div>' +
-  '</div>';
-}
-function urutkanMarkupMaster(daftar) {
-  var mode = val('mkUrut') || 'margin';
-  var salin = daftar.slice();
-  if (mode === 'nama') salin.sort(function (a, b) { return String(a.nama || '').localeCompare(String(b.nama || ''), 'id'); });
-  else if (mode === 'kode') salin.sort(function (a, b) { return String(a.kode).localeCompare(String(b.kode), 'id'); });
-  else if (mode === 'modal') salin.sort(function (a, b) { return (Number(b.modal) || 0) - (Number(a.modal) || 0); });
-  else salin.sort(function (a, b) { return marginTerendahMarkupMaster(a) - marginTerendahMarkupMaster(b); });
-  return salin;
-}
-function barisMarkupMasterTampil() {
-  var gol = val('mkGol');
-  return urutkanMarkupMaster(MARKUP_MASTER_ROWS.filter(function (x) { return !gol || golonganMarkupMaster(x.kode) === gol; }));
-}
-function kodeMarkupMasterTerpilih() {
-  var tampil = barisMarkupMasterTampil().map(function (x) { return x.kode; });
-  if (MARKUP_MASTER_SELECT_ALL) return tampil;
-  return tampil.filter(function (k) { return !!MARKUP_MASTER_SELECTED[k]; });
-}
-/** Pilihan golongan diambil dari data yang sedang termuat. */
-function perbaruiGolonganMarkupMaster() {
-  var sel = document.getElementById('mkGol'); if (!sel) return;
-  var tetap = sel.value, urut = ['Bebas', 'Bebas Terbatas', 'Resep', 'Khusus'], unik = [];
-  MARKUP_MASTER_ROWS.forEach(function (x) { var g = golonganMarkupMaster(x.kode); if (g && unik.indexOf(g) < 0) unik.push(g); });
-  unik.sort(function (a, b) {
-    var ia = urut.indexOf(a), ib = urut.indexOf(b);
-    if (ia < 0 && ib < 0) return a.localeCompare(b, 'id');
-    if (ia < 0) return 1;
-    if (ib < 0) return -1;
-    return ia - ib;
-  });
-  sel.innerHTML = '<option value="">Semua golongan</option>' + unik.map(function (g) { return '<option value="' + esc(g) + '">' + esc(g) + '</option>'; }).join('');
-  sel.value = unik.indexOf(tetap) >= 0 ? tetap : '';
-}
-function perbaruiTombolBantuMarkupMaster() {
-  var teks = teksTombolMarkupMaster();
-  Array.prototype.forEach.call(document.querySelectorAll('[data-markup-isi]'), function (b) { b.textContent = teks; });
-  var borongan = document.getElementById('mkBorongan');
-  if (borongan) borongan.textContent = 'Terapkan markup ' + teksRingkasPersenMarkupMaster() + ' ke baris terpilih';
-}
-/** Menutup panel; harga baru yang belum disimpan tidak hilang diam-diam. */
-function tutupMarkupMaster() {
-  var berubah = barisMarkupMasterBerubah().length;
-  if (berubah && !confirm('Ada ' + angka(berubah) + ' barang dengan harga baru yang belum disimpan. Tutup dan buang perubahan itu?')) return;
-  modalTutup();
-}
-function gambarTombolMarkupMaster() {
-  var foot = document.getElementById('modalFoot'); if (!foot) return;
-  foot.innerHTML = '';
-  [['Tutup', tutupMarkupMaster, ''], ['Simpan harga baru', simpanMarkupMaster, 'btn-primary', 'mkApply']].forEach(function (x) {
-    var b = document.createElement('button'); b.className = 'btn ' + x[2]; b.textContent = x[0]; if (x[3]) b.id = x[3]; b.onclick = x[1]; foot.appendChild(b);
-  });
-  sinkronkanMarkupMaster();
-}
-function sinkronkanMarkupMaster() {
-  var box = document.getElementById('mkPreview');
-  if (box) Array.prototype.forEach.call(box.querySelectorAll('[data-markup-kode]'), function (el) { el.checked = MARKUP_MASTER_SELECT_ALL || !!MARKUP_MASTER_SELECTED[el.value]; });
-  var semua = document.getElementById('mkPilihSemua'); if (semua) semua.checked = MARKUP_MASTER_SELECT_ALL;
-  var berubah = barisMarkupMasterBerubah(), kolom = 0, dibawah = 0, termuatBawah = 0;
-  berubah.forEach(function (x) {
-    var t = tingkatBerubahMarkupMaster(x);
-    kolom += t.length;
-    if (t.some(function (k) { return marginDiBawahAmbangMarkupMaster(x, k); })) dibawah++;
-  });
-  MARKUP_MASTER_ROWS.forEach(function (x) { if (marginTerendahMarkupMaster(x) < ambangMarkupMaster()) termuatBawah++; });
-  var ringkas = document.getElementById('mkRingkas');
-  if (ringkas) ringkas.textContent = MARKUP_MASTER_MUAT_KEY
-    ? 'Menampilkan ' + angka(MARKUP_MASTER_ROWS.length) + ' dari ' + angka(MARKUP_MASTER_TOTAL) + ' barang' +
-      (MARKUP_MASTER_Q ? ' untuk pencarian "' + MARKUP_MASTER_Q + '"' : '') +
-      ' · ' + angka(termuatBawah) + ' di antaranya marginnya masih di bawah ambang ' + angka(ambangMarkupMaster()) + '%' +
-      ' · ' + angka(berubah.length) + ' barang disunting (' + angka(kolom) + ' kolom harga)' +
-      (berubah.length ? ', ' + angka(dibawah) + ' di antaranya tetap di bawah ambang' : '') + '.'
-    : 'Memuat daftar barang…';
-  var apply = document.querySelector('#mkApply');
-  if (apply) { apply.disabled = !berubah.length; apply.textContent = berubah.length ? 'Simpan ' + angka(berubah.length) + ' barang' : 'Simpan harga baru'; }
-  var borongan = document.getElementById('mkBorongan');
-  if (borongan) borongan.disabled = !MARKUP_MASTER_SELECT_ALL && !Object.keys(MARKUP_MASTER_SELECTED).length;
-}
-function gambarMarkupMaster() {
-  var box = document.getElementById('mkPreview'); if (!box) return;
-  var daftar = barisMarkupMasterTampil();
-  box.innerHTML = daftar.length
-    ? daftar.map(htmlBarisMarkupMaster).join('')
-    : '<p class="kpi-sub">' + (MARKUP_MASTER_Q ? 'Tidak ada barang yang cocok dengan pencarian dan saringan ini.' : 'Belum ada barang aktif yang bisa ditinjau di cabang ini.') + '</p>';
-  perbaruiGolonganMarkupMaster();
-  perbaruiTombolBantuMarkupMaster();
-  var lagi = document.getElementById('mkLagi');
-  if (lagi) { lagi.hidden = MARKUP_MASTER_OFFSET >= MARKUP_MASTER_TOTAL; lagi.disabled = false; lagi.textContent = 'Muat 100 barang berikutnya'; }
-  sinkronkanMarkupMaster();
-}
-/** Golongan tidak ikut dikembalikan harga.markupPreview, jadi dilengkapi dari
- *  aksi lama barang.list (200 baris per halaman) untuk kode yang tampil. Bila
- *  gagal, daftar tetap tampil dan golongan ditulis "—". */
-function lengkapiGolonganMarkupMaster(q, offset, jumlah) {
-  if (MARKUP_MASTER_GOL_Q !== q) { MARKUP_MASTER_GOL_Q = q; MARKUP_MASTER_GOL_HAL = 0; MARKUP_MASTER_GOL = Object.create(null); }
-  var butuh = Math.ceil((offset + Math.max(jumlah, 1)) / 200), urutan = [];
-  for (var i = MARKUP_MASTER_GOL_HAL; i < butuh; i++) urutan.push(i + 1);
-  if (!urutan.length) return Promise.resolve();
-  return urutan.reduce(function (p, h) {
-    return p.then(function () {
-      return api('barang.list', { q: q, halaman: h, per_halaman: 200 }).then(function (res) {
-        (res.rows || []).forEach(function (b) { MARKUP_MASTER_GOL[String(b.Kode_Obat || b.kode_obat || '')] = b.Golongan || b.golongan || ''; });
-        MARKUP_MASTER_GOL_HAL = Math.max(MARKUP_MASTER_GOL_HAL, h);
-      });
-    });
-  }, Promise.resolve()).catch(function () { /* pelengkap saja, jangan hentikan daftar */ });
-}
-/** Muat daftar kerja dari halaman pertama untuk pencarian yang aktif. */
-function previewMarkupMaster() {
-  var box = document.getElementById('mkPreview'); if (!box) return;
-  MARKUP_MASTER_Q = val('mkCari');
-  MARKUP_MASTER_OFFSET = 0;
-  MARKUP_MASTER_MUAT_KEY = markupMasterKey(cfgMarkupMaster(), MARKUP_MASTER_Q, tingkatMarkupMaster());
-  box.innerHTML = '<p class="kpi-sub">Memuat daftar barang…</p>';
-  muatHalamanMarkupMaster(0, false);
-}
-/** Satu halaman daftar kerja (100 barang) dari aksi harga.markupPreview.
- *  `tambah` = true untuk menyambung 100 barang berikutnya di bawah daftar. */
-function muatHalamanMarkupMaster(offset, tambah) {
-  var box = document.getElementById('mkPreview'); if (!box) return;
-  var request = ++MARKUP_MASTER_PREVIEW_REQUEST;
-  if (!tambah) { MARKUP_MASTER_ROWS = []; MARKUP_MASTER_TOTAL = 0; MARKUP_MASTER_SELECTED = Object.create(null); MARKUP_MASTER_SELECT_ALL = false; }
-  var q = MARKUP_MASTER_Q || '';
-  var lagi = document.getElementById('mkLagi'); if (lagi) { lagi.disabled = true; lagi.textContent = 'Memuat…'; }
-  api('harga.markupPreview', { q: q, offset: offset, cfg: cfgMarkupMaster() }).then(function (r) {
-    if (request !== MARKUP_MASTER_PREVIEW_REQUEST) return;
-    var rows = (r.rows || []).map(function (x) {
-      var h = {};
-      (x.harga || []).forEach(function (y) { h[y.tingkat] = y; });
-      return { kode: String(x.kode_obat || ''), nama: x.nama_obat, modal: x.modal == null ? null : Number(x.modal), harga: h, nilai: {} };
-    });
-    MARKUP_MASTER_ROWS = tambah ? MARKUP_MASTER_ROWS.concat(rows) : rows;
-    MARKUP_MASTER_TOTAL = Number(r.total) || 0;
-    MARKUP_MASTER_OFFSET = offset + rows.length;
-    return lengkapiGolonganMarkupMaster(q, offset, rows.length).then(function () {
-      if (request !== MARKUP_MASTER_PREVIEW_REQUEST) return;
-      gambarMarkupMaster();
-    });
-  }).catch(function (e) {
-    if (request !== MARKUP_MASTER_PREVIEW_REQUEST) return;
-    if (lagi) { lagi.hidden = false; lagi.disabled = false; lagi.textContent = 'Coba muat lagi'; }
-    box.innerHTML = '<p class="kpi-sub">' + esc(e.message) + '</p>';
-  });
-}
-/** Tombol bantu per baris: tiap tingkat memakai persentasenya sendiri
- *  (Umum/Nakes/Apotek lain), bukan satu persen untuk ketiganya. Tingkat yang
- *  kolom markupnya dikosongkan dilewati supaya angka yang sudah diketik tidak
- *  ikut tertimpa. */
-function isiMarkupMaster(kode) {
-  var x = cariBarisMarkupMaster(kode); if (!x) return;
-  if (!(Number(x.modal) > 0)) { toast('Modal ' + x.kode + ' belum diketahui, jadi markup tidak bisa dihitung.', true); return; }
-  // Rumus markup dipakai bersama modul Pembelian supaya angkanya identik.
-  var pembulatan = Number(val('mkRound')) || 0, terisi = [];
-  Array.prototype.forEach.call(document.querySelectorAll('[data-markup-harga]'), function (el) {
-    if (el.getAttribute('data-markup-kode-baris') !== kode) return;
-    var t = el.getAttribute('data-markup-harga');
-    var persen = nilaiPersenMarkupMaster(t);
-    if (persen === null) return;
-    var harga = hargaDariMarkupJS(x.modal, persen, pembulatan);
-    if (harga === null) return;
-    el.value = String(harga);
-    x.nilai[t] = String(harga);
-    terisi.push(t);
-    var sel = el.parentNode.querySelector('[data-markup-margin]');
-    if (sel) sel.innerHTML = htmlIsiMarginMarkupMaster(x, t);
-  });
-  if (!terisi.length) { toast('Isi minimal satu markup tombol bantu 0–1000% lebih dulu.', true); return; }
-  sinkronkanMarkupMaster();
-}
-/** Tombol "Markup ___%" per baris hanya mengisi kolom, tidak mengunci harga. */
-function boronganMarkupMaster() {
-  var terpilih = kodeMarkupMasterTerpilih();
-  if (!terpilih.length) { toast('Pilih minimal satu item obat.', true); return; }
-  var ada = tingkatMarkupMaster().some(function (t) { return nilaiPersenMarkupMaster(t) !== null; });
-  if (!ada) { toast('Isi minimal satu markup tombol bantu 0–1000% lebih dulu.', true); return; }
-  terpilih.forEach(function (kode) { isiMarkupMaster(kode); });
-  toast('Markup ' + teksRingkasPersenMarkupMaster() + ' diisikan ke ' + angka(terpilih.length) + ' barang. Sesuaikan bila perlu, lalu simpan.');
-}
-function ketikMarkupMaster(e) {
-  var inp = e.target.closest('[data-markup-harga]');
-  if (!inp) return;
-  var x = cariBarisMarkupMaster(inp.getAttribute('data-markup-kode-baris'));
-  if (!x) return;
-  var t = inp.getAttribute('data-markup-harga');
-  x.nilai[t] = inp.value;
-  var sel = inp.parentNode.querySelector('[data-markup-margin]');
-  if (sel) sel.innerHTML = htmlIsiMarginMarkupMaster(x, t);
-  sinkronkanMarkupMaster();
-}
-function klikMarkupMaster(e) {
-  var isi = e.target.closest('[data-markup-isi]');
-  if (isi) { isiMarkupMaster(isi.getAttribute('data-markup-isi')); return; }
-  var cb = e.target.closest('[data-markup-kode]');
-  if (!cb) return;
-  if (cb.checked) MARKUP_MASTER_SELECTED[cb.value] = true;
-  else {
-    // Baris lain yang tadinya ikut "pilih semua" tetap tercentang.
-    if (MARKUP_MASTER_SELECT_ALL) { MARKUP_MASTER_SELECT_ALL = false; barisMarkupMasterTampil().forEach(function (x) { MARKUP_MASTER_SELECTED[x.kode] = true; }); }
-    delete MARKUP_MASTER_SELECTED[cb.value];
+/** Keterangan singkat di bawah kolom harga: angka di luar batas, modal belum
+ *  ada, atau cara hitungnya. */
+function catatanMarkupBarang() {
+  var el = document.getElementById('fbCatatan'); if (!el) return;
+  if (!validMarkupBarang()) {
+    el.textContent = 'Markup di luar batas: persen 0–1000% atau rasio 1–11. Angka itu tidak dihitung sampai diperbaiki.';
+    return;
   }
-  sinkronkanMarkupMaster();
+  el.textContent = modalFormBarang() === null
+    ? 'Modal terakhir belum ada (kosong atau 0), jadi markup tidak dihitung. Isi Modal terakhir lebih dulu.'
+    : 'Markup dihitung dari Modal terakhir' +
+      (MARKUP_BARANG.pembulatan > 0 ? ' dan dibulatkan ke atas Rp' + angka(MARKUP_BARANG.pembulatan) : '') +
+      '. Harga jual tetap bisa diketik manual.';
 }
-function ubahPenyaringMarkupMaster(e) {
-  var id = e && e.target ? e.target.id : '';
-  if (id === 'mkRound' || id.indexOf('mkPersen') === 0) { perbaruiTombolBantuMarkupMaster(); return; }
-  gambarMarkupMaster();
-}
-function potongMarkupMaster(a, n) {
-  var hasil = [];
-  for (var i = 0; i < a.length; i += n) hasil.push(a.slice(i, i + n));
-  return hasil;
-}
-/* Menyimpan harga baru. Aksi yang ada (harga.markupTerapkan) hanya menerima
-   markup persen per tingkat, bukan harga jadi per barang, jadi harga yang
-   diketik dibalik dulu menjadi persen terhadap modal dan dikirim tanpa
-   pembulatan supaya angkanya tersimpan tepat. Barang tanpa modal dan harga di
-   luar 0–1000% markup dilewati dan dilaporkan. */
-function simpanMarkupMaster() {
-  var berubah = barisMarkupMasterBerubah();
-  if (!berubah.length) { toast('Belum ada harga baru yang diisi.', true); return; }
-  var kolom = 0, dibawah = 0, dilewati = 0, urutan = [], kelompok = Object.create(null);
-  berubah.forEach(function (x) {
-    var tingkat = tingkatBerubahMarkupMaster(x), set = {}, sah = true;
-    if (!(Number(x.modal) > 0)) { dilewati++; return; }
-    tingkat.forEach(function (t) {
-      var n = nilaiMarkupMaster(x, t), persen = (n / Number(x.modal) - 1) * 100;
-      // Buang noise floating point (14,999999999999991 -> 15) supaya persen di
-      // log_perubahan_harga rapi dan harga yang tersimpan tetap tepat.
-      persen = Math.round(persen * 1e10) / 1e10;
-      if (!isFinite(persen) || persen < 0 || persen > 1000) { sah = false; return; }
-      set[t] = persen;
-    });
-    if (!sah || !Object.keys(set).length) { dilewati++; return; }
-    if (tingkat.some(function (t) { return marginDiBawahAmbangMarkupMaster(x, t); })) dibawah++;
-    kolom += Object.keys(set).length;
-    var kunci = tingkatMarkupMaster().filter(function (t) { return set[t] !== undefined; }).map(function (t) { return t + ':' + set[t]; }).join('|');
-    if (!kelompok[kunci]) { kelompok[kunci] = { set: set, kode: [] }; urutan.push(kunci); }
-    kelompok[kunci].kode.push(x.kode);
-  });
-  if (!urutan.length) { toast('Harga baru belum bisa disimpan: modal barang belum diketahui atau markupnya di luar 0–1000%.', true); return; }
-  var barang = urutan.reduce(function (n, k) { return n + kelompok[k].kode.length; }, 0);
-  var ringkas = 'Anda akan mengubah ' + angka(barang) + ' barang (' + angka(kolom) + ' kolom harga).\n\n' +
-    'Di antaranya ' + angka(dibawah) + ' barang marginnya masih di bawah ambang ' + angka(ambangMarkupMaster()) + '%.\n' +
-    (dilewati ? angka(dilewati) + ' barang dilewati karena modalnya belum diketahui atau markupnya di luar 0–1000%.\n' : '') +
-    'Pembulatan: tanpa pembulatan, supaya harga yang Anda ketik tersimpan tepat.\n\n' +
-    'Lanjutkan?';
-  if (!confirm(ringkas)) return;
-  var hasil = { berubah: 0, dilewati: 0, gagal: 0 }, bagian = [];
-  urutan.forEach(function (k) { potongMarkupMaster(kelompok[k].kode, 200).forEach(function (kode) { bagian.push({ kode: kode, set: kelompok[k].set }); }); });
-  var apply = document.querySelector('#mkApply');
-  if (apply) { apply.disabled = true; apply.textContent = 'Menyimpan…'; }
-  bagian.reduce(function (p, b) {
-    return p.then(function () {
-      var tingkat = tingkatMarkupMaster().filter(function (t) { return b.set[t] !== undefined; });
-      return api('harga.markupTerapkan', { kode_obat: b.kode, tingkat: tingkat, mode: 'persen', umum: b.set.umum === undefined ? null : b.set.umum, nakes: b.set.nakes === undefined ? null : b.set.nakes, mutasi: b.set.mutasi === undefined ? null : b.set.mutasi, pembulatan: 0, sumber: 'tinjau harga master' }).then(function (r) {
-        hasil.berubah += Number(r && r.berubah) || 0;
-        hasil.dilewati += Number(r && r.dilewati) || 0;
-      }).catch(function (e) { hasil.gagal += 1; hasil.pesan = e.message; });
-    });
-  }, Promise.resolve()).then(function () {
-    modalTutup();
-    toast('Markup selesai. Harga berubah: ' + angka(hasil.berubah) + '; dilewati: ' + angka(hasil.dilewati) + '.' + (hasil.gagal ? ' ' + angka(hasil.gagal) + ' kiriman gagal: ' + hasil.pesan : ''));
-    muatBarang();
+/** Satuan kolom markup mengikuti mode, dan tiap kolom diberi padanan nilainya
+ *  (25% = 1,25× rasio) seperti padananMarkupBeli() di modul Pembelian. */
+function padananMarkupBarang() {
+  var mode = MARKUP_BARANG.mode, satuan = satuanMarkupBarang(mode);
+  tingkatHargaBarang().forEach(function (t) {
+    var lab = document.getElementById(idLabelMarkupBarang(t));
+    if (lab) lab.textContent = 'Markup ' + labelTingkatHargaBarang(t) + ' (' + satuan + ')';
+    var pad = document.getElementById(idPadananMarkupBarang(t)); if (!pad) return;
+    var isi = val(idMarkupBarang(t)), n = Number(isi);
+    var sah = isi !== '' && isFinite(n) && (mode === 'rasio' ? n >= 1 && n <= 11 : n >= 0 && n <= 1000);
+    pad.textContent = !sah ? '' : mode === 'rasio'
+      ? '= ' + ((n - 1) * 100).toFixed(2).replace(/\.00$/, '') + '%'
+      : '= ' + (n / 100 + 1).toFixed(2).replace(/\.00$/, '') + '× rasio';
   });
 }
-/** Bawaan markup cabang mengisi kolom saran dan markup tombol bantu tiap
- *  tingkat: Umum, Nakes, dan Apotek lain punya nilai tersendiri dari
- *  pengaturan_harga (markup_umum_persen, markup_nakes_persen,
- *  markup_mutasi_persen). */
-function muatPengaturanMarkupMaster() {
-  api('harga.pengaturan', {}).then(function (r) {
-    if (!r.tersedia) throw new Error(r.pesan);
-    var c = r.pengaturan || {}, bulat = Number(c.pembulatan);
-    MARKUP_MASTER_CFG = { mode: 'persen', umum: c.markup_umum_persen == null ? null : Number(c.markup_umum_persen), nakes: c.markup_nakes_persen == null ? null : Number(c.markup_nakes_persen), mutasi: c.markup_mutasi_persen == null ? null : Number(c.markup_mutasi_persen), pembulatan: [0, 100, 500, 1000].indexOf(bulat) >= 0 ? bulat : 100 };
-    tingkatMarkupMaster().forEach(function (t) {
-      var el = document.getElementById(idPersenMarkupMaster(t));
-      if (el && MARKUP_MASTER_CFG[t] != null) el.value = String(MARKUP_MASTER_CFG[t]);
-    });
-    var round = document.getElementById('mkRound'); if (round) round.value = String(MARKUP_MASTER_CFG.pembulatan);
-    perbaruiTombolBantuMarkupMaster();
+/** Perbarui margin tiap tingkat dari isi kolom harga saat ini. */
+function gambarMarginBarang() {
+  var modal = modalFormBarang();
+  tingkatHargaBarang().forEach(function (t) {
+    var sel = document.getElementById(idMarginBarang(t));
+    if (sel) sel.innerHTML = htmlMarginBarang(val(idHargaBarang(t)), modal);
+  });
+}
+/** Tingkat yang harganya sudah terisi dianggap milik pengguna: markup tidak
+ *  menimpanya sampai markup tingkat itu sendiri diubah lagi. */
+function manualHargaBarang() {
+  var m = {};
+  tingkatHargaBarang().forEach(function (t) { m[t] = Number(val(idHargaBarang(t))) > 0; });
+  return m;
+}
+/** Isi kolom markup dari pengaturan tersimpan, termasuk mode inputnya. Harga
+ *  jadi ikut terisi otomatis untuk tingkat yang harganya belum ditetapkan
+ *  (masih 0 atau kosong); harga yang sudah tersimpan atau diketik manual tidak
+ *  pernah tertimpa hanya karena formnya dibuka. */
+function isiMarkupDariPengaturanBarang(c, manual) {
+  var bulat = Number(c.pembulatan);
+  MARKUP_BARANG.pembulatan = [0, 100, 500, 1000].indexOf(bulat) >= 0 ? bulat : 100;
+  MARKUP_BARANG.mode = c.mode === 'rasio' ? 'rasio' : 'persen';
+  var sel = document.getElementById('fbMarkupMode');
+  if (sel) sel.value = MARKUP_BARANG.mode;
+  tingkatHargaBarang().forEach(function (t) {
+    var persen = c[MARKUP_BARANG_KOLOM[t]];
+    if (persen == null || persen === '') return;
+    var el = document.getElementById(idMarkupBarang(t));
+    if (el) el.value = String(markupPersenBeliKeInput(Number(persen), MARKUP_BARANG.mode));
+  });
+  padananMarkupBarang();
+  hitungMarkupBarang(manual, null);
+}
+/** Bawaan markup cabang untuk form barang, lewat aksi lama harga.pengaturan. */
+function muatPengaturanMarkupBarang(manual) {
+  return api('harga.pengaturan', {}).then(function (r) {
+    if (!r.tersedia) { catatanMarkupBarang(); toast(r.pesan || 'Pengaturan markup tidak tersedia.', true); return; }
+    isiMarkupDariPengaturanBarang(r.pengaturan || {}, manual);
   }).catch(function (e) {
-    MARKUP_MASTER_CFG = { mode: 'persen', umum: null, nakes: null, mutasi: null, pembulatan: 100 };
-    toast(e.message, true);
-  }).then(function () { previewMarkupMaster(); });
-}
-/* Pencarian barang bergaya kasir. Kolom "Cari nama atau kode" membuka daftar
-   saran tepat di bawahnya begitu diklik — dan saat pengguna mengetik — jadi
-   tidak perlu menunggu dua karakter seperti penyaring tabel di bawahnya.
-   Fokus saja TIDAK membuka daftar: modalBuka() memfokuskan kolom pertama, jadi
-   kalau fokus ikut membuka, daftar kerja barang tertutup saran begitu panel
-   dibuka. Polanya disalin dari pencarian obat di kasir (posSuggest,
-   js_pos.js:225-314) dan pencarian barang di Pembelian (beliSuggest,
-   js_trx.js:275-314): wadah .suggest dengan tombol .s-name / .s-meta, panah
-   atas-bawah, Enter, Esc, dan klik di luar. Sumber datanya aksi lama
-   barang.list, jadi tidak ada aksi API baru. */
-function kotakSaranMarkupMaster() { return document.getElementById('mkSuggest'); }
-function tutupSaranMarkupMaster() {
-  var box = kotakSaranMarkupMaster();
-  if (box) box.hidden = true;
-  MARKUP_MASTER_SARAN = [];
-  MARKUP_MASTER_SARAN_Q = null;
-  MARKUP_MASTER_SARAN_INDEX = -1;
-}
-/** Baris kerja sebuah saran. Bila barangnya sudah termuat di daftar kerja,
- *  pakai baris itu supaya modal dan marginnya sama dengan isi tabel —
- *  termasuk harga baru yang sedang diketik. */
-function barisSaranMarkupMaster(b) {
-  var kode = String(b.Kode_Obat || b.kode_obat || '');
-  var ada = cariBarisMarkupMaster(kode);
-  if (ada) return ada;
-  var modal = b.Harga_Modal;
-  return {
-    kode: kode, nama: b.Nama_Obat || b.nama_obat || kode,
-    modal: modal === null || modal === undefined || modal === '' ? null : Number(modal),
-    harga: {
-      umum: { lama: Number(b.Harga_Jual_Umum) || 0 },
-      nakes: { lama: Number(b.Harga_Khusus) || 0 },
-      mutasi: { lama: Number(b.Harga_Jual_Mutasi) || 0 }
-    },
-    nilai: {}
-  };
-}
-function htmlSaranMarkupMaster(b, i) {
-  var x = barisSaranMarkupMaster(b);
-  var margin = marginTerendahMarkupMaster(x);
-  var stok = b.stok;
-  return '<button type="button" data-mk-saran="' + i + '"' + (i === MARKUP_MASTER_SARAN_INDEX ? ' class="is-cursor"' : '') + '>' +
-    '<div class="s-name">' + esc(x.nama) + '</div>' +
-    '<div class="s-meta"><span>' + esc(x.kode) + '</span>' +
-      '<span>Stok ' + (stok === null || stok === undefined ? '—' : angka(stok)) + '</span>' +
-      '<span>Modal terakhir ' + (x.modal === null ? '—' : rupiah(x.modal)) + '</span>' +
-      '<span>Margin terendah ' + (isFinite(margin) ? margin.toFixed(1).replace('.', ',') + '%' : '—') + '</span>' +
-    '</div></button>';
-}
-function tampilkanSaranMarkupMaster(rows, q) {
-  var box = kotakSaranMarkupMaster(); if (!box) return;
-  MARKUP_MASTER_SARAN = (rows || []).slice(0, 8);
-  MARKUP_MASTER_SARAN_Q = q;
-  MARKUP_MASTER_SARAN_INDEX = -1;
-  box.innerHTML = MARKUP_MASTER_SARAN.length
-    ? MARKUP_MASTER_SARAN.map(htmlSaranMarkupMaster).join('')
-    : '<div class="empty">Tidak ada barang cocok.</div>';
-  box.hidden = false;
-}
-/** Muat saran untuk isi kolom saat ini. Dipanggil saat kolom diklik (langsung)
- *  dan saat mengetik (lewat jeda jadwalkanSaranMarkupMaster). */
-function muatSaranMarkupMaster() {
-  var box = kotakSaranMarkupMaster(); if (!box) return;
-  var q = val('mkCari');
-  if (!box.hidden && MARKUP_MASTER_SARAN_Q === q) return;   // sudah tampil untuk kata kunci ini
-  if (MARKUP_MASTER_SARAN_MUAT === q) return;               // permintaan yang sama masih jalan
-  MARKUP_MASTER_SARAN_MUAT = q;
-  var request = ++MARKUP_MASTER_SARAN_REQUEST;
-  api('barang.list', { q: q }).then(function (rows) {
-    if (request !== MARKUP_MASTER_SARAN_REQUEST) return;
-    MARKUP_MASTER_SARAN_MUAT = null;
-    tampilkanSaranMarkupMaster(rows, q);
-  }).catch(function (e) {
-    if (request !== MARKUP_MASTER_SARAN_REQUEST) return;
-    MARKUP_MASTER_SARAN_MUAT = null;
-    tutupSaranMarkupMaster();
-    toast(e.message, true);
+    var el = document.getElementById('fbCatatan');
+    if (el) el.textContent = 'Markup bawaan tidak bisa dimuat: ' + e.message;
   });
 }
-function jadwalkanSaranMarkupMaster() {
-  if (MARKUP_MASTER_SARAN_TIMER) { clearTimeout(MARKUP_MASTER_SARAN_TIMER); MARKUP_MASTER_SARAN_TIMER = null; }
-  MARKUP_MASTER_SARAN_TIMER = setTimeout(function () { MARKUP_MASTER_SARAN_TIMER = null; muatSaranMarkupMaster(); }, 180);
-}
-/** Klik saran: kolom diisi kode barang, barisnya dimunculkan di daftar kerja,
- *  lalu daftar saran ditutup. */
-function pilihSaranMarkupMaster(i) {
-  var b = MARKUP_MASTER_SARAN[i]; if (!b) return;
-  var kode = String(b.Kode_Obat || b.kode_obat || '');
-  var inp = document.getElementById('mkCari');
-  if (inp) inp.value = kode;
-  tutupSaranMarkupMaster();
-  previewMarkupMaster();
-}
-function klikSaranMarkupMaster(e) {
-  var b = e && e.target && e.target.closest ? e.target.closest('[data-mk-saran]') : null;
-  if (b) pilihSaranMarkupMaster(Number(b.dataset.mkSaran));
-}
-/** Papan tik saat daftar saran terbuka. Esc hanya menutup daftar saran dan
- *  tidak diteruskan, supaya panel tidak ikut tertutup oleh pintasan js_core. */
-function tombolSaranMarkupMaster(e) {
-  var box = kotakSaranMarkupMaster();
-  if (!box || box.hidden) return;
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    if (!MARKUP_MASTER_SARAN.length) return;
-    e.preventDefault();
-    var n = MARKUP_MASTER_SARAN.length, d = e.key === 'ArrowDown' ? 1 : -1;
-    MARKUP_MASTER_SARAN_INDEX = (MARKUP_MASTER_SARAN_INDEX + d + n) % n;
-    var tombol = box.querySelectorAll ? box.querySelectorAll('[data-mk-saran]') : [];
-    Array.prototype.forEach.call(tombol, function (t, i) { if (t.classList) t.classList.toggle('is-cursor', i === MARKUP_MASTER_SARAN_INDEX); });
-  } else if (e.key === 'Enter') {
-    e.preventDefault();
-    pilihSaranMarkupMaster(MARKUP_MASTER_SARAN_INDEX >= 0 ? MARKUP_MASTER_SARAN_INDEX : 0);
-  } else if (e.key === 'Escape') {
-    if (e.stopPropagation) e.stopPropagation();
-    tutupSaranMarkupMaster();
-  }
-}
-function formMarkupMaster() {
-  MARKUP_MASTER_ROWS = [];
-  MARKUP_MASTER_TOTAL = 0;
-  MARKUP_MASTER_Q = '';
-  MARKUP_MASTER_OFFSET = 0;
-  MARKUP_MASTER_MUAT_KEY = '';
-  MARKUP_MASTER_SELECTED = Object.create(null);
-  MARKUP_MASTER_SELECT_ALL = false;
-  MARKUP_MASTER_GOL = Object.create(null);
-  MARKUP_MASTER_GOL_HAL = 0;
-  MARKUP_MASTER_GOL_Q = null;
-  if (MARKUP_MASTER_SEARCH_TIMER) { clearTimeout(MARKUP_MASTER_SEARCH_TIMER); MARKUP_MASTER_SEARCH_TIMER = null; }
-  if (MARKUP_MASTER_SARAN_TIMER) { clearTimeout(MARKUP_MASTER_SARAN_TIMER); MARKUP_MASTER_SARAN_TIMER = null; }
-  MARKUP_MASTER_SARAN_REQUEST++;
-  MARKUP_MASTER_SARAN_MUAT = null;
-  MARKUP_MASTER_SARAN = [];
-  MARKUP_MASTER_SARAN_Q = null;
-  MARKUP_MASTER_SARAN_INDEX = -1;
-  var body = '<p class="kpi-sub">Harga jual berlaku per SKU dan tersimpan di Master Barang. Modal terakhir sudah termasuk PPN dan sudah dikurangi diskon pembelian. Isi kolom harga baru per tingkat; margin dihitung langsung dan hijau bila mencapai ambang. Angka abu-abu pada kolom harga baru adalah saran dari markup bawaan cabang dan baru tersimpan bila Anda mengisinya. Markup tombol bantu diisi terpisah untuk <strong>Umum</strong>, <strong>Nakes</strong>, dan <strong>Apotek lain</strong>, jadi tiap tingkat memakai persentasenya sendiri; kolom yang dikosongkan dilewati.</p>' +
-    '<div class="grid g3">' +
-      '<div class="field mk-cari"><span>Cari nama atau kode</span><input id="mkCari" class="inp" placeholder="Nama atau kode obat" autocomplete="off"><div id="mkSuggest" class="suggest mk-suggest" hidden></div></div>' +
-      '<label class="field"><span>Golongan</span><select id="mkGol" class="inp"><option value="">Semua golongan</option></select></label>' +
-      '<label class="field"><span>Ambang margin (%)</span><input id="mkAmbang" class="inp num" type="number" min="0" step="any" value="20"></label>' +
-    '</div>' +
-    '<div class="grid g3">' +
-      '<label class="field"><span>Markup Umum (%)</span><input id="mkPersenUmum" class="inp num" type="number" min="0" max="1000" step="any" value="20"></label>' +
-      '<label class="field"><span>Markup Nakes (%)</span><input id="mkPersenNakes" class="inp num" type="number" min="0" max="1000" step="any" value="20"></label>' +
-      '<label class="field"><span>Markup Apotek lain (%)</span><input id="mkPersenMutasi" class="inp num" type="number" min="0" max="1000" step="any" value="20"></label>' +
-    '</div>' +
-    '<div class="grid g2">' +
-      '<label class="field"><span>Pembulatan tombol bantu</span><select id="mkRound" class="inp"><option value="0">Tanpa pembulatan</option><option value="100" selected>Ke atas Rp100</option><option value="500">Ke atas Rp500</option><option value="1000">Ke atas Rp1.000</option></select></label>' +
-      '<label class="field"><span>Urutkan</span><select id="mkUrut" class="inp"><option value="margin">Margin terendah lebih dulu</option><option value="nama">Nama A–Z</option><option value="kode">Kode A–Z</option><option value="modal">Modal terbesar</option></select></label>' +
-    '</div>' +
-    '<div class="pay-row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px">' +
-      '<label class="kpi-sub" style="display:flex;align-items:center;gap:6px"><input id="mkPilihSemua" type="checkbox"> Pilih semua baris yang tampil</label>' +
-      '<button id="mkBorongan" type="button" class="btn btn-sm" title="Terapkan item terpilih; harga masih bisa disesuaikan sebelum disimpan.">Terapkan markup Umum 20% · Nakes 20% · Apotek lain 20% ke baris terpilih</button>' +
-    '</div>' +
-    '<p class="kpi-sub" id="mkRingkas">Memuat…</p>' +
-    '<div id="mkPreview"><p class="kpi-sub">Memuat daftar barang…</p></div>' +
-    '<div class="pay-row" style="justify-content:center;margin-top:10px"><button id="mkLagi" type="button" class="btn btn-sm" hidden>Muat 100 barang berikutnya</button></div>';
-  modalBuka('Barang perlu ditinjau', body, []);
-  gambarTombolMarkupMaster();
-  ['mkGol', 'mkUrut', 'mkRound', 'mkAmbang'].concat(tingkatMarkupMaster().map(idPersenMarkupMaster)).forEach(function (id) {
-    var el = document.getElementById(id);
-    if (el) { el.oninput = ubahPenyaringMarkupMaster; el.onchange = ubahPenyaringMarkupMaster; }
-  });
-  document.getElementById('mkCari').oninput = function () {
-    if (MARKUP_MASTER_SEARCH_TIMER) { clearTimeout(MARKUP_MASTER_SEARCH_TIMER); MARKUP_MASTER_SEARCH_TIMER = null; }
-    jadwalkanSaranMarkupMaster();     // daftar saran menyempit mengikuti ketikan
-    var query = val('mkCari');
-    if (query.length < 2 && query.length > 0) {
-      var ringkas = document.getElementById('mkRingkas');
-      if (ringkas) ringkas.textContent = 'Ketik minimal 2 karakter untuk mencari nama atau kode obat. Daftar di bawah belum disaring.';
-      return;
-    }
-    MARKUP_MASTER_SEARCH_TIMER = setTimeout(function () { MARKUP_MASTER_SEARCH_TIMER = null; previewMarkupMaster(); }, 350);
-  };
-  // Klik pada kolom (atau ketikan) membuka daftar saran di bawahnya; fokus
-  // saja tidak, supaya daftar kerja langsung terlihat saat panel dibuka.
-  document.getElementById('mkCari').onclick = muatSaranMarkupMaster;
-  document.getElementById('mkCari').onkeydown = tombolSaranMarkupMaster;
-  document.getElementById('mkSuggest').onclick = klikSaranMarkupMaster;
-  if (!MARKUP_MASTER_SARAN_KLIK_LUAR && document.addEventListener) {
-    MARKUP_MASTER_SARAN_KLIK_LUAR = true;
-    document.addEventListener('click', function (e) {
-      var dalam = e && e.target && e.target.closest ? e.target.closest('.mk-cari') : null;
-      if (!dalam) tutupSaranMarkupMaster();
+/** Hitung harga jual tiap tingkat dari markup tingkat itu sendiri. `manual`
+ *  menandai tingkat yang harganya sudah diisi pengguna: tingkat itu tidak
+ *  ditimpa, sedangkan tingkat `ubah` selalu dihitung ulang karena markupnya
+ *  baru saja diubah. Modal kosong atau 0 berarti tidak ada yang dihitung. */
+function hitungMarkupBarang(manual, ubah) {
+  var modal = modalFormBarang();
+  if (ubah) manual[ubah] = false;
+  if (modal === null) {
+    if (ubah) toast('Modal terakhir belum ada, jadi markup ' + labelTingkatHargaBarang(ubah) + ' belum bisa dihitung.', true);
+  } else {
+    tingkatHargaBarang().forEach(function (t) {
+      if (manual[t]) return;
+      var inp = document.getElementById(idHargaBarang(t));
+      var persen = persenMarkupBarang(t);
+      if (!inp || persen === null) return;
+      var harga = hargaDariMarkupJS(modal, persen, MARKUP_BARANG.pembulatan);
+      if (harga === null) return;
+      inp.value = String(harga);
     });
   }
-  document.getElementById('mkPilihSemua').onchange = function () {
-    MARKUP_MASTER_SELECT_ALL = this.checked;
-    if (this.checked) MARKUP_MASTER_SELECTED = Object.create(null);
-    sinkronkanMarkupMaster();
-  };
-  document.getElementById('mkBorongan').onclick = boronganMarkupMaster;
-  document.getElementById('mkLagi').onclick = function () {
-    // Penyaring atau pencarian berubah sejak daftar dimuat: muat ulang dari awal.
-    if (markupMasterKey(cfgMarkupMaster(), MARKUP_MASTER_Q, tingkatMarkupMaster()) !== MARKUP_MASTER_MUAT_KEY) { previewMarkupMaster(); return; }
-    muatHalamanMarkupMaster(MARKUP_MASTER_OFFSET, true);
-  };
-  document.getElementById('mkPreview').onclick = klikMarkupMaster;
-  document.getElementById('mkPreview').oninput = ketikMarkupMaster;
-  muatPengaturanMarkupMaster();
+  catatanMarkupBarang();
+  gambarMarginBarang();
+}
+/** Ganti mode markup di form. Angka yang sedang tampil dikonversi ke satuan
+ *  mode baru (25% menjadi 1,25×) seperti ubahModeMarkupBeli() supaya artinya
+ *  tidak berubah diam-diam, lalu harga jual dihitung ulang. Bila ada angka di
+ *  luar batas, angkanya dibiarkan apa adanya dan hanya diberi keterangan,
+ *  sama seperti modul Pembelian. */
+function ubahModeMarkupBarang(manual) {
+  var persen = {}, sah = true;
+  tingkatHargaBarang().forEach(function (t) {
+    var h = markupInputBeliKePersen(val(idMarkupBarang(t)), MARKUP_BARANG.mode);
+    persen[t] = h.persen;
+    if (!h.valid) sah = false;
+  });
+  MARKUP_BARANG.mode = modeMarkupBarang();
+  if (sah) {
+    tingkatHargaBarang().forEach(function (t) {
+      var el = document.getElementById(idMarkupBarang(t));
+      if (el) el.value = persen[t] === null ? '' : String(markupPersenBeliKeInput(persen[t], MARKUP_BARANG.mode));
+    });
+  }
+  padananMarkupBarang();
+  hitungMarkupBarang(manual, null);
 }
 
 /* Ubah stok langsung dari Master Barang. Perubahan disimpan lewat stokopname
@@ -873,16 +428,36 @@ function formBarang(b) {
       ['Bebas', 'Bebas Terbatas', 'Resep', 'Khusus'].map(function (g) {
         return '<option value="' + g + '"' + (b.Golongan === g ? ' selected' : '') + '>' + g + '</option>';
       }).join('') + '</select></label>' +
+    // Penetapan harga satu pintu di sini: modal terakhir (sudah termasuk PPN dan
+    // sudah dikurangi diskon pembelian), tiga kolom markup per tipe pelanggan,
+    // lalu tiga harga jual dengan marginnya. Mode markup bisa persen atau rasio
+    // seperti di menu Pembelian; mode ini hanya pilihan di form dan tidak
+    // mengubah pengaturan cabang saat barang disimpan.
     '<div class="grid g2">' +
-      '<label class="field"><span>Harga modal (beli)</span><input id="fbModal" class="inp num" type="number" value="' +
-        (b.Harga_Modal == null ? '' : b.Harga_Modal) + '"></label>' +
-      '<label class="field"><span>Harga jual umum</span><input id="fbUmum" class="inp num" type="number" value="' +
-        (b.Harga_Jual_Umum || 0) + '"></label>' +
-      '<label class="field"><span>Harga khusus (nakes)</span><input id="fbKhusus" class="inp num" type="number" value="' +
-        (b.Harga_Khusus || 0) + '"></label>' +
-      '<label class="field"><span>Harga jual mutasi (apotek lain)</span><input id="fbMutasi" class="inp num" type="number" value="' +
-        (b.Harga_Jual_Mutasi || 0) + '"></label>' +
+      '<label class="field"><span>Modal terakhir</span><input id="fbModal" class="inp num" type="number" min="0" value="' +
+        (b.Harga_Modal == null ? '' : b.Harga_Modal) + '">' +
+        '<small class="sub">Nilai dari pembelian terakhir: sudah termasuk PPN dan sudah dikurangi diskon pembelian.</small></label>' +
+      '<label class="field"><span>Mode markup</span><select id="fbMarkupMode" class="inp">' +
+        '<option value="persen">Persen di atas modal (%)</option>' +
+        '<option value="rasio">Rasio pengali modal (×)</option></select>' +
+        '<small class="sub">Mengubah mode mengonversi angka yang tampil, jadi artinya tidak berubah.</small></label>' +
     '</div>' +
+    '<div class="grid g3">' +
+      tingkatHargaBarang().map(function (t) {
+        return '<label class="field"><span id="' + idLabelMarkupBarang(t) + '">Markup ' + labelTingkatHargaBarang(t) + ' (%)</span>' +
+          '<input id="' + idMarkupBarang(t) + '" class="inp num" type="number" step="0.01" placeholder="kosong = tidak dihitung">' +
+          '<small class="kpi-sub" id="' + idPadananMarkupBarang(t) + '"></small></label>';
+      }).join('') +
+    '</div>' +
+    '<div class="grid g3">' +
+      '<label class="field"><span>Harga jual umum</span><input id="fbUmum" class="inp num" type="number" min="0" value="' +
+        (b.Harga_Jual_Umum || 0) + '"><small class="sub" id="fbMarginUmum"></small></label>' +
+      '<label class="field"><span>Harga khusus (nakes)</span><input id="fbKhusus" class="inp num" type="number" min="0" value="' +
+        (b.Harga_Khusus || 0) + '"><small class="sub" id="fbMarginNakes"></small></label>' +
+      '<label class="field"><span>Harga jual mutasi (apotek lain)</span><input id="fbMutasi" class="inp num" type="number" min="0" value="' +
+        (b.Harga_Jual_Mutasi || 0) + '"><small class="sub" id="fbMarginMutasi"></small></label>' +
+    '</div>' +
+    '<p class="kpi-sub" id="fbCatatan"></p>' +
     '<label class="field"><span>PPN (%)</span><input id="fbPPN" class="inp num" type="number" value="' + (b.PPN || 0) + '"></label>' +
     '<p class="kpi-sub">Harga khusus dan harga mutasi juga bisa diisi dari faktur pembelian — ' +
       'nilainya hanya ditimpa bila kolom itu diisi (lebih dari 0) pada faktur.</p>' +
@@ -919,6 +494,32 @@ function formBarang(b) {
   if (aktifkan) aktifkan.onclick = function () { modalTutup(); konfirmasiAktifkan(b.Kode_Obat, b.Nama_Obat); };
   var hapus = document.getElementById('fbHapus');
   if (hapus) hapus.onclick = function () { modalTutup(); konfirmasiHapusPermanen(b.Kode_Obat, b.Nama_Obat); };
+
+  // manual[t] = true berarti harga tingkat itu sudah ditetapkan (tersimpan atau
+  // diketik di form ini) dan tidak boleh ditimpa markup, kecuali markup tingkat
+  // itu sendiri diubah lagi.
+  var manual = manualHargaBarang();
+  tingkatHargaBarang().forEach(function (t) {
+    var inpMarkup = document.getElementById(idMarkupBarang(t));
+    if (inpMarkup) inpMarkup.oninput = function () {
+      MARKUP_BARANG.mode = modeMarkupBarang();
+      padananMarkupBarang();
+      hitungMarkupBarang(manual, t);
+    };
+    var inp = document.getElementById(idHargaBarang(t));
+    if (inp) inp.oninput = function () { manual[t] = true; gambarMarginBarang(); };
+  });
+  var mode = document.getElementById('fbMarkupMode');
+  if (mode) mode.onchange = function () { ubahModeMarkupBarang(manual); };
+  var inpModal = document.getElementById('fbModal');
+  // Modal ditulis: harga yang belum ditetapkan pengguna diisi dari markup,
+  // marginnya dihitung ulang. Harga yang sudah ada tidak disentuh.
+  if (inpModal) inpModal.oninput = function () { hitungMarkupBarang(manual, null); };
+  MARKUP_BARANG.mode = modeMarkupBarang();   // form baru: mode bawaan persen, lalu ditimpa pengaturan
+  padananMarkupBarang();
+  gambarMarginBarang();
+  catatanMarkupBarang();
+  muatPengaturanMarkupBarang(manual);
 }
 
 function konfirmasiAktifkan(kode, nama) {

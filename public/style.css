@@ -531,13 +531,6 @@ tbody tr:last-child td{border-bottom:0}
 .st-filter-search{max-width:220px}
 .st-filter-select{max-width:180px}
 .st-filter-check{white-space:nowrap}
-/* Daftar saran kolom "Cari nama atau kode" di panel Barang perlu ditinjau.
-   Memakai gaya .suggest yang sama dengan kasir/POS dan Pembelian; hanya
-   jangkarnya yang perlu position:relative karena kolomnya ada di dalam grid
-   modal, dan tingginya dibatasi supaya tidak menutupi daftar kerja. */
-.mk-cari{position:relative}
-.mk-cari .inp{width:100%}
-.mk-suggest{max-height:260px}
 
 /* Keranjang sebagai kartu, bukan baris tabel rapat. */
 .cart{display:flex; flex-direction:column; gap:9px}
