@@ -1834,3 +1834,76 @@ body[data-hal="marketing"] #mpCard { box-sizing:border-box; max-width:100%; }
   body[data-hal="marketing"] #crmPromoReportKpi { grid-template-columns:minmax(0,1fr); }
   body[data-hal="marketing"] #crmPromoReportKpi .crm-kpi { flex-direction:row; }
 }
+
+
+/* Marketing bottom section: Poin & Reward card (injected by js_marketing_poin.js) */
+body[data-hal="marketing"] #mpCard {
+  display:block; width:100%; max-width:100%; min-width:0; box-sizing:border-box;
+  margin:0 0 30px; padding:24px; overflow:hidden;
+  border:1px solid var(--border,#e5e7eb); border-radius:16px;
+  background:var(--surface,#fff); box-shadow:0 4px 18px rgba(20,30,50,.035);
+}
+body[data-hal="marketing"] #mpCard > .card-head {
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:18px; flex-wrap:wrap; padding:0 0 18px; margin:0 0 18px;
+  border-bottom:1px solid var(--border,#e5e7eb);
+}
+body[data-hal="marketing"] #mpCard > .card-head > div:first-child { flex:1 1 280px; min-width:0; }
+body[data-hal="marketing"] #mpCard > .card-head > div:first-child h3 { margin:0 0 6px; font-size:18px; line-height:1.35; }
+body[data-hal="marketing"] #mpCard > .card-head > div:first-child .sub { max-width:660px; margin:0; font-size:12px; line-height:1.7; }
+body[data-hal="marketing"] #mpCard > .card-head > div:last-child {
+  display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:8px;
+}
+body[data-hal="marketing"] #mpCard > .card-head > div:last-child .btn { margin:0; min-height:36px; }
+body[data-hal="marketing"] #mpCard #mpPerolehan {
+  margin:0 0 22px !important; padding:14px 16px;
+  border:1px solid #e2e8f0; border-radius:12px; background:#f8fafc;
+  color:#475569; font-size:12px; line-height:1.8; overflow-wrap:anywhere;
+}
+body[data-hal="marketing"] #mpCard > h4 {
+  display:flex; align-items:center; gap:10px;
+  margin:24px 0 12px !important; padding:0 0 10px;
+  border-bottom:1px solid var(--border,#e5e7eb);
+  font-size:14px; line-height:1.45; font-weight:750;
+}
+body[data-hal="marketing"] #mpCard > h4:first-of-type { margin-top:0 !important; }
+body[data-hal="marketing"] #mpReward,
+body[data-hal="marketing"] #mpRiwayat { min-width:0; width:100%; }
+body[data-hal="marketing"] #mpCard .table-wrap {
+  width:100%; max-width:100%; min-width:0; overflow:auto;
+  border:1px solid var(--border,#e5e7eb); border-radius:12px;
+  background:var(--surface,#fff); overscroll-behavior-x:contain;
+}
+body[data-hal="marketing"] #mpCard .table-wrap table {
+  width:100%; min-width:760px; margin:0; border-collapse:separate; border-spacing:0;
+}
+body[data-hal="marketing"] #mpCard #mpRiwayat .table-wrap table { min-width:850px; }
+body[data-hal="marketing"] #mpCard .table-wrap th {
+  padding:12px 14px; background:#f8fafc; color:#475569;
+  border-bottom:1px solid var(--border,#e5e7eb);
+  font-size:10px; font-weight:750; letter-spacing:.025em;
+  text-align:left; white-space:nowrap;
+}
+body[data-hal="marketing"] #mpCard .table-wrap td {
+  padding:12px 14px; border-bottom:1px solid var(--border,#edf0f3);
+  font-size:11px; line-height:1.55; vertical-align:middle;
+}
+body[data-hal="marketing"] #mpCard .table-wrap tbody tr:last-child td { border-bottom:0; }
+body[data-hal="marketing"] #mpCard .table-wrap tbody tr:hover { background:#fafbfc; }
+body[data-hal="marketing"] #mpCard .table-wrap td strong { display:block; font-size:11px; }
+body[data-hal="marketing"] #mpCard .table-wrap td .cart-line-meta {
+  display:block; margin-top:3px; color:var(--muted,#6b7280);
+  font-size:10px; line-height:1.5; white-space:normal; overflow-wrap:anywhere;
+}
+body[data-hal="marketing"] #mpCard .table-wrap td .btn { margin:2px 3px 2px 0; white-space:nowrap; }
+body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center; line-height:1.7; }
+@media(max-width:700px) {
+  body[data-hal="marketing"] #mpCard { padding:16px 12px; margin-bottom:22px; border-radius:13px; }
+  body[data-hal="marketing"] #mpCard > .card-head { gap:12px; padding-bottom:14px; margin-bottom:14px; }
+  body[data-hal="marketing"] #mpCard > .card-head > div:last-child { justify-content:flex-start; width:100%; }
+  body[data-hal="marketing"] #mpCard > .card-head > div:last-child .btn { flex:1 1 auto; }
+  body[data-hal="marketing"] #mpCard #mpPerolehan { padding:12px; font-size:11px; }
+  body[data-hal="marketing"] #mpCard > h4 { margin-top:20px !important; }
+  body[data-hal="marketing"] #mpCard .table-wrap table { min-width:720px; }
+  body[data-hal="marketing"] #mpCard #mpRiwayat .table-wrap table { min-width:820px; }
+}
