@@ -340,15 +340,36 @@ Tambahkan tooltip atau teks bantuan untuk menjelaskan:
 
 ## Acceptance criteria PR #93
 
-- [ ] Tabel tetap terbaca pada layar target.
-- [ ] Harga jual dan margin tidak tertukar dengan modal.
-- [ ] Margin negatif terlihat jelas.
-- [ ] Margin 0% ditampilkan sebagai nilai valid.
-- [ ] Nilai `—` dibedakan dari 0%.
-- [ ] Tidak ada kolom yang hilang pada mode desktop.
-- [ ] Interaksi detail dapat digunakan dengan keyboard.
-- [ ] Label dan tooltip menggunakan istilah bisnis yang konsisten.
-- [ ] Screenshot atau test visual minimal ditambahkan jika tersedia.
+- [x] Tabel tetap terbaca pada desktop dan berubah menjadi kartu berlabel pada layar kecil.
+- [x] Harga jual, margin, dan modal memakai kolom serta label yang berbeda.
+- [x] Margin negatif terlihat jelas dengan indikator merah.
+- [x] Margin 0% ditampilkan sebagai nilai valid dengan indikator positif, bukan warning.
+- [x] Nilai `—` dibedakan dari 0% sebagai data belum tersedia.
+- [x] Tidak ada kolom yang hilang pada mode desktop.
+- [x] Tombol Ubah/Tambah batch tetap dapat digunakan melalui keyboard; tidak ada accordion khusus yang menambah interaksi baru.
+- [x] Label dan tooltip menggunakan istilah bisnis yang konsisten.
+- [x] Regression test UI ditambahkan; screenshot visual belum tersedia di sandbox.
+
+### Implementasi PR #93
+
+- tabel Stok & Batch diberi kontrak kartu mobile menggunakan `data-tk="1"` dan `data-label`;
+- harga jual SKU ditampilkan sebagai tiga baris ringkas: Umum, Nakes, dan Mutasi;
+- margin ditampilkan sebagai chip per tingkat harga dengan state positif, negatif, dan belum tersedia;
+- legenda margin ditambahkan agar arti warna tidak bergantung pada tebakan pengguna;
+- header Modal efektif batch, Harga jual SKU, dan Margin batch diberi tooltip istilah bisnis;
+- aksi `Tambah batch` dan `Ubah` dipertahankan.
+
+Validasi lokal PR #93:
+
+```text
+node --test tests/*.test.cjs      → 118 lulus
+node tools/test-pembelian.cjs     → lulus
+node --check public/js_master.js  → lulus
+node --check public/js_trx.js     → lulus
+git diff --check                  → lulus
+```
+
+PR #93 mengubah frontend dan test saja. Setelah merge cukup tunggu deploy Cloudflare Pages; Edge Function dan `db push` tidak diperlukan.
 
 ## Deployment PR #93
 

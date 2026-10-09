@@ -495,9 +495,10 @@ VIEWS.stok = {
           'Segera kedaluwarsa</label>' +
         '<button id="stTambah" class="btn btn-primary">Tambah batch</button></div>' +
       '<p id="stHint" class="kpi-sub st-filter-hint" style="margin-top:0">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</p>' +
-      '<div class="table-wrap"><table><thead><tr>' +
+      '<div class="st-legend" aria-label="Keterangan margin"><span><i class="st-dot st-dot-ok"></i>Margin tersedia</span><span><i class="st-dot st-dot-bad"></i>Margin negatif</span><span><i class="st-dot st-dot-muted"></i>Belum tersedia</span></div>' +
+      '<div class="table-wrap"><table data-tk="1" data-stok-table="1"><thead><tr>' +
         '<th>Obat</th><th>Kode batch / status</th><th>Kedaluwarsa</th><th>Sisa waktu</th>' +
-        '<th class="c">Stok</th><th class="r">Modal efektif batch</th><th class="r">Harga jual SKU</th><th class="r">Margin batch</th><th></th>' +
+        '<th class="c">Stok</th><th class="r" title="Biaya modal efektif untuk batch ini setelah PPN dan diskon">Modal efektif batch</th><th class="r" title="Harga jual yang tersimpan pada Master Barang untuk SKU ini">Harga jual SKU</th><th class="r" title="(Harga jual SKU − modal batch) ÷ harga jual SKU">Margin batch</th><th></th>' +
       '</tr></thead><tbody id="stBody"></tbody></table></div><div id="stPager" class="pager"></div></div>';
 
     document.getElementById('stTambah').onclick = function () { formBatch(null); };
@@ -539,14 +540,14 @@ function muatStok(offset) {
         return '<tr>' +
           '<td><strong>' + esc(s.Nama_Obat) + '</strong>' +
             '<div class="cart-line-meta">' + esc(s.Kode_Obat) + (s.Aktif === 'TIDAK' ? ' · Nonaktif' : '') + '</div></td>' +
-          '<td>' + (belumAdaBatch ? '<span class="chip chip-warn">Belum ada batch</span>' : esc(s.Kode_Batch)) + '</td>' +
-          '<td>' + (belumAdaBatch ? '—' : tglIndo(s.Expired_Date)) + '</td>' +
-          '<td>' + (belumAdaBatch ? '—' : chipExpired(s.sisa_hari, s.Expired_Date)) + '</td>' +
-          '<td class="c num">' + angka(s.Stok_Real || 0) + '</td>' +
-          '<td class="r num">' + (belumAdaBatch || s.Harga_Modal_Batch == null ? '—' : rupiah(s.Harga_Modal_Batch)) + '</td>' +
-          '<td class="r num"><div>Umum: ' + hargaStok(s.Harga_Jual_Umum) + '</div><div>Nakes: ' + hargaStok(s.Harga_Jual_Nakes) + '</div><div>Mutasi: ' + hargaStok(s.Harga_Jual_Mutasi) + '</div></td>' +
-          '<td class="r num"><div>Umum: ' + marginStok(s.Margin_Umum) + '</div><div>Nakes: ' + marginStok(s.Margin_Nakes) + '</div><div>Mutasi: ' + marginStok(s.Margin_Mutasi) + '</div></td>' +
-          '<td class="c">' + (belumAdaBatch
+          '<td data-label="Batch / status">' + (belumAdaBatch ? '<span class="chip chip-warn">Belum ada batch</span>' : esc(s.Kode_Batch)) + '</td>' +
+          '<td data-label="Kedaluwarsa">' + (belumAdaBatch ? '—' : tglIndo(s.Expired_Date)) + '</td>' +
+          '<td data-label="Sisa waktu">' + (belumAdaBatch ? '—' : chipExpired(s.sisa_hari, s.Expired_Date)) + '</td>' +
+          '<td data-label="Stok" class="c num">' + angka(s.Stok_Real || 0) + '</td>' +
+          '<td data-label="Modal efektif" class="r num">' + (belumAdaBatch || s.Harga_Modal_Batch == null ? '—' : rupiah(s.Harga_Modal_Batch)) + '</td>' +
+          '<td data-label="Harga jual SKU" class="r num">' + hargaStokCell(s) + '</td>' +
+          '<td data-label="Margin batch" class="r num">' + marginStokCell(s) + '</td>' +
+          '<td class="c tk-aksi">' + (belumAdaBatch
             ? '<button class="btn btn-sm btn-primary" data-produk-index="' + i + '">Tambah batch</button>'
             : '<button class="btn btn-sm" data-batch=\'' + esc(JSON.stringify(s)) + '\'>Ubah</button>') + '</td>' +
         '</tr>';
@@ -568,6 +569,20 @@ function muatStok(offset) {
 
 function hargaStok(v) { return v == null || Number(v) <= 0 ? '—' : rupiah(v); }
 function marginStok(v) { return v == null ? '—' : Number(v).toFixed(1).replace('.', ',') + '%'; }
+function hargaStokCell(s) {
+  return '<div class="st-price-list" aria-label="Harga jual SKU"><div><span>Umum</span><strong>' + hargaStok(s.Harga_Jual_Umum) + '</strong></div>' +
+    '<div><span>Nakes</span><strong>' + hargaStok(s.Harga_Jual_Nakes) + '</strong></div>' +
+    '<div><span>Mutasi</span><strong>' + hargaStok(s.Harga_Jual_Mutasi) + '</strong></div></div>';
+}
+function marginStokChip(v) {
+  if (v == null) return '<span class="st-margin-empty">—</span>';
+  return '<span class="chip ' + (Number(v) < 0 ? 'chip-bad' : 'chip-ok') + '">' + marginStok(v) + '</span>';
+}
+function marginStokCell(s) {
+  return '<div class="st-margin-list" aria-label="Margin batch"><div><span>Umum</span>' + marginStokChip(s.Margin_Umum) + '</div>' +
+    '<div><span>Nakes</span>' + marginStokChip(s.Margin_Nakes) + '</div>' +
+    '<div><span>Mutasi</span>' + marginStokChip(s.Margin_Mutasi) + '</div></div>';
+}
 
 function gambarPagerStok(res) {
   var el = document.getElementById('stPager');
