@@ -106,6 +106,9 @@ assert.match(migration, /harga_modal_batch_terakhir = coalesce\(s\.harga_modal_b
 assert.match(api, /Harga_Modal_Batch: x\.harga_modal_batch == null \? null/i, 'dashboard preserves NULL batch modal');
 assert.match(api, /expiring_nilai: expiringWithoutModal \? null/i, 'dashboard does not value stock with unknown modal as zero');
 assert.match(masterJs, /b\.Harga_Modal == null \? '—'/i, 'master UI displays unknown modal explicitly');
+assert.match(api, /const margin = \(jual, modal\) => jual == null \|\| modal == null/i, 'stock API leaves margin unknown when sale price or batch modal is unknown');
+assert.match(api, /Harga_Jual_Umum: m\.harga_jual_umum/i, 'stock API returns SKU sale prices');
+assert.match(api, /Margin_Umum: margin\(m\.harga_jual_umum, modal\)/i, 'stock API returns margin against effective batch modal');
 
 assert.match(api, /const headerFilters = cfg\.searchFields\.map\(\(field\) => `\$\{field\}\.ilike\.\$\{pattern\}`\)/, 'nota document search uses partial, escaped ILIKE');
 assert.match(api, /detailSearchFields: \["nama_obat", "kode_obat"\]/, 'riwayat searches both medicine name and code');

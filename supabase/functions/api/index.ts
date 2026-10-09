@@ -493,8 +493,10 @@ async function action(name, data, s) {
       return d.toISOString().slice(0, 10);
     })();
     const batchFields = "id_batch,kode_obat,kode_batch,expired_date,stok_real,harga_modal_batch";
-    const rowBatch = (m, b) => ({ Kode_Obat: m.kode_obat || b.kode_obat, Nama_Obat: m.nama_obat, Aktif: m.aktif, Kode_Batch: b.kode_batch, Expired_Date: b.expired_date, sisa_hari: daysUntil(b.expired_date), Stok_Real: b.stok_real, Harga_Modal_Batch: b.harga_modal_batch, ID_Batch: b.id_batch, Belum_Ada_Batch: false });
-    const rowTanpaBatch = (m) => ({ Kode_Obat: m.kode_obat, Nama_Obat: m.nama_obat, Aktif: m.aktif, Kode_Batch: "", Expired_Date: "", sisa_hari: null, Stok_Real: 0, Harga_Modal_Batch: null, ID_Batch: null, Belum_Ada_Batch: true });
+    const margin = (jual, modal) => jual == null || modal == null || Number(jual) <= 0 ? null : (Number(jual) - Number(modal)) / Number(jual) * 100;
+    const harga = (m, modal) => ({ Harga_Jual_Umum: m.harga_jual_umum == null ? null : Number(m.harga_jual_umum), Harga_Jual_Nakes: m.harga_khusus == null ? null : Number(m.harga_khusus), Harga_Jual_Mutasi: m.harga_jual_mutasi == null ? null : Number(m.harga_jual_mutasi), Margin_Umum: margin(m.harga_jual_umum, modal), Margin_Nakes: margin(m.harga_khusus, modal), Margin_Mutasi: margin(m.harga_jual_mutasi, modal) });
+    const rowBatch = (m, b) => ({ Kode_Obat: m.kode_obat || b.kode_obat, Nama_Obat: m.nama_obat, Aktif: m.aktif, Kode_Batch: b.kode_batch, Expired_Date: b.expired_date, sisa_hari: daysUntil(b.expired_date), Stok_Real: b.stok_real, Harga_Modal_Batch: b.harga_modal_batch, ...harga(m, b.harga_modal_batch), ID_Batch: b.id_batch, Belum_Ada_Batch: false });
+    const rowTanpaBatch = (m) => ({ Kode_Obat: m.kode_obat, Nama_Obat: m.nama_obat, Aktif: m.aktif, Kode_Batch: "", Expired_Date: "", sisa_hari: null, Stok_Real: 0, Harga_Modal_Batch: null, ...harga(m, null), ID_Batch: null, Belum_Ada_Batch: true });
     const fromMaster = (m) => {
       const batches = Array.isArray(m.stok_batch) ? m.stok_batch : [];
       return batches.length ? batches.map((b) => rowBatch(m, b)) : kritis ? [] : [rowTanpaBatch(m)];
@@ -512,7 +514,7 @@ async function action(name, data, s) {
     // Pemanggil Master Barang hanya perlu seluruh batch untuk satu SKU persis;
     // jangan memindai inventaris seluruh cabang untuk membuka koreksi stok.
     if (tampilkanSemuaBatch) {
-      const mr = await db("master_barang", `?cabang_id=eq.${cab}&kode_obat=eq.${encodeURIComponent(exactKode)}&select=kode_obat,nama_obat,aktif&limit=1`);
+      const mr = await db("master_barang", `?cabang_id=eq.${cab}&kode_obat=eq.${encodeURIComponent(exactKode)}&select=kode_obat,nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi&limit=1`);
       if (!mr.ok) throw new Error(await mr.text());
       const master = (await mr.json())[0];
       if (!master) return pageInfo([], 0, 0, "hasil");
@@ -531,7 +533,7 @@ async function action(name, data, s) {
       const order = sort === "stok_asc" ? "stok_real.asc,expired_date.asc,id_batch.asc" :
         sort === "stok_desc" ? "stok_real.desc,expired_date.asc,id_batch.asc" :
         sort === "terbaru" ? "id_batch.desc" : "expired_date.asc,id_batch.asc";
-      const r = await db("stok_batch", `?cabang_id=eq.${cab}${statusFilter}${criticalBatchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif)&master_barang.cabang_id=eq.${cab}&order=${order}&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+      const r = await db("stok_batch", `?cabang_id=eq.${cab}${statusFilter}${criticalBatchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi)&master_barang.cabang_id=eq.${cab}&order=${order}&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
       if (!r.ok) throw new Error(await r.text());
       const batches = await r.json();
       const rows = batches.map((b) => rowBatch(b.master_barang || {}, b));
@@ -541,7 +543,7 @@ async function action(name, data, s) {
     // Tampilan normal: database hanya mengirim halaman barang yang diminta;
     // LEFT embed mempertahankan barang tanpa batch sebagai stok 0.
     if (!q && !kritis) {
-      const r = await db("master_barang", `?cabang_id=eq.${cab}&select=kode_obat,nama_obat,aktif,stok_batch(${batchFields})&stok_batch.cabang_id=eq.${cab}&order=nama_obat.asc,kode_obat.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+      const r = await db("master_barang", `?cabang_id=eq.${cab}&select=kode_obat,nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi,stok_batch(${batchFields})&stok_batch.cabang_id=eq.${cab}&order=nama_obat.asc,kode_obat.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
       if (!r.ok) throw new Error(await r.text());
       const masters = await r.json();
       const rows = masters.flatMap(fromMaster);
@@ -556,7 +558,7 @@ async function action(name, data, s) {
       const order = sort === "stok_asc" ? "stok_real.asc,expired_date.asc,id_batch.asc" :
         sort === "stok_desc" ? "stok_real.desc,expired_date.asc,id_batch.asc" :
         sort === "terbaru" ? "id_batch.desc" : "expired_date.asc,id_batch.asc";
-      const r = await db("stok_batch", `?cabang_id=eq.${cab}${statusFilter}${criticalBatchFilter}${searchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif)&master_barang.cabang_id=eq.${cab}&order=${order}&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+      const r = await db("stok_batch", `?cabang_id=eq.${cab}${statusFilter}${criticalBatchFilter}${searchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi)&master_barang.cabang_id=eq.${cab}&order=${order}&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
       if (!r.ok) throw new Error(await r.text());
       const batches = await r.json();
       const rows = batches.map((b) => rowBatch(b.master_barang || {}, b));
@@ -565,7 +567,7 @@ async function action(name, data, s) {
 
     // Mode mendesak dipaginasi langsung pada batch yang benar-benar mendesak.
     if (!q && kritis) {
-      const r = await db("stok_batch", `?cabang_id=eq.${cab}&stok_real=gt.0&expired_date=lte.${cutoffDate}&select=${batchFields},master_barang!inner(nama_obat,aktif)&master_barang.cabang_id=eq.${cab}&order=expired_date.asc,id_batch.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+      const r = await db("stok_batch", `?cabang_id=eq.${cab}&stok_real=gt.0&expired_date=lte.${cutoffDate}&select=${batchFields},master_barang!inner(nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi)&master_barang.cabang_id=eq.${cab}&order=expired_date.asc,id_batch.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
       if (!r.ok) throw new Error(await r.text());
       const batches = await r.json();
       const rows = batches.map((b) => rowBatch(b.master_barang || {}, b));
@@ -575,13 +577,13 @@ async function action(name, data, s) {
     // Encoded % values around the term are the only intentional substring wildcards.
     if (data.jenis !== "batch") {
       const masterRelation = `stok_batch${kritis ? "!inner" : ""}(${batchFields})`;
-      const r = await db("master_barang", `?cabang_id=eq.${cab}&or=(kode_obat.ilike.${pattern},nama_obat.ilike.${pattern})&select=kode_obat,nama_obat,aktif,${masterRelation}&stok_batch.cabang_id=eq.${cab}${criticalMasterFilter}&order=nama_obat.asc,kode_obat.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+      const r = await db("master_barang", `?cabang_id=eq.${cab}&or=(kode_obat.ilike.${pattern},nama_obat.ilike.${pattern})&select=kode_obat,nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi,${masterRelation}&stok_batch.cabang_id=eq.${cab}${criticalMasterFilter}&order=nama_obat.asc,kode_obat.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
       if (!r.ok) throw new Error(await r.text());
       const masters = await r.json();
       const rows = masters.flatMap(fromMaster);
       return pageInfo(rows, totalFrom(r), masters.length, "barang");
     }
-    const r = await db("stok_batch", `?cabang_id=eq.${cab}&kode_batch=ilike.${pattern}${criticalBatchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif)&master_barang.cabang_id=eq.${cab}&order=kode_obat.asc,expired_date.asc,id_batch.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
+    const r = await db("stok_batch", `?cabang_id=eq.${cab}&kode_batch=ilike.${pattern}${criticalBatchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi)&master_barang.cabang_id=eq.${cab}&order=kode_obat.asc,expired_date.asc,id_batch.asc&limit=${limit}&offset=${offset}`, { headers: { Prefer: "count=exact" } });
     if (!r.ok) throw new Error(await r.text());
     const batches = await r.json();
     const rows = batches.map((b) => rowBatch(b.master_barang || {}, b));

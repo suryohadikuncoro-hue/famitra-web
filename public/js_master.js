@@ -3,6 +3,8 @@
 /* ----------------------------------------------- Master Barang (Bab 4) --- */
 
 var MARKUP_MASTER_PREVIEW_REQUEST = 0;
+var MARKUP_MASTER_SELECTED = Object.create(null);
+var MARKUP_MASTER_SELECT_ALL = false;
 
 VIEWS.barang = {
   title: 'Master Barang',
@@ -102,6 +104,8 @@ function muatBarang(hal) {
 }
 
 function formMarkupMaster() {
+  MARKUP_MASTER_SELECTED = Object.create(null);
+  MARKUP_MASTER_SELECT_ALL = false;
   var body = '<p class="kpi-sub">Harga jual berlaku per SKU dan tersimpan di Master Barang. Markup dihitung dari modal efektif terbaru setelah PPN dan diskon; pratinjau wajib dilakukan sebelum harga master berubah.</p>' +
     '<div class="grid g3"><label class="field"><span>Tingkat</span><label><input id="mkUmum" type="checkbox" checked> Umum</label><label><input id="mkNakes" type="checkbox"> Nakes</label><label><input id="mkMutasi" type="checkbox"> Apotek lain</label></label>' +
     '<label class="field"><span>Sumber markup</span><select id="mkSumber" class="inp"><option value="bawaan">Bawaan cabang</option><option value="manual">Isi manual</option></select></label>' +
@@ -109,7 +113,7 @@ function formMarkupMaster() {
     '<div class="grid g4"><label class="field"><span>Mode</span><select id="mkMode" class="inp"><option value="persen">Persen</option><option value="rasio">Rasio</option></select></label>' +
     '<label class="field"><span>Umum</span><input id="mkU" class="inp num" type="number" step="0.01"></label><label class="field"><span>Nakes</span><input id="mkN" class="inp num" type="number" step="0.01"></label><label class="field"><span>Apotek lain</span><input id="mkM" class="inp num" type="number" step="0.01"></label></div>' +
     '<label class="field"><span>Pembulatan</span><select id="mkRound" class="inp"><option value="0">Tanpa pembulatan</option><option value="100">Rp100</option><option value="500">Rp500</option><option value="1000">Rp1.000</option></select></label>' +
-    '<div id="mkPreview" class="table-wrap"><p class="kpi-sub">Belum ada pratinjau.</p></div>';
+    '<div id="mkPreview" class="table-wrap"><p class="kpi-sub">Belum ada pratinjau. Cari nama obat atau kode, lalu buat pratinjau untuk memilih beberapa item.</p></div>';
   modalBuka('Terapkan markup harga', body, [{ label: 'Tutup', aksi: modalTutup }, { label: 'Pratinjau', kelas: 'btn-primary', aksi: previewMarkupMaster }]);
   ['mkUmum','mkNakes','mkMutasi','mkMode','mkRound','mkLingkup','mkCari','mkSumber'].forEach(function (id) {
     var el = document.getElementById(id);
@@ -153,16 +157,37 @@ function tandaiPreviewMarkupMasterKotor() {
   }
 }
 function tingkatMarkupMaster() { return [['mkUmum','umum'],['mkNakes','nakes'],['mkMutasi','mutasi']].filter(function (x) { return document.getElementById(x[0]).checked; }).map(function (x) { return x[1]; }); }
+function jumlahMarkupMasterTerpilih(total) { return MARKUP_MASTER_SELECT_ALL ? total : Object.keys(MARKUP_MASTER_SELECTED).length; }
+function sinkronkanPilihanMarkupMaster(total) {
+  var box = document.getElementById('mkPreview'); if (!box) return;
+  var count = box.querySelector('[data-markup-count]'); if (count) count.textContent = angka(jumlahMarkupMasterTerpilih(total)) + ' item dipilih';
+  var all = box.querySelector('#mkPilihSemua'); if (all) all.checked = MARKUP_MASTER_SELECT_ALL;
+  Array.prototype.forEach.call(box.querySelectorAll('[data-markup-kode]'), function (el) {
+    el.checked = MARKUP_MASTER_SELECT_ALL || !!MARKUP_MASTER_SELECTED[el.value];
+  });
+}
+function pasangPilihanMarkupMaster(total) {
+  var box = document.getElementById('mkPreview'); if (!box) return;
+  var all = box.querySelector('#mkPilihSemua');
+  if (all) all.onchange = function () { MARKUP_MASTER_SELECT_ALL = this.checked; if (this.checked) MARKUP_MASTER_SELECTED = Object.create(null); sinkronkanPilihanMarkupMaster(total); };
+  Array.prototype.forEach.call(box.querySelectorAll('[data-markup-kode]'), function (el) {
+    el.onchange = function () { if (this.checked) MARKUP_MASTER_SELECTED[this.value] = true; else { delete MARKUP_MASTER_SELECTED[this.value]; MARKUP_MASTER_SELECT_ALL = false; } sinkronkanPilihanMarkupMaster(total); };
+  });
+  sinkronkanPilihanMarkupMaster(total);
+}
 function previewMarkupMaster() {
   var tingkat = tingkatMarkupMaster(); if (!tingkat.length) { toast('Pilih minimal satu tingkat harga.', true); return; }
   var cfg = cfgMarkupMaster(); if ([cfg.umum,cfg.nakes,cfg.mutasi].some(function (x) { return x !== null && (!isFinite(x) || x < 0 || (cfg.mode === 'rasio' ? x < 1 || x > 11 : x > 1000)); })) { toast('Nilai markup tidak valid.', true); return; }
-  var q = val('mkLingkup') === 'cari' ? val('mkCari') : '', box = document.getElementById('mkPreview'), request = ++MARKUP_MASTER_PREVIEW_REQUEST; if (box) { box.dataset.previewReady = '0'; box.innerHTML = '<p class="kpi-sub">Memuat pratinjau…</p>'; }
+  var q = val('mkLingkup') === 'cari' ? val('mkCari') : '', box = document.getElementById('mkPreview'), request = ++MARKUP_MASTER_PREVIEW_REQUEST;
+  MARKUP_MASTER_SELECTED = Object.create(null); MARKUP_MASTER_SELECT_ALL = false;
+  if (box) { box.dataset.previewReady = '0'; box.innerHTML = '<p class="kpi-sub">Memuat pratinjau…</p>'; }
   api('harga.markupPreview', { q: q, offset: 0, cfg: cfg }).then(function (r) {
     if (request !== MARKUP_MASTER_PREVIEW_REQUEST) return;
     var selected = r.rows || [];
     if (box) box.dataset.previewReady = '1';
-    box.innerHTML = '<p class="kpi-sub">' + angka(r.total) + ' barang ditemukan. Modal adalah modal efektif terbaru per SKU setelah PPN dan diskon; harga jual baru disimpan di Master Barang. Menampilkan maksimal 100 baris per pratinjau.</p><table><thead><tr><th>Kode</th><th>Nama</th><th>Modal efektif</th><th>Harga jual baru</th><th>Margin baru</th></tr></thead><tbody>' + selected.map(function (x) { return '<tr><td>' + esc(x.kode_obat) + '</td><td>' + esc(x.nama_obat) + '</td><td class="r">' + (x.modal == null ? '—' : rupiah(x.modal)) + '</td><td class="r">' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.tingkat + ': ' + (h.baru == null ? '—' : rupiah(h.baru)); }).join('<br>') + '</td><td>' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.baru && h.baru > 0 ? (100 - Number(x.modal || 0) / Number(h.baru) * 100).toFixed(1) + '%' : '—'; }).join('<br>') + '</td></tr>'; }).join('') + '</tbody></table>';
-    var foot = document.getElementById('modalFoot'); foot.innerHTML = ''; [['Kembali',modalTutup,''],['Terapkan setelah konfirmasi',function () { terapkanMarkupMaster(r.total, q, cfg, tingkat); },'btn-primary']].forEach(function (x) { var b=document.createElement('button'); b.className='btn '+x[2]; b.textContent=x[0]; b.onclick=x[1]; foot.appendChild(b); });
+    box.innerHTML = '<p class="kpi-sub">' + angka(r.total) + ' barang ditemukan. Pilih item yang akan diubah; pencarian nama obat/kode dapat mempersempit daftar.</p><p class="kpi-sub"><label><input id="mkPilihSemua" type="checkbox"> Pilih semua hasil' + (r.total > selected.length ? ' (termasuk halaman berikutnya)' : '') + '</label> · <strong data-markup-count>0 item dipilih</strong></p><table><thead><tr><th><span class="sr-only">Pilih</span></th><th>Kode</th><th>Nama</th><th>Modal efektif</th><th>Harga jual baru</th><th>Margin baru</th></tr></thead><tbody>' + selected.map(function (x) { return '<tr><td><input type="checkbox" data-markup-kode value="' + esc(x.kode_obat) + '" aria-label="Pilih ' + esc(x.nama_obat) + '"></td><td>' + esc(x.kode_obat) + '</td><td>' + esc(x.nama_obat) + '</td><td class="r">' + (x.modal == null ? '—' : rupiah(x.modal)) + '</td><td class="r">' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.tingkat + ': ' + (h.baru == null ? '—' : rupiah(h.baru)); }).join('<br>') + '</td><td>' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.baru && h.baru > 0 ? (100 - Number(x.modal || 0) / Number(h.baru) * 100).toFixed(1) + '%' : '—'; }).join('<br>') + '</td></tr>'; }).join('') + '</tbody></table>';
+    pasangPilihanMarkupMaster(r.total);
+    var foot = document.getElementById('modalFoot'); foot.innerHTML = ''; [['Kembali',modalTutup,''],['Terapkan item terpilih',function () { terapkanMarkupMaster(r.total, q, cfg, tingkat); },'btn-primary']].forEach(function (x) { var b=document.createElement('button'); b.className='btn '+x[2]; b.textContent=x[0]; b.onclick=x[1]; foot.appendChild(b); });
   }).catch(function (e) { if (box) box.innerHTML = '<p class="kpi-sub">' + esc(e.message) + '</p>'; });
 }
 function terapkanMarkupMaster(total, q, cfg, tingkat) {
@@ -171,10 +196,13 @@ function terapkanMarkupMaster(total, q, cfg, tingkat) {
     toast('Nilai markup atau lingkup berubah. Buat pratinjau ulang sebelum menerapkan.', true);
     return;
   }
-  if (!confirm('Terapkan markup pada ' + angka(total) + ' barang dan tingkat yang dipilih?')) return;
+  var selectedCodes = Object.keys(MARKUP_MASTER_SELECTED);
+  if (!MARKUP_MASTER_SELECT_ALL && !selectedCodes.length) { toast('Pilih minimal satu item obat.', true); return; }
+  var targetLabel = MARKUP_MASTER_SELECT_ALL ? angka(total) + ' hasil' : angka(selectedCodes.length) + ' item';
+  if (!confirm('Terapkan markup pada ' + targetLabel + ' dan tingkat yang dipilih?')) return;
   var pages = [], offset = 0;
   var hasil = { berubah: 0, dilewati: 0 };
-  function ambil() { return api('harga.markupPreview', { q: q, offset: offset, cfg: cfg }).then(function (r) { pages = pages.concat((r.rows || []).map(function (x) { return x.kode_obat; })); offset += 100; if (offset < r.total) return ambil(); }); }
+  function ambil() { return MARKUP_MASTER_SELECT_ALL ? api('harga.markupPreview', { q: q, offset: offset, cfg: cfg }).then(function (r) { pages = pages.concat((r.rows || []).map(function (x) { return x.kode_obat; })); offset += 100; if (offset < r.total) return ambil(); }) : (pages = selectedCodes.slice(), Promise.resolve()); }
   var chunks = function (a,n) { var z=[]; for(var i=0;i<a.length;i+=n) z.push(a.slice(i,i+n)); return z; };
   ambil().then(function () { return chunks(pages, 200).reduce(function (p, k) { return p.then(function () { return api('harga.markupTerapkan', { kode_obat:k, tingkat:tingkat, mode:cfg.mode, umum:cfg.umum, nakes:cfg.nakes, mutasi:cfg.mutasi, pembulatan:cfg.pembulatan }); }).then(function (r) { hasil.berubah += Number(r && r.berubah) || 0; hasil.dilewati += Number(r && r.dilewati) || 0; }); }, Promise.resolve()); }).then(function () { modalTutup(); toast('Markup selesai. Harga berubah: ' + angka(hasil.berubah) + '; dilewati: ' + angka(hasil.dilewati) + '.'); muatBarang(); }).catch(function (e) { toast(e.message, true); });
 }
@@ -440,7 +468,7 @@ VIEWS.stok = {
       '<p id="stHint" class="kpi-sub st-filter-hint" style="margin-top:0">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</p>' +
       '<div class="table-wrap"><table><thead><tr>' +
         '<th>Obat</th><th>Kode batch / status</th><th>Kedaluwarsa</th><th>Sisa waktu</th>' +
-        '<th class="c">Stok</th><th class="r">Modal efektif batch</th><th></th>' +
+        '<th class="c">Stok</th><th class="r">Modal efektif batch</th><th class="r">Harga jual SKU</th><th class="r">Margin batch</th><th></th>' +
       '</tr></thead><tbody id="stBody"></tbody></table></div><div id="stPager" class="pager"></div></div>';
 
     document.getElementById('stTambah').onclick = function () { formBatch(null); };
@@ -468,7 +496,7 @@ function muatStok(offset) {
   if (hint) hint.textContent = sort === 'nama' && status === 'semua' && !document.getElementById('stKritis').checked
     ? 'Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.'
     : 'Filter dan urutan diterapkan pada seluruh hasil batch, bukan hanya halaman yang terlihat.';
-  tb.innerHTML = '<tr><td colspan="7" class="empty">Memuat…</td></tr>';
+  tb.innerHTML = '<tr><td colspan="10" class="empty">Memuat…</td></tr>';
   api('stok.list', { q: val('stCari'), jenis: val('stCariJenis') || 'barang', kritis: document.getElementById('stKritis').checked, status: status, sort: sort, limit: STOK_LIMIT, offset: STOK_OFFSET })
     .then(function (res) {
       var rows = res.rows || [];
@@ -476,7 +504,7 @@ function muatStok(offset) {
         muatStok(Math.floor((res.total - 1) / STOK_LIMIT) * STOK_LIMIT); return;
       }
       gambarPagerStok(res);
-      if (!rows.length) { tb.innerHTML = tabelKosong('Tidak ada barang atau batch yang cocok.', 7); return; }
+      if (!rows.length) { tb.innerHTML = tabelKosong('Tidak ada barang atau batch yang cocok.', 10); return; }
       tb.innerHTML = rows.map(function (s, i) {
         var belumAdaBatch = s.Belum_Ada_Batch;
         return '<tr>' +
@@ -487,6 +515,8 @@ function muatStok(offset) {
           '<td>' + (belumAdaBatch ? '—' : chipExpired(s.sisa_hari, s.Expired_Date)) + '</td>' +
           '<td class="c num">' + angka(s.Stok_Real || 0) + '</td>' +
           '<td class="r num">' + (belumAdaBatch || s.Harga_Modal_Batch == null ? '—' : rupiah(s.Harga_Modal_Batch)) + '</td>' +
+          '<td class="r num"><div>Umum: ' + hargaStok(s.Harga_Jual_Umum) + '</div><div>Nakes: ' + hargaStok(s.Harga_Jual_Nakes) + '</div><div>Mutasi: ' + hargaStok(s.Harga_Jual_Mutasi) + '</div></td>' +
+          '<td class="r num"><div>Umum: ' + marginStok(s.Margin_Umum) + '</div><div>Nakes: ' + marginStok(s.Margin_Nakes) + '</div><div>Mutasi: ' + marginStok(s.Margin_Mutasi) + '</div></td>' +
           '<td class="c">' + (belumAdaBatch
             ? '<button class="btn btn-sm btn-primary" data-produk-index="' + i + '">Tambah batch</button>'
             : '<button class="btn btn-sm" data-batch=\'' + esc(JSON.stringify(s)) + '\'>Ubah</button>') + '</td>' +
@@ -503,9 +533,12 @@ function muatStok(offset) {
         if (b) formBatch(JSON.parse(b.dataset.batch));
       };
     }).catch(function (e) {
-      tb.innerHTML = '<tr><td colspan="7" class="empty">' + esc(e.message) + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="10" class="empty">' + esc(e.message) + '</td></tr>';
     });
 }
+
+function hargaStok(v) { return v == null || Number(v) <= 0 ? '—' : rupiah(v); }
+function marginStok(v) { return v == null ? '—' : Number(v).toFixed(1).replace('.', ',') + '%'; }
 
 function gambarPagerStok(res) {
   var el = document.getElementById('stPager');
