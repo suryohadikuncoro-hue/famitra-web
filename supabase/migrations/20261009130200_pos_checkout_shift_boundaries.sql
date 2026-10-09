@@ -3,7 +3,6 @@ DO $$
 DECLARE
   r record;
   d text;
-  n text;
 BEGIN
   -- Ambil definisi aktif dari katalog PostgreSQL, lalu ubah hanya CASE shift.
   FOR r IN
@@ -15,7 +14,7 @@ BEGIN
     d := regexp_replace(d,
       'CASE\s+WHEN\s+extract\(hour\s+from\s+\(now\(\)\s+at\s+time\s+zone\s+''Asia/Jakarta''\)\)\s+between\s+8\s+and\s+14\s+THEN\s+''Pagi''\s+WHEN\s+extract\(hour\s+from\s+\(now\(\)\s+at\s+time\s+zone\s+''Asia/Jakarta''\)\)\s+between\s+15\s+and\s+20\s+THEN\s+''Sore''\s+ELSE\s+''Luar Jam''\s+END',
       'CASE WHEN extract(hour from (now() at time zone ''Asia/Jakarta'')) >= 7 AND extract(hour from (now() at time zone ''Asia/Jakarta'')) < 14 THEN ''Pagi'' WHEN extract(hour from (now() at time zone ''Asia/Jakarta'')) >= 14 AND extract(hour from (now() at time zone ''Asia/Jakarta'')) < 21 THEN ''Sore'' ELSE ''Luar Jam'' END',
-      1, 'n');
+      'n');
     IF d = r.def THEN
       d := replace(d, 'between 8 and 14', '>= 7 AND extract(hour from (now() at time zone ''Asia/Jakarta'')) < 14');
       d := replace(d, 'between 15 and 20', '>= 14 AND extract(hour from (now() at time zone ''Asia/Jakarta'')) < 21');
