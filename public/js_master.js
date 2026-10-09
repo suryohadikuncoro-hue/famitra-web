@@ -9,7 +9,7 @@ VIEWS.barang = {
       '<div class="card"><div class="card-head">' +
         '<h3>Katalog produk</h3>' +
         '<input id="bgCari" class="inp" style="max-width:230px" placeholder="Cari nama, kode, kategori">' +
-        '<button id="bgTambah" class="btn btn-primary"><span class="hanya-desktop">Tambah barang</span><span class="hanya-hp">+ Barang</span></button></div>' +
+        '<button id="bgTambah" class="btn btn-primary"><span class="hanya-desktop">Tambah barang</span><span class="hanya-hp">+ Barang</span></button>' + ((SESSION && SESSION.user && SESSION.user.role === 'Owner') ? '<button id="bgMarkup" class="btn">Terapkan markup</button>' : '') + '</div>' +
       // Di HP daftar tampil sebagai kartu (#bgKartu); tabel disembunyikan.
       '<div id="bgKartu" class="m-list hanya-hp"></div>' +
       '<div class="table-wrap hanya-desktop"><table data-tk-off="1"><thead><tr>' +
@@ -20,6 +20,7 @@ VIEWS.barang = {
       '<div id="bgPager" class="pager"></div></div>';
 
     document.getElementById('bgTambah').onclick = function () { formBarang(null); };
+    var markup = document.getElementById('bgMarkup'); if (markup) markup.onclick = formMarkupMaster;
     var t = null;
     document.getElementById('bgCari').addEventListener('input', function () {
       clearTimeout(t); t = setTimeout(function () { muatBarang(1); }, 250);
@@ -96,6 +97,53 @@ function muatBarang(hal) {
   }).catch(function (e) {
     tb.innerHTML = '<tr><td colspan="10" class="empty">' + esc(e.message) + '</td></tr>';
   });
+}
+
+function formMarkupMaster() {
+  var body = '<p class="kpi-sub">Pilih tingkat harga dan sumber markup. Pratinjau wajib dilakukan sebelum harga master berubah.</p>' +
+    '<div class="grid g3"><label class="field"><span>Tingkat</span><label><input id="mkUmum" type="checkbox" checked> Umum</label><label><input id="mkNakes" type="checkbox"> Nakes</label><label><input id="mkMutasi" type="checkbox"> Apotek lain</label></label>' +
+    '<label class="field"><span>Sumber markup</span><select id="mkSumber" class="inp"><option value="bawaan">Bawaan cabang</option><option value="manual">Isi manual</option></select></label>' +
+    '<label class="field"><span>Lingkup</span><select id="mkLingkup" class="inp"><option value="semua">Semua barang aktif</option><option value="cari">Hasil pencarian saat ini</option></select><input id="mkCari" class="inp" placeholder="Pencarian (opsional)"></label></div>' +
+    '<div class="grid g4"><label class="field"><span>Mode</span><select id="mkMode" class="inp"><option value="persen">Persen</option><option value="rasio">Rasio</option></select></label>' +
+    '<label class="field"><span>Umum</span><input id="mkU" class="inp num" type="number" step="0.01"></label><label class="field"><span>Nakes</span><input id="mkN" class="inp num" type="number" step="0.01"></label><label class="field"><span>Apotek lain</span><input id="mkM" class="inp num" type="number" step="0.01"></label></div>' +
+    '<label class="field"><span>Pembulatan</span><select id="mkRound" class="inp"><option value="0">Tanpa pembulatan</option><option value="100">Rp100</option><option value="500">Rp500</option><option value="1000">Rp1.000</option></select></label>' +
+    '<div id="mkPreview" class="table-wrap"><p class="kpi-sub">Belum ada pratinjau.</p></div>';
+  modalBuka('Terapkan markup harga', body, [{ label: 'Tutup', aksi: modalTutup }, { label: 'Pratinjau', kelas: 'btn-primary', aksi: previewMarkupMaster }]);
+  document.getElementById('mkSumber').onchange = isiSumberMarkupMaster;
+  document.getElementById('mkMode').onchange = function () { isiSumberMarkupMaster(); };
+  document.getElementById('mkRound').onchange = previewMarkupMaster;
+  isiSumberMarkupMaster();
+}
+function isiSumberMarkupMaster() {
+  if (val('mkSumber') !== 'bawaan') return;
+  api('harga.pengaturan', {}).then(function (r) {
+    if (!r.tersedia) throw new Error(r.pesan);
+    var c = r.pengaturan || {}, mode = c.mode || 'persen';
+    document.getElementById('mkMode').value = mode;
+    document.getElementById('mkU').value = c.markup_umum_persen == null ? '' : mode === 'rasio' ? 1 + Number(c.markup_umum_persen) / 100 : c.markup_umum_persen;
+    document.getElementById('mkN').value = c.markup_nakes_persen == null ? '' : mode === 'rasio' ? 1 + Number(c.markup_nakes_persen) / 100 : c.markup_nakes_persen;
+    document.getElementById('mkM').value = c.markup_mutasi_persen == null ? '' : mode === 'rasio' ? 1 + Number(c.markup_mutasi_persen) / 100 : c.markup_mutasi_persen;
+    document.getElementById('mkRound').value = String(c.pembulatan == null ? 100 : c.pembulatan);
+  }).catch(function (e) { toast(e.message, true); });
+}
+function cfgMarkupMaster() { return { mode: val('mkMode'), umum: val('mkU') === '' ? null : Number(val('mkU')), nakes: val('mkN') === '' ? null : Number(val('mkN')), mutasi: val('mkM') === '' ? null : Number(val('mkM')), pembulatan: Number(val('mkRound')) || 0 }; }
+function tingkatMarkupMaster() { return [['mkUmum','umum'],['mkNakes','nakes'],['mkMutasi','mutasi']].filter(function (x) { return document.getElementById(x[0]).checked; }).map(function (x) { return x[1]; }); }
+function previewMarkupMaster() {
+  var tingkat = tingkatMarkupMaster(); if (!tingkat.length) { toast('Pilih minimal satu tingkat harga.', true); return; }
+  var cfg = cfgMarkupMaster(); if ([cfg.umum,cfg.nakes,cfg.mutasi].some(function (x) { return x !== null && (!isFinite(x) || x < 0 || (cfg.mode === 'rasio' ? x < 1 || x > 11 : x > 1000)); })) { toast('Nilai markup tidak valid.', true); return; }
+  var q = val('mkLingkup') === 'cari' ? val('mkCari') : '', box = document.getElementById('mkPreview'); if (box) box.innerHTML = '<p class="kpi-sub">Memuat pratinjau…</p>';
+  api('harga.markupPreview', { q: q, offset: 0, cfg: cfg }).then(function (r) {
+    var selected = r.rows || [];
+    box.innerHTML = '<p class="kpi-sub">' + angka(r.total) + ' barang ditemukan. Menampilkan maksimal 100 baris per pratinjau.</p><table><thead><tr><th>Kode</th><th>Nama</th><th>Modal</th><th>Harga baru</th><th>Margin baru</th></tr></thead><tbody>' + selected.map(function (x) { return '<tr><td>' + esc(x.kode_obat) + '</td><td>' + esc(x.nama_obat) + '</td><td class="r">' + (x.modal == null ? '—' : rupiah(x.modal)) + '</td><td class="r">' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.tingkat + ': ' + (h.baru == null ? '—' : rupiah(h.baru)); }).join('<br>') + '</td><td>' + x.harga.filter(function (h) { return tingkat.indexOf(h.tingkat) >= 0; }).map(function (h) { return h.baru && h.baru > 0 ? (100 - Number(x.modal || 0) / Number(h.baru) * 100).toFixed(1) + '%' : '—'; }).join('<br>') + '</td></tr>'; }).join('') + '</tbody></table>';
+    var foot = document.getElementById('modalFoot'); foot.innerHTML = ''; [['Kembali',modalTutup,''],['Terapkan setelah konfirmasi',function () { terapkanMarkupMaster(r.total, q, cfg, tingkat); },'btn-primary']].forEach(function (x) { var b=document.createElement('button'); b.className='btn '+x[2]; b.textContent=x[0]; b.onclick=x[1]; foot.appendChild(b); });
+  }).catch(function (e) { if (box) box.innerHTML = '<p class="kpi-sub">' + esc(e.message) + '</p>'; });
+}
+function terapkanMarkupMaster(total, q, cfg, tingkat) {
+  if (!confirm('Terapkan markup pada ' + angka(total) + ' barang dan tingkat yang dipilih?')) return;
+  var pages = [], offset = 0;
+  function ambil() { return api('harga.markupPreview', { q: q, offset: offset, cfg: cfg }).then(function (r) { pages = pages.concat((r.rows || []).map(function (x) { return x.kode_obat; })); offset += 100; if (offset < r.total) return ambil(); }); }
+  var chunks = function (a,n) { var z=[]; for(var i=0;i<a.length;i+=n) z.push(a.slice(i,i+n)); return z; };
+  ambil().then(function () { return chunks(pages, 200).reduce(function (p, k) { return p.then(function () { return api('harga.markupTerapkan', { kode_obat:k, tingkat:tingkat, mode:cfg.mode, umum:cfg.umum, nakes:cfg.nakes, mutasi:cfg.mutasi, pembulatan:cfg.pembulatan }); }); }, Promise.resolve()); }).then(function () { modalTutup(); toast('Markup diterapkan pada ' + angka(pages.length) + ' barang.'); muatBarang(); }).catch(function (e) { toast(e.message, true); });
 }
 
 /* Ubah stok langsung dari Master Barang. Perubahan disimpan lewat stokopname

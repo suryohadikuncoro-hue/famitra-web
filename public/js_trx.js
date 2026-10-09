@@ -1,6 +1,6 @@
 /* ================== Pembelian (Bab 5), Biaya (8.1), Laporan (Bab 7) ====== */
 
-var BELI = { items: [], riwayatQuery: '', riwayatOffset: 0, riwayatHasMore: false, riwayatRequest: 0, riwayatTimer: null, editNoFaktur: null };
+var BELI = { items: [], riwayatQuery: '', riwayatOffset: 0, riwayatHasMore: false, riwayatRequest: 0, riwayatTimer: null, editNoFaktur: null, markup: { tersedia: false, mode: 'persen', umum: null, nakes: null, mutasi: null, pembulatan: 100 } };
 var BELI_SUGGEST = { timer: null, request: 0, rows: [], index: -1, input: null };
 var HUTANG_FN_URL = 'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/hutang';
 function apiHutang(action, data) {
@@ -52,6 +52,14 @@ VIEWS.beli = {
         '</div>' +
       '</div>' +
 
+      '<div class="card" id="blMarkupCard"><div class="card-head"><h3>Markup harga jual</h3><span id="blMarkupStatus" class="kpi-sub">Memuat pengaturan…</span></div>' +
+        '<div class="grid g4"><label class="field"><span>Mode input</span><select id="blMarkupMode" class="inp"><option value="persen">Persen di atas modal</option><option value="rasio">Rasio pengali modal</option></select></label>' +
+        '<label class="field"><span>Umum</span><input id="blMarkupUmum" class="inp num" type="number" step="0.01" placeholder="kosong = nonaktif"><small id="blMarkupUmumPad" class="kpi-sub"></small></label>' +
+        '<label class="field"><span>Nakes</span><input id="blMarkupNakes" class="inp num" type="number" step="0.01" placeholder="kosong = nonaktif"><small id="blMarkupNakesPad" class="kpi-sub"></small></label>' +
+        '<label class="field"><span>Apotek lain</span><input id="blMarkupMutasi" class="inp num" type="number" step="0.01" placeholder="kosong = nonaktif"><small id="blMarkupMutasiPad" class="kpi-sub"></small></label></div>' +
+        '<div class="pay-row"><label class="field"><span>Pembulatan</span><select id="blMarkupPembulatan" class="inp"><option value="0">Tanpa pembulatan</option><option value="100">Ke atas Rp100</option><option value="500">Ke atas Rp500</option><option value="1000">Ke atas Rp1.000</option></select></label><button id="blMarkupSimpan" class="btn btn-sm" hidden>Simpan sebagai bawaan</button></div>' +
+        '<p class="kpi-sub">Pengaturan hanya berlaku untuk faktur ini. Harga yang diketik manual tidak ditimpa; mode rasio 2,5 = markup 150%.</p></div>' +
+
       '<div class="card"><div class="card-head"><h3>Rincian item</h3>' +
         '<button id="blTambahItem" class="btn btn-primary">Tambah baris</button></div>' +
         '<div class="table-wrap"><table><thead><tr>' +
@@ -68,7 +76,7 @@ VIEWS.beli = {
         '<p class="kpi-sub">Menyimpan faktur akan menambah stok per batch dan memperbarui harga modal. ' +
           'Harga jual umum, khusus (nakes), dan mutasi (apotek lain) hanya berubah bila kolomnya diisi. ' +
           'Diskon diisi dalam persen dari nilai baris setelah PPN. ' +
-          'Laba % dihitung dari modal efektif: netto setelah alokasi diskon, di luar PPN.</p>' +
+          'Laba % dihitung dari modal efektif yang sudah termasuk PPN dan diskon.</p>' +
       '</div>' +
 
       '<div class="card"><div class="card-head"><h3>Riwayat faktur</h3></div>' +
@@ -82,6 +90,8 @@ VIEWS.beli = {
     document.getElementById('blTanggal').value = new Date().toISOString().substring(0, 10);
     document.getElementById('blTambahItem').onclick = function () { BELI.items.push(barisKosong()); gambarBeli(); };
     document.getElementById('blSimpan').onclick = simpanPembelian;
+    ['blMarkupMode','blMarkupUmum','blMarkupNakes','blMarkupMutasi','blMarkupPembulatan'].forEach(function (id) { document.getElementById(id).oninput = bacaMarkupBeli; document.getElementById(id).onchange = bacaMarkupBeli; });
+    document.getElementById('blMarkupSimpan').onclick = simpanBawaanMarkupBeli;
     document.getElementById('blSupplierBaru').onclick = formSupplier;
     document.getElementById('blBatalUbah').onclick = batalUbahFaktur;
     document.getElementById('blRiwayatCari').oninput = function () {
@@ -101,6 +111,7 @@ VIEWS.beli = {
     BELI.items = [barisKosong()];
     aturModeUbahBeli(null);
     muatSupplier();
+    muatPengaturanMarkup();
     gambarBeli();
     muatRiwayatBeli();
   }
@@ -109,33 +120,68 @@ VIEWS.beli = {
 function barisKosong() {
   return { Kode_Obat: '', Nama_Obat: '', Kode_Batch: '', Expired_Date: '', Qty: 0, Harga_Netto: 0,
            PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 0, Harga_Khusus_Baru: 0, Harga_Jual_Mutasi_Baru: 0,
-           Stok_Tersedia: null, Jual_Umum_Kini: 0 };
+           Stok_Tersedia: null, Jual_Umum_Kini: 0, Jual_Khusus_Kini: 0, Jual_Mutasi_Kini: 0, _manual: {} };
 }
 
-// Harga modal efektif memakai netto setelah alokasi diskon, di luar PPN.
+// Harga modal efektif termasuk PPN dan setelah diskon nominal pada baris.
 function hargaModalEfektifBeli(it) {
-  var qty = Number(it.Qty) || 0;
-  var ppn = Number(it.PPN) || 0;
-  var faktorPajak = 1 + ppn / 100;
-  if (qty <= 0 || faktorPajak <= 0 || ppn < 0 || ppn > 100) return null;
-  var diskonNetto = diskonRupiahBaris(it) / faktorPajak;
-  return Math.max(0, Math.round((Number(it.Harga_Netto || 0) - diskonNetto / qty) * 100) / 100);
+  var qty = Number(it.Qty) || 0, ppn = Number(it.PPN) || 0;
+  if (qty <= 0 || ppn < 0) return null;
+  var modal = (Number(it.Harga_Netto) || 0) * qty * (1 + ppn / 100) - diskonRupiahBaris(it);
+  return Math.round(modal / qty * 100) / 100;
 }
-
-// Laba % = (harga jual umum - modal efektif) / harga jual umum.
-function labaPersenBeli(it) {
-  var jual = Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0;
-  var modal = hargaModalEfektifBeli(it);
-  if (jual <= 0 || modal === null || modal <= 0) return null;
-  return (jual - modal) / jual * 100;
+function marginPersenBeli(harga, modal) {
+  harga = Number(harga) || 0;
+  return harga > 0 && modal !== null && modal > 0 ? (harga - modal) / harga * 100 : null;
 }
-
 function htmlLabaBeli(it) {
-  var l = labaPersenBeli(it);
-  if (l === null) return '<span class="kpi-sub">—</span>';
-  var kelas = l < 0 ? ' chip-bad' : (l < 10 ? ' chip-warn' : ' chip-ok');
-  return '<span class="chip' + kelas + '">' + l.toFixed(1).replace('.', ',') + '%</span>';
+  var modal = hargaModalEfektifBeli(it);
+  var levels = [['Umum', Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0], ['Nakes', Number(it.Harga_Khusus_Baru) || Number(it.Jual_Khusus_Kini) || 0], ['Apotek', Number(it.Harga_Jual_Mutasi_Baru) || Number(it.Jual_Mutasi_Kini) || 0]];
+  return levels.map(function (x) { var l = marginPersenBeli(x[1], modal); if (l === null) return '<div class="kpi-sub">' + x[0] + ': —</div>'; var kelas = l < 0 ? 'chip-bad' : (l < 10 ? 'chip-warn' : 'chip-ok'); return '<div><span class="kpi-sub">' + x[0] + ' </span><span class="chip ' + kelas + '">' + l.toFixed(1).replace('.', ',') + '%</span></div>'; }).join('');
 }
+function hargaDariMarkupJS(modal, persen, pembulatan) {
+  if (modal === null || Number(modal) <= 0 || persen === null || persen === undefined || Number(persen) < 0) return null;
+  var mentah = Math.round(Number(modal) * (1 + Number(persen) / 100) * 100) / 100;
+  if (Number(persen) === 0) return mentah;
+  return Number(pembulatan) > 0 ? Math.ceil(mentah / Number(pembulatan)) * Number(pembulatan) : mentah;
+}
+function markupKePersenBeli(v) {
+  if (v === null || v === undefined || v === '') return null;
+  var n = Number(v); return BELI.markup.mode === 'rasio' ? (n - 1) * 100 : n;
+}
+function terapkanMarkupBaris(it) {
+  if (!BELI.markup.tersedia || BELI.editNoFaktur) return;
+  var modal = hargaModalEfektifBeli(it), m = BELI.markup;
+  [['umum','Harga_Jual_Umum_Baru'], ['nakes','Harga_Khusus_Baru'], ['mutasi','Harga_Jual_Mutasi_Baru']].forEach(function (x) {
+    if (it._manual && it._manual[x[1]]) return;
+    var pct = markupKePersenBeli(m[x[0]]), harga = hargaDariMarkupJS(modal, pct, m.pembulatan);
+    if (harga !== null && harga > 0) it[x[1]] = harga;
+  });
+}
+function sinkronkanHargaMarkupBaris(tr, it) {
+  terapkanMarkupBaris(it);
+  ['Harga_Jual_Umum_Baru','Harga_Khusus_Baru','Harga_Jual_Mutasi_Baru'].forEach(function (f) { var el = tr.querySelector('[data-f="' + f + '"]'); if (el && !(it._manual && it._manual[f])) el.value = it[f] || ''; });
+  var lab = tr.querySelector('[data-laba]'); if (lab) lab.innerHTML = htmlLabaBeli(it);
+}
+function padananMarkupBeli() {
+  [['Umum','blMarkupUmum','blMarkupUmumPad'],['Nakes','blMarkupNakes','blMarkupNakesPad'],['Mutasi','blMarkupMutasi','blMarkupMutasiPad']].forEach(function (x) { var v = val(x[1]), el = document.getElementById(x[2]); if (!el) return; var n = Number(v); el.textContent = v === '' || !isFinite(n) ? '' : '= ' + (BELI.markup.mode === 'rasio' ? ((n - 1) * 100).toFixed(2).replace(/\.00$/, '') : (n / 100 + 1).toFixed(2).replace(/\.00$/, '') + '× rasio'); });
+}
+function muatPengaturanMarkup() {
+  api('harga.pengaturan', {}).then(function (res) {
+    var status = document.getElementById('blMarkupStatus'), card = document.getElementById('blMarkupCard');
+    if (!res.tersedia) { BELI.markup.tersedia = false; if (status) status.textContent = res.pesan; return; }
+    var c = res.pengaturan || {}; BELI.markup.tersedia = true; BELI.markup.mode = c.mode || 'persen'; BELI.markup.umum = c.markup_umum_persen == null ? null : Number(c.markup_umum_persen); BELI.markup.nakes = c.markup_nakes_persen == null ? null : Number(c.markup_nakes_persen); BELI.markup.mutasi = c.markup_mutasi_persen == null ? null : Number(c.markup_mutasi_persen); BELI.markup.pembulatan = Number(c.pembulatan) || 0;
+    ['blMarkupMode','blMarkupPembulatan'].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = id === 'blMarkupMode' ? BELI.markup.mode : String(BELI.markup.pembulatan); });
+    [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) { var el = document.getElementById(x[0]); if (el) { var pct = BELI.markup[x[1]]; el.value = pct == null ? '' : BELI.markup.mode === 'rasio' ? (1 + pct / 100) : pct; } });
+    if (status) status.textContent = res.tersimpan ? 'Bawaan cabang dimuat' : 'Belum ada bawaan; isi untuk faktur ini';
+    if (card) card.hidden = false; var save = document.getElementById('blMarkupSimpan'); if (save) save.hidden = !(SESSION && SESSION.user && SESSION.user.role === 'Owner');
+    padananMarkupBeli(); gambarBeli();
+  }).catch(function (e) { var status = document.getElementById('blMarkupStatus'); if (status) status.textContent = e.message; });
+}
+function bacaMarkupBeli() {
+  BELI.markup.mode = val('blMarkupMode') || 'persen'; BELI.markup.umum = val('blMarkupUmum') === '' ? null : Number(val('blMarkupUmum')); BELI.markup.nakes = val('blMarkupNakes') === '' ? null : Number(val('blMarkupNakes')); BELI.markup.mutasi = val('blMarkupMutasi') === '' ? null : Number(val('blMarkupMutasi')); BELI.markup.pembulatan = Number(val('blMarkupPembulatan')) || 0; padananMarkupBeli(); gambarBeli();
+}
+function simpanBawaanMarkupBeli() { var m = BELI.markup; api('harga.simpanPengaturan', { mode: m.mode, markup_umum_persen: m.umum, markup_nakes_persen: m.nakes, markup_mutasi_persen: m.mutasi, pembulatan: m.pembulatan }).then(function () { toast('Bawaan markup tersimpan.'); }).catch(function (e) { toast(e.message, true); }); }
 
 // Nilai baris sebelum diskon: netto x qty + PPN.
 function brutoBaris(it) {
@@ -202,6 +248,8 @@ function pilihSaranBeli(index) {
   it.Nama_Obat = b.Nama_Obat || '';
   it.Stok_Tersedia = Number(b.stok || 0);
   it.Jual_Umum_Kini = Number(b.Harga_Jual_Umum) || 0;
+  it.Jual_Khusus_Kini = Number(b.Harga_Khusus) || 0;
+  it.Jual_Mutasi_Kini = Number(b.Harga_Jual_Mutasi) || 0;
   if (!Number(it.Harga_Netto)) it.Harga_Netto = Number(b.Harga_Modal) || 0;
   if (!Number(it.PPN)) it.PPN = Number(b.PPN) || 0;
   if (!Number(it.Harga_Jual_Umum_Baru)) it.Harga_Jual_Umum_Baru = Number(b.Harga_Jual_Umum) || 0;
@@ -255,14 +303,14 @@ function gambarBeli() {
     if (!f) return;
     var it = BELI.items[Number(f.dataset.i)];
     it[f.dataset.f] = (f.type === 'number') ? Number(f.value) || 0 : f.value;
+    if (['Harga_Jual_Umum_Baru','Harga_Khusus_Baru','Harga_Jual_Mutasi_Baru'].indexOf(f.dataset.f) >= 0) { it._manual = it._manual || {}; it._manual[f.dataset.f] = true; } else { terapkanMarkupBaris(it); }
     // Hanya perbarui angka total agar fokus pengetikan tidak hilang.
     ringkasBeli();
     if (f.dataset.f === 'Kode_Obat') jadwalkanSaranBeli(f);
     var tr = f.closest('tr');
     var sel = tr.querySelector('[data-subtotal]');
     if (sel) sel.textContent = rupiah(subtotalBaris(it));
-    var lab = tr.querySelector('[data-laba]');
-    if (lab) lab.innerHTML = htmlLabaBeli(it);
+    sinkronkanHargaMarkupBaris(tr, it);
   };
   // Kode obat yang diketik manual (tanpa memilih saran) tetap diisi nama, stok,
   // dan harga jualnya begitu kolom ditinggalkan.
@@ -277,6 +325,10 @@ function gambarBeli() {
       it.Nama_Obat = b.Nama_Obat || '';
       it.Stok_Tersedia = Number(b.stok || 0);
       it.Jual_Umum_Kini = Number(b.Harga_Jual_Umum) || 0;
+      it.Jual_Khusus_Kini = Number(b.Harga_Khusus) || 0;
+      it.Jual_Mutasi_Kini = Number(b.Harga_Jual_Mutasi) || 0;
+  it.Jual_Khusus_Kini = Number(b.Harga_Khusus) || 0;
+  it.Jual_Mutasi_Kini = Number(b.Harga_Jual_Mutasi) || 0;
       if (!Number(it.Harga_Netto)) it.Harga_Netto = Number(b.Harga_Modal) || 0;
       if (!Number(it.PPN)) it.PPN = Number(b.PPN) || 0;
       if (!Number(it.Harga_Jual_Umum_Baru)) it.Harga_Jual_Umum_Baru = Number(b.Harga_Jual_Umum) || 0;
@@ -313,7 +365,8 @@ function ringkasBeli() {
     var q = Number(it.Qty) || 0, n = Number(it.Harga_Netto) || 0;
     var p = Number(it.PPN) || 0;
     qty += q;
-    ppn += n * q * p / 100;
+    var setelahDiskon = n * q - diskonRupiahBaris(it) / (1 + p / 100);
+    ppn += setelahDiskon * p / 100;
     diskon += diskonRupiahBaris(it);
     bruto += brutoBaris(it);
   });
@@ -359,21 +412,19 @@ function simpanPembelian() {
     toast('PPN dan diskon harus berada di antara 0 dan 100 persen.', true); return;
   }
 
-  // Peringatan margin negatif memakai modal efektif setelah diskon PBF.
+  // Peringatan margin negatif memeriksa semua tingkat yang terisi; margin 0% aman.
   var kurang = isi.filter(function (it) {
-    var jual = Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0;
     var modal = hargaModalEfektifBeli(it);
-    return jual > 0 && modal !== null && modal > jual;
+    return [['Harga_Jual_Umum_Baru','Jual_Umum_Kini'],['Harga_Khusus_Baru','Jual_Khusus_Kini'],['Harga_Jual_Mutasi_Baru','Jual_Mutasi_Kini']].some(function (x) { var jual = Number(it[x[0]]) || Number(it[x[1]]) || 0; return jual > 0 && modal !== null && modal > jual; });
   });
   if (kurang.length) {
     var daftar = kurang.map(function (it) {
       var jual = Number(it.Harga_Jual_Umum_Baru) || Number(it.Jual_Umum_Kini) || 0;
-      return '<li>' + esc(it.Nama_Obat || it.Kode_Obat) + ' — modal setelah diskon ' + rupiah(hargaModalEfektifBeli(it)) +
-        ', jual ' + rupiah(jual) + '</li>';
+      return '<li>' + esc(it.Nama_Obat || it.Kode_Obat) + ' — modal termasuk PPN ' + rupiah(hargaModalEfektifBeli(it)) + ', umum ' + rupiah(jual) + '</li>';
     }).join('');
     modalBuka('Harga beli di atas harga jual',
       '<p>Baris berikut akan membuat margin negatif:</p><ul>' + daftar + '</ul>' +
-      '<p class="kpi-sub">Modal dihitung dari netto setelah diskon, sebelum PPN, per satuan.</p>',
+      '<p class="kpi-sub">Modal per unit sudah termasuk PPN dan diskon. Periksa umum, nakes, dan apotek lain.</p>',
       [
         { label: 'Periksa lagi', aksi: modalTutup },
         { label: 'Tetap simpan', kelas: 'btn-danger', aksi: function () { modalTutup(); kirimPembelian(isi); } }
