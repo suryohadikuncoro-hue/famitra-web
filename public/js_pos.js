@@ -1237,16 +1237,16 @@ function gambarPromoPOS() {
   if (elHemat) { elHemat.hidden = !(hemat > 0 && POS.items.length); elHemat.textContent = '🎉 Pembeli hemat ' + rupiah(hemat); }
   var elUndian = document.getElementById('posUndian');
   if (elUndian) {
+    // Muncul begitu pelanggan terdaftar dipilih, tanpa menunggu barang masuk
+    // keranjang. Statusnya dihitung server memakai aturan yang sama dengan
+    // penentuan pemenang, jadi tidak mungkin berbeda dari daftar peserta.
     var u = (POS.promo.undian || [])[0];
-    if (!u || !POS.items.length) { elUndian.innerHTML = ''; }
-    else {
-      var total = totalBayarPOS(), min = u.min_belanja || 0;
-      var pct = min ? Math.min(1, total / min) : 1, r = 15, kel = 2 * Math.PI * r;
-      elUndian.innerHTML = '<div class="pay-undian' + (pct >= 1 ? ' lolos' : '') + '">' +
-        '<svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="' + r + '" class="u-dasar"/>' +
-        '<circle cx="18" cy="18" r="' + r + '" class="u-isi" stroke-dasharray="' + kel.toFixed(1) + '" stroke-dashoffset="' + (kel * (1 - pct)).toFixed(1) + '" transform="rotate(-90 18 18)"/>' +
-        '<text x="18" y="22" text-anchor="middle" font-size="11">🎁</text></svg>' +
-        '<div>' + (pct >= 1 ? '✓ Ikut <b>' + esc(u.nama) + '</b>' : rupiah(min - total) + ' lagi ikut <b>' + esc(u.nama) + '</b>') + '</div></div>';
+    if (!u || u.memenuhi === null || u.memenuhi === undefined || !POS.customer || !POS.customer.terdaftar) {
+      elUndian.innerHTML = '';
+    } else {
+      elUndian.innerHTML = '<div class="pay-undian' + (u.memenuhi ? ' lolos' : '') + '">' +
+        '<div>🎁 ' + (u.memenuhi ? 'Memenuhi syarat <b>' + esc(u.nama) + '</b>'
+                                 : 'Belum memenuhi syarat <b>' + esc(u.nama) + '</b>') + '</div></div>';
     }
   }
 }
