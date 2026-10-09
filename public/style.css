@@ -1615,3 +1615,95 @@ body{background:var(--shell)}
 .riwayat-nota-detail .rn-meta-item strong{font-size:13px;overflow-wrap:anywhere}
 .riwayat-nota-detail h4{margin:12px 0 8px}
 .riwayat-nota-detail .table-wrap{overflow-x:auto}
+
+
+/* ============================================================
+   Marketing workspace refresh — isolated to the Marketing view
+   ============================================================ */
+.marketing-shell { max-width: 1440px; margin: 0 auto; padding-bottom: 32px; }
+.marketing-hero {
+  position: relative; isolation: isolate; overflow: hidden; display: flex;
+  align-items: center; justify-content: space-between; gap: 28px;
+  min-height: 220px; margin: 0 0 18px; padding: 30px 32px;
+  color: #fff; border-radius: 22px;
+  background: linear-gradient(120deg, #20242b 0%, #303944 54%, #5b282a 100%);
+  box-shadow: 0 14px 32px rgba(26, 31, 38, .14);
+}
+.marketing-hero-copy, .marketing-hero-actions { position: relative; z-index: 2; }
+.marketing-hero-copy { max-width: 720px; }
+.marketing-eyebrow, .marketing-section-kicker {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 10px;
+  font-weight: 800; letter-spacing: .15em; text-transform: uppercase;
+}
+.marketing-eyebrow { color: #f3b2b2; }
+.marketing-live-dot { width: 7px; height: 7px; border-radius: 50%; background: #70d6a5; box-shadow: 0 0 0 4px rgba(112,214,165,.14); }
+.marketing-hero h2 { margin: 12px 0 9px; color: #fff; font-size: clamp(26px, 3vw, 36px); line-height: 1.15; letter-spacing: -.04em; }
+.marketing-hero p { max-width: 620px; margin: 0; color: rgba(255,255,255,.78); font-size: 14px; line-height: 1.75; }
+.marketing-hero-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.marketing-hero-meta span { padding: 6px 10px; border: 1px solid rgba(255,255,255,.17); border-radius: 999px; color: rgba(255,255,255,.9); font-size: 11px; }
+.marketing-hero-actions { display: flex; flex-direction: column; align-items: stretch; gap: 10px; min-width: 175px; }
+.marketing-hero-actions .btn { min-height: 42px; justify-content: center; white-space: nowrap; }
+.marketing-hero-actions .btn-primary { background: #d43a3a; border-color: #d43a3a; }
+.marketing-btn-ghost { color: #fff; border: 1px solid rgba(255,255,255,.32); background: rgba(255,255,255,.08); }
+.marketing-btn-ghost:hover { background: rgba(255,255,255,.16); }
+.marketing-hero-orb { position: absolute; z-index: -1; border-radius: 50%; pointer-events: none; }
+.marketing-orb-one { width: 290px; height: 290px; right: 13%; top: -170px; border: 1px solid rgba(255,255,255,.11); box-shadow: 0 0 0 28px rgba(255,255,255,.025), 0 0 0 58px rgba(255,255,255,.02); }
+.marketing-orb-two { width: 220px; height: 220px; right: 24%; bottom: -175px; background: rgba(206,44,43,.16); }
+.marketing-shortcuts { display: grid; grid-template-columns: repeat(auto-fit, minmax(205px, 1fr)); gap: 12px; margin-bottom: 30px; }
+.marketing-shortcut { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 15px 14px; text-align: left; border: 1px solid var(--border, #e6e8eb); border-radius: 15px; background: var(--surface, #fff); color: var(--text, #20242b); cursor: pointer; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.marketing-shortcut:hover { transform: translateY(-2px); border-color: rgba(206,44,43,.35); box-shadow: 0 8px 20px rgba(25,30,36,.06); }
+.marketing-shortcut > span:nth-child(2) { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.marketing-shortcut strong { font-size: 12px; font-weight: 750; }
+.marketing-shortcut small { color: var(--muted, #707782); font-size: 10px; line-height: 1.5; }
+.marketing-shortcut-arrow { color: #9aa1ab; font-size: 19px; }
+.marketing-shortcut-icon { display: grid; flex: 0 0 42px; width: 42px; height: 42px; place-items: center; border-radius: 12px; font-size: 20px; font-weight: 800; }
+.icon-promo { color: #bd3434; background: #fff0ef; }
+.icon-report { color: #167c64; background: #e8f7f1; }
+.icon-lottery { color: #91650c; background: #fff5d9; }
+.icon-loyalty { color: #8b4f8e; background: #f8ebf8; }
+.icon-target { color: #3166aa; background: #eaf2ff; }
+.marketing-section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 0 0 13px; }
+.marketing-section-heading h3 { margin: 5px 0 4px; font-size: 20px; letter-spacing: -.025em; }
+.marketing-section-heading .sub { margin: 0; line-height: 1.6; }
+.marketing-section-kicker { color: #a33a3a; font-size: 9px; }
+.marketing-panel-wrap { scroll-margin-top: 18px; margin-bottom: 22px; }
+.marketing-panel { margin: 0; padding: 22px; border: 1px solid var(--border, #e6e8eb); border-radius: 17px; box-shadow: 0 4px 16px rgba(26,31,38,.035); }
+.marketing-panel .card-head { align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+.marketing-panel .card-head h3 { margin: 0 0 5px; font-size: 17px; }
+.marketing-panel .card-head .sub { margin: 0; line-height: 1.6; }
+.marketing-panel-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.marketing-report-heading { margin-top: 28px; }
+.marketing-campaign-summary { margin: 14px 0; }
+.marketing-panel .crm-kpi-grid { margin-bottom: 12px; }
+.marketing-panel .crm-kpi { min-width: 0; }
+.marketing-panel .crm-refill-item { padding: 14px 4px; gap: 12px; border-bottom: 1px solid var(--border, #e6e8eb); }
+.marketing-panel .crm-refill-item:last-child { border-bottom: 0; }
+.marketing-panel .crm-refill-main { min-width: 0; }
+.marketing-panel .crm-refill-main strong { line-height: 1.45; }
+.marketing-panel .crm-refill-main span { line-height: 1.6; overflow-wrap: anywhere; }
+.marketing-subpage { padding-top: 4px; }
+.marketing-back { margin: 0 0 18px; }
+.marketing-subpage-heading { margin-bottom: 20px; }
+.marketing-subpage-heading h2 { margin: 6px 0; font-size: 27px; letter-spacing: -.035em; }
+.marketing-subpage-heading .sub { margin: 0; line-height: 1.65; }
+#mpCard { margin-top: 24px; padding: 22px; border: 1px solid var(--border, #e6e8eb); border-radius: 17px; box-shadow: 0 4px 16px rgba(26,31,38,.035); }
+#mpCard .card-head { align-items: flex-start; gap: 14px; }
+#mpCard .card-head > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+#mpCard h4 { margin-top: 22px !important; }
+@media (max-width: 720px) {
+  .marketing-hero { align-items: stretch; flex-direction: column; gap: 20px; padding: 24px 20px; border-radius: 17px; }
+  .marketing-hero-actions { flex-direction: row; flex-wrap: wrap; }
+  .marketing-hero-actions .btn { flex: 1 1 145px; }
+  .marketing-hero-meta { gap: 6px; }
+  .marketing-hero-meta span { font-size: 10px; }
+  .marketing-shortcuts { grid-template-columns: 1fr; gap: 9px; }
+  .marketing-shortcut { padding: 12px; }
+  .marketing-section-heading { align-items: flex-start; flex-direction: column; }
+  .marketing-section-heading > .btn { width: 100%; justify-content: center; }
+  .marketing-panel { padding: 16px 13px; border-radius: 14px; }
+  .marketing-panel .card-head { flex-direction: column; }
+  .marketing-panel-actions { width: 100%; }
+  .marketing-panel-actions .btn { flex: 1; }
+  #mpCard { padding: 16px 13px; }
+  #mpCard .card-head { flex-direction: column; }
+}
