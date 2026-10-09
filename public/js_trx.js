@@ -64,7 +64,7 @@ VIEWS.beli = {
         '<button id="blTambahItem" class="btn btn-primary">Tambah baris</button></div>' +
         '<div class="table-wrap"><table><thead><tr>' +
           '<th>Kode obat</th><th>Nama obat</th><th>Kode batch</th><th>Kedaluwarsa</th><th class="c">Qty</th>' +
-          '<th class="r">Netto</th><th class="c">PPN %</th><th class="r">Diskon (%)</th>' +
+          '<th class="r">Harga netto</th><th class="c">PPN %</th><th class="r">Diskon (%)</th>' +
           '<th class="r">Jual umum baru</th><th class="r">Harga khusus</th><th class="r">Harga mutasi</th>' +
           '<th class="c">Laba %</th><th class="c">Stok</th><th class="r">Subtotal</th><th></th>' +
         '</tr></thead><tbody id="blBody"></tbody></table></div>' +
@@ -76,7 +76,7 @@ VIEWS.beli = {
         '<p class="kpi-sub">Menyimpan faktur akan menambah stok per batch dan memperbarui harga modal. ' +
           'Harga jual umum, khusus (nakes), dan mutasi (apotek lain) hanya berubah bila kolomnya diisi. ' +
           'Diskon disimpan sebagai persen dari nilai baris setelah PPN. ' +
-          'Laba % dihitung dari modal efektif yang sudah termasuk PPN dan diskon.</p>' +
+          'Laba % dihitung dari modal efektif per unit yang sudah termasuk PPN dan diskon. Harga jual yang diisi akan menjadi harga SKU di Master Barang, bukan harga per batch.</p>' +
       '</div>' +
 
       '<div class="card"><div class="card-head"><h3>Riwayat faktur</h3></div>' +
@@ -1267,7 +1267,7 @@ function muatLaporan() {
           barisLap('Omzet kotor (gross sales)', d.omzet_kotor) +
           barisLap('Total diskon diberikan', -d.total_diskon) +
           barisLap('Retur penjualan (' + angka(d.jumlah_retur || 0) + ' retur)', -(d.total_retur || 0)) +
-          barisLap('Total HPP / modal terjual (bersih retur)', -d.total_hpp) +
+          barisLap('Total HPP batch efektif terjual (bersih retur)', -d.total_hpp) +
           barisLap('<strong>Laba kotor</strong>', d.laba_kotor) +
           barisLap('Total biaya operasional', -d.total_biaya) +
           barisLap('<strong>Laba bersih</strong>', d.laba_bersih) +
@@ -1329,7 +1329,7 @@ function cetakLaporan(d) {
       barisLap('Omzet kotor', d.omzet_kotor) +
       barisLap('Total diskon diberikan', -d.total_diskon) +
       barisLap('Retur penjualan', -(d.total_retur || 0)) +
-      barisLap('Total HPP / modal terjual (bersih retur)', -d.total_hpp) +
+      barisLap('Total HPP batch efektif terjual (bersih retur)', -d.total_hpp) +
       barisLap('<strong>Laba kotor</strong>', d.laba_kotor) +
       barisLap('Total biaya operasional', -d.total_biaya) +
       barisLap('<strong>Laba bersih</strong>', d.laba_bersih) +
