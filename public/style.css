@@ -334,10 +334,9 @@ tbody tr:last-child td{border-bottom:0}
 .st-legend span{display:inline-flex;align-items:center;gap:5px}
 .st-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
 .st-dot-ok{background:var(--ok)}.st-dot-bad{background:var(--bad)}.st-dot-muted{background:#AEB3BC}
-.st-price-list,.st-margin-list{display:grid;gap:3px;min-width:132px}
-.st-price-list>div,.st-margin-list>div{display:flex;align-items:center;justify-content:flex-end;gap:10px;line-height:1.25;white-space:nowrap}
-.st-price-list span,.st-margin-list span{color:var(--muted);font-size:11px;font-weight:600}
-.st-price-list strong{font-weight:700}
+.st-margin-list{display:grid;gap:3px;min-width:132px}
+.st-margin-list>div{display:flex;align-items:center;justify-content:flex-end;gap:10px;line-height:1.25;white-space:nowrap}
+.st-margin-list span{color:var(--muted);font-size:11px;font-weight:600}
 .st-margin-list .chip{padding:2px 7px;font-size:10.5px;min-width:52px;text-align:center}
 .st-margin-empty{display:inline-block;min-width:52px;text-align:center;color:#AEB3BC!important}
 [data-stok-table] td[data-label]{white-space:nowrap}
