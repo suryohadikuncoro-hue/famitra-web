@@ -713,7 +713,7 @@ function bukaDetailFaktur(no) {
       '</article>';
     }).join('') : '<div class="beli-empty"><strong>Rincian item tidak tersedia</strong><span>Faktur ini tidak memiliki rincian yang dapat ditampilkan.</span></div>';
     modalBuka('Detail faktur · ' + (h.No_Faktur || no),
-      info + '<div class="beli-detail-items-head"><strong>Rincian item dan harga historis</strong><span>Harga netto, PPN, diskon, dan modal efektif dicatat sesuai faktur ini.</span></div>' + rincian,
+      info + '<div class="beli-detail-items-head"><strong>Rincian item dan harga historis</strong><span>Harga netto, PPN, diskon, dan modal efektif dicatat sesuai faktur ini.</span></div><div class="beli-detail-items">' + rincian + '</div>',
       [{ label: 'Tutup', aksi: modalTutup }]);
   }).catch(function (e) { toast(e.message, true); });
 }
