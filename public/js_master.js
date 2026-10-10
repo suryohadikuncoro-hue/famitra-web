@@ -616,7 +616,7 @@ VIEWS.stok = {
               '<input id="stTinjauAmbang' + tipe.kunci + '" class="st-filter-ambang" type="number" min="0" step="1" inputmode="decimal" value="' + ambangBawaan[tipe.kunci] + '" aria-label="Ambang margin ' + tipe.label + '">%</label>';
           }).join('') +
         '</div></div>' +
-      '<div id="stHint" class="st-hint">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</div>' +
+      '<div id="stHint" class="st-hint" hidden></div>' +
       '<div class="st-table-head"><div><strong>Daftar batch</strong><span>Margin dihitung berdasarkan harga jual SKU dan modal batch.</span></div>' +
       '<div class="st-legend" aria-label="Keterangan margin"><span><i class="st-dot st-dot-ok"></i>Tersedia</span><span><i class="st-dot st-dot-bad"></i>Negatif</span><span><i class="st-dot st-dot-muted"></i>Belum tersedia</span></div></div>' +
       '<div class="table-wrap st-table-wrap"><table data-tk="1" data-stok-table="1"><thead><tr>' +
@@ -654,11 +654,16 @@ function muatStok(offset) {
   if (!tb) return;
   var status = val('stStatus') || 'semua', sort = val('stUrut') || 'nama';
   var hint = document.getElementById('stHint');
-  if (hint) hint.textContent = document.getElementById('stTinjau').checked
-    ? 'Baris ditampilkan bila margin salah satu tipe (Umum, Nakes, Apotek lain) di bawah ambang tipe itu; baris bermodal kosong tetap ditampilkan.'
-    : sort === 'nama' && status === 'semua' && !document.getElementById('stKritis').checked
-      ? 'Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.'
-      : 'Filter dan urutan diterapkan pada seluruh hasil batch, bukan hanya halaman yang terlihat.';
+  if (hint) {
+    var tinjauAktif = document.getElementById('stTinjau').checked;
+    var filterAktif = status !== 'semua' || sort !== 'nama' || document.getElementById('stKritis').checked;
+    hint.hidden = !(tinjauAktif || filterAktif);
+    if (tinjauAktif) {
+      hint.textContent = 'Menampilkan batch dengan margin di bawah ambang atau modal batch yang belum tersedia.';
+    } else if (filterAktif) {
+      hint.textContent = 'Filter dan urutan diterapkan pada seluruh hasil, bukan hanya halaman yang terlihat.';
+    }
+  }
   tb.innerHTML = '<tr><td colspan="9" class="empty">Memuat…</td></tr>';
   api('stok.list', { q: val('stCari'), jenis: val('stCariJenis') || 'barang', kritis: document.getElementById('stKritis').checked, status: status, sort: sort, limit: STOK_LIMIT, offset: STOK_OFFSET })
     .then(function (res) {
