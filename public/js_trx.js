@@ -1,6 +1,6 @@
 /* ================== Pembelian (Bab 5), Biaya (8.1), Laporan (Bab 7) ====== */
 
-var BELI = { items: [], riwayatQuery: '', riwayatOffset: 0, riwayatHasMore: false, riwayatRequest: 0, riwayatTimer: null, editNoFaktur: null, markup: { tersedia: false, valid: true, mode: 'persen', umum: null, nakes: null, mutasi: null, pembulatan: 100 } };
+var BELI = { items: [], riwayatQuery: '', riwayatOffset: 0, riwayatHasMore: false, riwayatOpen: false, riwayatRequest: 0, riwayatTimer: null, editNoFaktur: null, markup: { tersedia: false, valid: true, mode: 'persen', umum: null, nakes: null, mutasi: null, pembulatan: 100 } };
 var BELI_SUGGEST = { timer: null, request: 0, rows: [], index: -1, input: null };
 var HUTANG_FN_URL = 'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/hutang';
 function apiHutang(action, data) {
@@ -82,11 +82,15 @@ VIEWS.beli = {
       '</div>' +
 
       '<div class="card beli-history-card">' +
-        '<div class="beli-section-head beli-history-head"><div><h3>Riwayat faktur</h3><p>Pantau status pembayaran, sisa hutang, dan tindakan pada faktur.</p></div>' +
-          '<label class="field beli-history-search"><span>Cari nomor faktur atau nama obat</span><input id="blRiwayatCari" class="inp" placeholder="Nomor faktur atau nama obat"></label></div>' +
-        '<div class="beli-history-list" id="blRiwayat"></div>' +
-        '<div class="beli-history-pager"><span id="blPageInfo" class="kpi-sub"></span>' +
-          '<div><button id="blPrev" class="btn btn-sm" disabled>Sebelumnya</button> <button id="blNext" class="btn btn-sm" disabled>Berikutnya</button></div></div>' +
+        '<div class="beli-history-collapsed-head"><div><h3>Riwayat faktur</h3><p>Telusuri riwayat supplier, harga pembelian, dan status pembayaran. Data dimuat saat Anda membukanya.</p></div>' +
+          '<button type="button" id="blToggleRiwayat" class="btn btn-sm beli-history-toggle" aria-expanded="false">Tampilkan riwayat <span aria-hidden="true">⌄</span></button></div>' +
+        '<div id="blRiwayatPanel" class="beli-history-panel" hidden>' +
+          '<div class="beli-history-search-row"><label class="field beli-history-search"><span>Cari supplier, nomor faktur, atau nama obat</span>' +
+            '<input id="blRiwayatCari" class="inp" placeholder="Ketik nama supplier, nomor faktur, atau obat"></label></div>' +
+          '<div class="beli-history-list" id="blRiwayat"></div>' +
+          '<div class="beli-history-pager"><span id="blPageInfo" class="kpi-sub"></span>' +
+            '<div><button id="blPrev" class="btn btn-sm" disabled>Sebelumnya</button> <button id="blNext" class="btn btn-sm" disabled>Berikutnya</button></div></div>' +
+        '</div>' +
       '</div>';
 
     document.getElementById('blTanggal').value = new Date().toISOString().substring(0, 10);
@@ -111,6 +115,24 @@ VIEWS.beli = {
     document.getElementById('blMarkupSimpan').onclick = simpanBawaanMarkupBeli;
     document.getElementById('blSupplierBaru').onclick = formSupplier;
     document.getElementById('blBatalUbah').onclick = batalUbahFaktur;
+    document.getElementById('blToggleRiwayat').onclick = function () {
+      var panel = document.getElementById('blRiwayatPanel');
+      var tombol = document.getElementById('blToggleRiwayat');
+      if (!panel || !tombol) return;
+      BELI.riwayatOpen = !!panel.hidden;
+      panel.hidden = !BELI.riwayatOpen;
+      tombol.setAttribute('aria-expanded', String(BELI.riwayatOpen));
+      tombol.innerHTML = BELI.riwayatOpen
+        ? 'Tutup riwayat <span aria-hidden="true">⌃</span>'
+        : 'Tampilkan riwayat <span aria-hidden="true">⌄</span>';
+      if (BELI.riwayatOpen) {
+        BELI.riwayatOffset = 0;
+        muatRiwayatBeli();
+      } else {
+        // Abaikan respons yang masih berjalan saat panel ditutup.
+        BELI.riwayatRequest++;
+      }
+    };
     document.getElementById('blRiwayatCari').oninput = function () {
       BELI.riwayatQuery = this.value.trim();
       BELI.riwayatOffset = 0;
@@ -123,14 +145,16 @@ VIEWS.beli = {
     BELI.riwayatQuery = '';
     BELI.riwayatOffset = 0;
     BELI.riwayatHasMore = false;
+    BELI.riwayatOpen = false;
     BELI.riwayatRequest++;
+    clearTimeout(BELI.riwayatTimer);
     BELI.editNoFaktur = null;
     BELI.items = [barisKosong()];
     aturModeUbahBeli(null);
     muatSupplier();
     muatPengaturanMarkup();
     gambarBeli();
-    muatRiwayatBeli();
+    // Riwayat sengaja tidak dimuat otomatis. Data hanya diambil setelah user membukanya.
   }
 };
 
@@ -738,12 +762,12 @@ function bukaRiwayatHutang(noFaktur) {
 }
 function muatRiwayatBeli() {
   var tb = document.getElementById('blRiwayat');
-  if (!tb) return;
+  if (!tb || !BELI.riwayatOpen) return;
   var q = BELI.riwayatQuery || '';
   var offset = BELI.riwayatOffset || 0;
   var request = ++BELI.riwayatRequest;
   apiHutang('list', { q: q, limit: 50, offset: offset }).then(function (result) {
-    if (request !== BELI.riwayatRequest || q !== BELI.riwayatQuery || offset !== BELI.riwayatOffset) return;
+    if (!BELI.riwayatOpen || request !== BELI.riwayatRequest || q !== BELI.riwayatQuery || offset !== BELI.riwayatOffset) return;
     var rows = result.rows || [];
     BELI.riwayatHasMore = !!result.has_more;
     if (!tb.isConnected) return;
@@ -805,7 +829,7 @@ function muatRiwayatBeli() {
       else bukaRiwayatHutang(r.No_Faktur);
     };
   }).catch(function (e) {
-    if (request !== BELI.riwayatRequest || q !== BELI.riwayatQuery || offset !== BELI.riwayatOffset) return;
+    if (!BELI.riwayatOpen || request !== BELI.riwayatRequest || q !== BELI.riwayatQuery || offset !== BELI.riwayatOffset) return;
     tb.innerHTML = '<div class="beli-empty beli-empty-error">' + esc(e.message) + '</div>';
   });
 }
