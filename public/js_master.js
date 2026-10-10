@@ -12,7 +12,7 @@ VIEWS.barang = {
         '<button id="bgTambah" class="btn btn-primary"><span class="hanya-desktop">Tambah barang</span><span class="hanya-hp">+ Barang</span></button></div>' +
       // Di HP daftar tampil sebagai kartu (#bgKartu); tabel disembunyikan.
       '<div id="bgKartu" class="m-list hanya-hp"></div>' +
-      '<div class="table-wrap hanya-desktop"><table data-tk-off="1"><thead><tr>' +
+      '<div class="table-wrap bg-table-wrap hanya-desktop"><table class="bg-table" data-tk-off="1"><thead><tr>' +
         '<th>Kode</th><th>Nama obat</th><th>Kategori</th><th class="c">Stok</th>' +
         '<th class="r" title="Modal dari pembelian terakhir, sudah termasuk PPN dan sudah dikurangi diskon pembelian.">Modal terakhir</th><th class="r">Jual umum</th><th class="r">Jual nakes</th>' +
         '<th class="r">Apotek lain</th><th class="c">PPN</th><th></th>' +
@@ -91,7 +91,7 @@ function muatBarang(hal) {
       var st = e.target.closest('[data-stok]');
       if (st) { formStokBarang(JSON.parse(st.dataset.stok)); return; }
       var hp = e.target.closest('[data-hapus]');
-      if (hp) konfirmasiNonaktif(hp.dataset.hapus);
+      if (hp) { var row = rows.find(function (x) { return x.Kode_Obat === hp.dataset.hapus; }); konfirmasiNonaktif(hp.dataset.hapus, row && row.Nama_Obat); }
     };
   }).catch(function (e) {
     tb.innerHTML = '<tr><td colspan="10" class="empty">' + esc(e.message) + '</td></tr>';
@@ -489,7 +489,7 @@ function formBarang(b) {
         } }
     ]);
   var nonaktif = document.getElementById('fbNonaktif');
-  if (nonaktif) nonaktif.onclick = function () { modalTutup(); konfirmasiNonaktif(b.Kode_Obat); };
+  if (nonaktif) nonaktif.onclick = function () { modalTutup(); konfirmasiNonaktif(b.Kode_Obat, b.Nama_Obat); };
   var aktifkan = document.getElementById('fbAktifkan');
   if (aktifkan) aktifkan.onclick = function () { modalTutup(); konfirmasiAktifkan(b.Kode_Obat, b.Nama_Obat); };
   var hapus = document.getElementById('fbHapus');
@@ -551,9 +551,9 @@ function konfirmasiHapusPermanen(kode, nama) {
     ]);
 }
 
-function konfirmasiNonaktif(kode) {
+function konfirmasiNonaktif(kode, nama) {
   modalBuka('Nonaktifkan barang',
-    '<p>Barang <strong>' + esc(kode) + '</strong> akan disembunyikan dari katalog dan POS. ' +
+    '<p>Barang <strong>' + esc(nama || kode) + '</strong> <span class="sub">(' + esc(kode) + ')</span> akan disembunyikan dari katalog dan POS. ' +
     'Riwayat nota lama tetap utuh.</p>',
     [
       { label: 'Batal', aksi: modalTutup },
