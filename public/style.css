@@ -2428,3 +2428,62 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
   #modal:has(#fsKode) .modal-box { width:100%; max-width:none; border-radius:20px 20px 0 0; }
   #modal:has(#fsKode) .modal-body .grid.g2 { grid-template-columns:1fr; }
 }
+
+
+/* Stok & Batch compact layout refinement (review feedback) */
+.view:has(#stBody) > .card { padding:14px 16px; }
+.view:has(#stBody) > .card > .card-head {
+  gap:7px;
+  padding-bottom:10px;
+  margin-bottom:10px;
+}
+.view:has(#stBody) > .card > .card-head h3 {
+  flex:1 1 auto;
+  width:auto;
+  margin:0;
+  font-size:16px;
+}
+.view:has(#stBody) #stTambah {
+  order:1;
+  margin:0 0 0 auto;
+  min-height:36px;
+  padding:7px 12px;
+  flex:0 0 auto;
+}
+.view:has(#stBody) #stCariJenis { flex:0 1 150px; }
+.view:has(#stBody) #stCari { flex:1 1 210px; }
+.view:has(#stBody) #stStatus,
+.view:has(#stBody) #stUrut { flex:0 1 145px; }
+.view:has(#stBody) .st-filter-check {
+  min-height:30px;
+  padding:5px 8px;
+  font-size:10.5px;
+}
+.view:has(#stBody) .st-filter-ambang-wrap {
+  flex:1 1 auto;
+  padding:7px 9px;
+  gap:6px 9px;
+}
+.view:has(#stBody) .st-filter-ambang { min-height:28px; width:48px; padding:4px 5px; }
+.view:has(#stBody) #stHint { padding:7px 10px; margin-bottom:8px; }
+.view:has(#stBody) .st-legend { margin-bottom:8px; gap:6px 8px; }
+.view:has(#stBody) .st-legend span { padding:4px 7px; }
+.view:has(#stBody) table[data-stok-table] th { padding:8px 6px; font-size:9px; }
+.view:has(#stBody) table[data-stok-table] td { padding:7px 6px; line-height:1.35; }
+.view:has(#stBody) .st-margin-list { gap:2px; }
+.view:has(#stBody) .st-margin-list>div { gap:4px; }
+.view:has(#stBody) .st-margin-list .chip,
+.view:has(#stBody) .st-margin-empty { min-width:42px; padding:2px 4px; font-size:9px; }
+.view:has(#stBody) .st-tinjau-badges { gap:2px; margin-top:2px; justify-content:flex-start; }
+.view:has(#stBody) .st-tinjau-badge { padding:3px 5px; font-size:9px; line-height:1.25; text-align:left; }
+.view:has(#stBody) #stPager { padding-top:8px; }
+@media(max-width:880px) {
+  .view:has(#stBody) > .card { padding:12px; }
+  .view:has(#stBody) > .card > .card-head h3 { flex:1 1 100%; }
+  .view:has(#stBody) #stTambah { order:0; margin-left:auto; }
+}
+@media(max-width:560px) {
+  .view:has(#stBody) > .card { padding:10px; }
+  .view:has(#stBody) > .card > .card-head h3 { flex:1 1 100%; }
+  .view:has(#stBody) #stTambah { width:100%; margin:0; }
+}
