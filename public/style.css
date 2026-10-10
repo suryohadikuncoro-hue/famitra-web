@@ -2329,3 +2329,61 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
 .view:has(.beli-meta-card) .beli-section-head{flex-direction:column}
 .view:has(.beli-meta-card) .beli-section-head>.btn{width:100%}
 }
+
+
+/* Pembelian: lazy-loaded invoice history and supplier-friendly search */
+.view:has(.beli-meta-card) .beli-history-collapsed-head {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+.view:has(.beli-meta-card) .beli-history-collapsed-head h3 {
+  margin:0;
+  color:#20242C;
+  font-size:17px;
+  font-weight:800;
+  letter-spacing:-.03em;
+}
+.view:has(.beli-meta-card) .beli-history-collapsed-head p {
+  margin:5px 0 0;
+  max-width:650px;
+  color:#858C98;
+  font-size:12px;
+  line-height:1.55;
+}
+.view:has(.beli-meta-card) .beli-history-toggle {
+  flex:0 0 auto;
+  min-height:38px;
+  padding:8px 13px;
+  border:1px solid #DCE2E9;
+  border-radius:9px;
+  background:#fff;
+  color:#303641;
+  font-weight:750;
+}
+.view:has(.beli-meta-card) .beli-history-toggle:hover {
+  border-color:#BCC5D1;
+  background:#F8FAFC;
+}
+.view:has(.beli-meta-card) .beli-history-panel[hidden] { display:none!important; }
+.view:has(.beli-meta-card) .beli-history-panel {
+  margin-top:17px;
+  padding-top:16px;
+  border-top:1px solid #EEF0F4;
+}
+.view:has(.beli-meta-card) .beli-history-search-row {
+  display:flex;
+  align-items:flex-end;
+  gap:12px;
+  margin-bottom:13px;
+}
+.view:has(.beli-meta-card) .beli-history-search-row .field { width:min(520px,100%); }
+.view:has(.beli-meta-card) .beli-history-search .inp { min-height:42px; }
+.view:has(.beli-meta-card) .beli-history-search .inp::placeholder { color:#A0A6B0; }
+.view:has(.beli-meta-card) .beli-history-panel .beli-history-list:empty { display:none; }
+@media(max-width:620px) {
+  .view:has(.beli-meta-card) .beli-history-collapsed-head { align-items:flex-start; flex-direction:column; gap:12px; }
+  .view:has(.beli-meta-card) .beli-history-toggle { width:100%; }
+  .view:has(.beli-meta-card) .beli-history-search-row .field { width:100%; }
+}
