@@ -2390,7 +2390,7 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
 
 
 /* Read-only invoice details: compare historical supplier prices safely */
-.view:has(.beli-meta-card) .beli-detail-header {
+#modal:has(.beli-detail-header) .beli-detail-header {
   display:grid;
   grid-template-columns:repeat(5,minmax(0,1fr));
   gap:1px;
@@ -2400,27 +2400,27 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
   border-radius:10px;
   background:#E8EBF0;
 }
-.view:has(.beli-meta-card) .beli-detail-header>div {
+#modal:has(.beli-detail-header) .beli-detail-header>div {
   min-width:0;
   padding:11px;
   background:#FAFBFC;
 }
-.view:has(.beli-meta-card) .beli-detail-header span,
-.view:has(.beli-meta-card) .beli-detail-line-metrics span {
+#modal:has(.beli-detail-header) .beli-detail-header span,
+#modal:has(.beli-detail-header) .beli-detail-line-metrics span {
   display:block;
   color:#828A97;
   font-size:10px;
   line-height:1.35;
   margin-bottom:5px;
 }
-.view:has(.beli-meta-card) .beli-detail-header strong {
+#modal:has(.beli-detail-header) .beli-detail-header strong {
   display:block;
   color:#2C313B;
   font-size:11px;
   line-height:1.45;
   overflow-wrap:anywhere;
 }
-.view:has(.beli-meta-card) .beli-detail-items-head {
+#modal:has(.beli-detail-header) .beli-detail-items-head {
   display:flex;
   justify-content:space-between;
   align-items:baseline;
@@ -2428,16 +2428,16 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
   gap:6px 12px;
   margin:0 0 10px;
 }
-.view:has(.beli-meta-card) .beli-detail-items-head strong { color:#2C313B; font-size:12px; }
-.view:has(.beli-meta-card) .beli-detail-items-head span { color:#858C98; font-size:10px; line-height:1.5; }
-.view:has(.beli-meta-card) .beli-detail-items { display:grid; gap:9px; }
-.view:has(.beli-meta-card) .beli-detail-line {
+#modal:has(.beli-detail-header) .beli-detail-items-head strong { color:#2C313B; font-size:12px; }
+#modal:has(.beli-detail-header) .beli-detail-items-head span { color:#858C98; font-size:10px; line-height:1.5; }
+#modal:has(.beli-detail-header) .beli-detail-items { display:grid; gap:9px; }
+#modal:has(.beli-detail-header) .beli-detail-line {
   border:1px solid #E5E9EF;
   border-radius:10px;
   overflow:hidden;
   background:#fff;
 }
-.view:has(.beli-meta-card) .beli-detail-line-head {
+#modal:has(.beli-detail-header) .beli-detail-line-head {
   display:flex;
   align-items:center;
   justify-content:space-between;
@@ -2446,31 +2446,31 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
   background:#FAFBFC;
   border-bottom:1px solid #EEF0F4;
 }
-.view:has(.beli-meta-card) .beli-detail-line-head>div { min-width:0; display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:3px 8px; }
-.view:has(.beli-meta-card) .beli-detail-index { color:#969DA8; font-size:9px; font-weight:800; letter-spacing:.04em; }
-.view:has(.beli-meta-card) .beli-detail-line-head strong { color:#282D36; font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
-.view:has(.beli-meta-card) .beli-detail-line-head small { grid-column:2; color:#858C98; font-size:10px; }
-.view:has(.beli-meta-card) .beli-detail-batch { flex:0 0 auto; max-width:45%; color:#697281; font-size:10px; padding:4px 6px; border-radius:6px; background:#F0F2F5; overflow-wrap:anywhere; }
-.view:has(.beli-meta-card) .beli-detail-line-metrics {
+#modal:has(.beli-detail-header) .beli-detail-line-head>div { min-width:0; display:grid; grid-template-columns:auto minmax(0,1fr); align-items:baseline; gap:3px 8px; }
+#modal:has(.beli-detail-header) .beli-detail-index { color:#969DA8; font-size:9px; font-weight:800; letter-spacing:.04em; }
+#modal:has(.beli-detail-header) .beli-detail-line-head strong { color:#282D36; font-size:12px; line-height:1.45; overflow-wrap:anywhere; }
+#modal:has(.beli-detail-header) .beli-detail-line-head small { grid-column:2; color:#858C98; font-size:10px; }
+#modal:has(.beli-detail-header) .beli-detail-batch { flex:0 0 auto; max-width:45%; color:#697281; font-size:10px; padding:4px 6px; border-radius:6px; background:#F0F2F5; overflow-wrap:anywhere; }
+#modal:has(.beli-detail-header) .beli-detail-line-metrics {
   display:grid;
   grid-template-columns:repeat(6,minmax(0,1fr));
   gap:1px;
   background:#EEF0F4;
 }
-.view:has(.beli-meta-card) .beli-detail-line-metrics>div { min-width:0; padding:10px; background:#fff; }
-.view:has(.beli-meta-card) .beli-detail-line-metrics strong { display:block; color:#343A45; font-size:11px; line-height:1.4; overflow-wrap:anywhere; }
-.view:has(.beli-meta-card) .beli-detail-effective { background:#F7FAF8!important; }
-.view:has(.beli-meta-card) .beli-detail-effective strong { color:#176A4B; }
-.view:has(.beli-meta-card) .beli-detail-subtotal { background:#F0F8F3!important; }
-.view:has(.beli-meta-card) .beli-detail-subtotal strong { color:#176A4B; font-size:12px; font-weight:850; }
+#modal:has(.beli-detail-header) .beli-detail-line-metrics>div { min-width:0; padding:10px; background:#fff; }
+#modal:has(.beli-detail-header) .beli-detail-line-metrics strong { display:block; color:#343A45; font-size:11px; line-height:1.4; overflow-wrap:anywhere; }
+#modal:has(.beli-detail-header) .beli-detail-effective { background:#F7FAF8!important; }
+#modal:has(.beli-detail-header) .beli-detail-effective strong { color:#176A4B; }
+#modal:has(.beli-detail-header) .beli-detail-subtotal { background:#F0F8F3!important; }
+#modal:has(.beli-detail-header) .beli-detail-subtotal strong { color:#176A4B; font-size:12px; font-weight:850; }
 #modal:has(.beli-detail-header) .modal-box { width:min(900px,calc(100vw - 32px)); max-width:900px; }
 #modal:has(.beli-detail-header) .modal-body { overflow-x:hidden; }
 @media(max-width:760px) {
-  .view:has(.beli-meta-card) .beli-detail-header { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .view:has(.beli-meta-card) .beli-detail-line-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  #modal:has(.beli-detail-header) .beli-detail-header { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #modal:has(.beli-detail-header) .beli-detail-line-metrics { grid-template-columns:repeat(3,minmax(0,1fr)); }
 }
 @media(max-width:420px) {
-  .view:has(.beli-meta-card) .beli-detail-line-head { align-items:flex-start; flex-direction:column; }
-  .view:has(.beli-meta-card) .beli-detail-batch { max-width:100%; }
-  .view:has(.beli-meta-card) .beli-detail-line-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  #modal:has(.beli-detail-header) .beli-detail-line-head { align-items:flex-start; flex-direction:column; }
+  #modal:has(.beli-detail-header) .beli-detail-batch { max-width:100%; }
+  #modal:has(.beli-detail-header) .beli-detail-line-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
