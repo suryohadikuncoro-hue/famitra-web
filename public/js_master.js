@@ -80,8 +80,10 @@ function muatBarang(hal) {
         '<td class="r num">' + rupiah(b.Harga_Jual_Mutasi) + '</td>' +
         '<td class="c num">' + angka(b.PPN) + '%</td>' +
         '<td class="c" style="white-space:nowrap">' +
-          '<button class="btn btn-sm" data-edit=\'' + esc(JSON.stringify(b)) + '\'>Ubah</button> ' +
-          '<button class="btn btn-sm btn-danger" data-hapus="' + esc(b.Kode_Obat) + '">Nonaktifkan</button>' +
+          '<button class="btn btn-sm bg-icon-action" data-edit=\'' + esc(JSON.stringify(b)) + '\' title="Ubah barang" aria-label="Ubah barang ' + esc(b.Nama_Obat) + '">' +
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button> ' +
+          '<button class="btn btn-sm btn-danger bg-icon-action" data-hapus="' + esc(b.Kode_Obat) + '" title="Nonaktifkan barang" aria-label="Nonaktifkan ' + esc(b.Nama_Obat) + '">' +
+            '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></button>' +
         '</td></tr>';
     }).join('');
 
