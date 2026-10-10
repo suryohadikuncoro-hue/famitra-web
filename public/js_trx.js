@@ -681,6 +681,43 @@ function bukaUbahFaktur(no) {
   }).catch(function (e) { toast(e.message, true); });
 }
 
+function bukaDetailFaktur(no) {
+  api('beli.detail', { No_Faktur: no }).then(function (d) {
+    var h = d.Header || {};
+    var items = Array.isArray(d.items) ? d.items : [];
+    function nilai(el) { return el === null || el === undefined || el === '' ? '—' : String(el); }
+    var info =
+      '<div class="beli-detail-header">' +
+        '<div><span>Supplier</span><strong>' + esc(h.Supplier || '—') + '</strong></div>' +
+        '<div><span>Tanggal faktur</span><strong>' + esc(tglIndo(h.Tanggal_Faktur) || '—') + '</strong></div>' +
+        '<div><span>No. faktur PBF</span><strong>' + esc(h.No_Faktur_Supplier || '—') + '</strong></div>' +
+        '<div><span>Kategori</span><strong>' + esc(h.Kategori || '—') + '</strong></div>' +
+        '<div><span>Total faktur</span><strong>' + rupiah(h.Total_Tagihan) + '</strong></div>' +
+      '</div>';
+    var rincian = items.length ? items.map(function (it, i) {
+      var qty = Number(it.Qty) || 0;
+      var subtotal = subtotalBaris(it);
+      var efektif = qty > 0 ? subtotal / qty : 0;
+      return '<article class="beli-detail-line">' +
+        '<div class="beli-detail-line-head"><div><span class="beli-detail-index">ITEM ' + String(i + 1).padStart(2, '0') + '</span><strong>' +
+          esc(it.Nama_Obat || it.Kode_Obat || 'Barang') + '</strong><small>' + esc(it.Kode_Obat || '—') + '</small></div>' +
+          '<span class="beli-detail-batch">Batch ' + esc(it.Kode_Batch || '—') + '</span></div>' +
+        '<div class="beli-detail-line-metrics">' +
+          '<div><span>Jumlah</span><strong>' + angka(qty) + '</strong></div>' +
+          '<div><span>Netto / unit</span><strong>' + rupiah(it.Harga_Netto) + '</strong></div>' +
+          '<div><span>PPN</span><strong>' + angka(it.PPN || 0) + '%</strong></div>' +
+          '<div><span>Diskon</span><strong>' + angka(it.Diskon || 0) + '%</strong></div>' +
+          '<div class="beli-detail-effective"><span>Modal efektif / unit</span><strong>' + rupiah(efektif) + '</strong></div>' +
+          '<div class="beli-detail-subtotal"><span>Subtotal</span><strong>' + rupiah(subtotal) + '</strong></div>' +
+        '</div>' +
+      '</article>';
+    }).join('') : '<div class="beli-empty"><strong>Rincian item tidak tersedia</strong><span>Faktur ini tidak memiliki rincian yang dapat ditampilkan.</span></div>';
+    modalBuka('Detail faktur · ' + (h.No_Faktur || no),
+      info + '<div class="beli-detail-items-head"><strong>Rincian item dan harga historis</strong><span>Harga netto, PPN, diskon, dan modal efektif dicatat sesuai faktur ini.</span></div>' + rincian,
+      [{ label: 'Tutup', aksi: modalTutup }]);
+  }).catch(function (e) { toast(e.message, true); });
+}
+
 function konfirmasiBatalFaktur(r) {
   modalBuka('Batalkan faktur ' + r.No_Faktur,
     '<p>Faktur <strong>' + esc(r.No_Faktur) + '</strong> (' + esc(r.Supplier) + ', ' + rupiah(r.Total_Tagihan) +
@@ -777,6 +814,8 @@ function muatRiwayatBeli() {
       if (batal) {
         aksi = '<span class="beli-cancelled-label">Faktur dibatalkan</span>';
       } else {
+        var detail = '<button class="btn btn-sm beli-history-icon" data-detail-faktur="' + esc(r.No_Faktur) + '" title="Lihat rincian harga item" aria-label="Lihat rincian faktur ' + esc(r.No_Faktur) + '">' +
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></svg></button>';
         var ubah = '<button class="btn btn-sm beli-history-icon" data-ubah-faktur="' + esc(r.No_Faktur) + '" title="Ubah faktur" aria-label="Ubah faktur ' + esc(r.No_Faktur) + '">' +
           '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button>';
         var bayar = r.Status_Pembayaran === 'LUNAS'
@@ -786,7 +825,7 @@ function muatRiwayatBeli() {
           '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg></button>';
         var batalkan = '<button class="btn btn-sm btn-danger beli-history-icon" data-batal-faktur="' + esc(r.No_Faktur) + '" title="Batalkan faktur" aria-label="Batalkan faktur ' + esc(r.No_Faktur) + '">' +
           '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg></button>';
-        aksi = '<div class="beli-history-actions">' + ubah + bayar + riwayat + batalkan + '</div>';
+        aksi = '<div class="beli-history-actions">' + detail + ubah + bayar + riwayat + batalkan + '</div>';
       }
       var statusSel = batal
         ? chipStatusHutang('DIBATALKAN')
@@ -818,12 +857,13 @@ function muatRiwayatBeli() {
     if (prev) prev.disabled = offset <= 0;
     if (next) next.disabled = !BELI.riwayatHasMore;
     tb.onclick = function (e) {
-      var b = e.target.closest('[data-bayar-hutang],[data-riwayat-hutang],[data-ubah-faktur],[data-batal-faktur]');
+      var b = e.target.closest('[data-detail-faktur],[data-bayar-hutang],[data-riwayat-hutang],[data-ubah-faktur],[data-batal-faktur]');
       if (!b) return;
-      var no = b.dataset.bayarHutang || b.dataset.riwayatHutang || b.dataset.ubahFaktur || b.dataset.batalFaktur;
+      var no = b.dataset.detailFaktur || b.dataset.bayarHutang || b.dataset.riwayatHutang || b.dataset.ubahFaktur || b.dataset.batalFaktur;
       var r = rows.filter(function (x) { return x.No_Faktur === no; })[0];
       if (!r) return;
-      if (b.dataset.ubahFaktur) bukaUbahFaktur(r.No_Faktur);
+      if (b.dataset.detailFaktur) bukaDetailFaktur(r.No_Faktur);
+      else if (b.dataset.ubahFaktur) bukaUbahFaktur(r.No_Faktur);
       else if (b.dataset.batalFaktur) konfirmasiBatalFaktur(r);
       else if (b.dataset.bayarHutang) bukaBayarHutang(r);
       else bukaRiwayatHutang(r.No_Faktur);
