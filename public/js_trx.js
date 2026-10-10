@@ -501,11 +501,50 @@ function simpanPembelian() {
       '<p class="kpi-sub">Modal per unit sudah termasuk PPN dan diskon. Periksa umum, nakes, dan apotek lain.</p>',
       [
         { label: 'Periksa lagi', aksi: modalTutup },
-        { label: 'Tetap simpan', kelas: 'btn-danger', aksi: function () { modalTutup(); kirimPembelian(isi); } }
+        { label: 'Tetap simpan', kelas: 'btn-danger', aksi: function () { modalTutup(); konfirmasiTimpaHargaJual(isi); } }
       ]);
     return;
   }
-  kirimPembelian(isi);
+  konfirmasiTimpaHargaJual(isi);
+}
+
+// Saat edit faktur, harga jual boleh dihitung ulang seperti perilaku saat ini.
+// Namun, penyimpanan harga yang berbeda dari nilai awal harus dikonfirmasi.
+function konfirmasiTimpaHargaJual(isi) {
+  if (!BELI.editNoFaktur) { kirimPembelian(isi); return; }
+  var fields = [
+    ['Harga_Jual_Umum_Baru', 'harga umum'],
+    ['Harga_Khusus_Baru', 'harga nakes'],
+    ['Harga_Jual_Mutasi_Baru', 'harga mutasi']
+  ];
+  var berubah = [];
+  isi.forEach(function (it) {
+    var awal = it._hargaJualAwal;
+    if (!awal) return;
+    var beda = fields.filter(function (f) {
+      return Math.abs((Number(it[f[0]]) || 0) - (Number(awal[f[0]]) || 0)) > 0.0001;
+    });
+    if (beda.length) {
+      berubah.push({
+        nama: it.Nama_Obat || it.Kode_Obat,
+        detail: beda.map(function (f) {
+          return f[1] + ': ' + rupiah(Number(awal[f[0]]) || 0) + ' → ' + rupiah(Number(it[f[0]]) || 0);
+        }).join('; ')
+      });
+    }
+  });
+  if (!berubah.length) { kirimPembelian(isi); return; }
+  var daftar = berubah.slice(0, 12).map(function (x) {
+    return '<li><strong>' + esc(x.nama) + '</strong><br><span class="kpi-sub">' + esc(x.detail) + '</span></li>';
+  }).join('');
+  if (berubah.length > 12) daftar += '<li>Dan ' + (berubah.length - 12) + ' produk lainnya.</li>';
+  modalBuka('Konfirmasi perubahan harga jual',
+    '<p>' + berubah.length + ' produk memiliki harga jual berbeda dari harga yang tercatat saat faktur dibuka.</p>' +
+    '<p>Jika dilanjutkan, harga jual lama pada produk tersebut akan ditimpa sesuai nilai di faktur ini.</p><ul>' + daftar + '</ul>',
+    [
+      { label: 'Kembali periksa', aksi: modalTutup },
+      { label: 'Ya, timpa harga & simpan', kelas: 'btn-danger', aksi: function () { modalTutup(); kirimPembelian(isi); } }
+    ]);
 }
 
 function kirimPembelian(isi) {
@@ -585,6 +624,12 @@ function bukaUbahFaktur(no) {
     // Diskon tersimpan sebagai persentase, sama seperti kolom form.
     BELI.items.forEach(function (it) {
       it.Diskon = Math.min(100, Math.max(0, Number(it.Diskon) || 0));
+      // Snapshot untuk konfirmasi bila markup kemudian mengubah harga jual.
+      it._hargaJualAwal = {
+        Harga_Jual_Umum_Baru: Number(it.Harga_Jual_Umum_Baru) || 0,
+        Harga_Khusus_Baru: Number(it.Harga_Khusus_Baru) || 0,
+        Harga_Jual_Mutasi_Baru: Number(it.Harga_Jual_Mutasi_Baru) || 0
+      };
     });
     // Faktur dibuka apa adanya: harga jual yang tampil adalah nilai tercatat di
     // faktur, bukan hitungan markup saat ini.
