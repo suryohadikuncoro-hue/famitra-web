@@ -591,10 +591,11 @@ VIEWS.stok = {
   render: function (el) {
     var ambangBawaan = ambangTinjauBawaan();
     el.innerHTML =
-      '<div class="card"><div class="card-head">' +
-        '<h3>Stok per batch</h3>' +
-        '<select id="stCariJenis" class="inp" aria-label="Jenis pencarian stok"><option value="barang">Nama/kode barang</option><option value="batch">Kode batch</option></select>' +
-        '<input id="stCari" class="inp st-filter-search" placeholder="Cari nama atau kode barang">' +
+      '<div class="card st-card"><div class="st-page-head"><div><h3>Stok & Batch</h3><p>Kontrol stok, kedaluwarsa, dan margin per batch.</p></div>' +
+        '<button id="stTambah" class="btn btn-primary">+ Tambah batch</button></div>' +
+      '<div class="st-toolbar">' +
+        '<div class="st-search-group"><select id="stCariJenis" class="inp" aria-label="Jenis pencarian stok"><option value="barang">Nama/kode barang</option><option value="batch">Kode batch</option></select>' +
+        '<input id="stCari" class="inp st-filter-search" placeholder="Cari nama atau kode barang"></div>' +
         '<select id="stStatus" class="inp st-filter-select" aria-label="Filter status stok">' +
           '<option value="semua">Semua status</option><option value="tersedia">Ada stok</option><option value="habis">Stok habis</option>' +
         '</select>' +
@@ -602,26 +603,23 @@ VIEWS.stok = {
           '<option value="nama">Nama A–Z</option><option value="stok_asc">Stok paling sedikit</option>' +
           '<option value="stok_desc">Stok paling banyak</option><option value="expired_asc">Kedaluwarsa terdekat</option>' +
           '<option value="terbaru">Batch terbaru</option>' +
-        '</select>' +
-        '<label class="chip st-filter-check" style="cursor:pointer"><input id="stKritis" type="checkbox" style="margin-right:5px">' +
-          'Segera kedaluwarsa</label>' +
-        '<label class="chip st-filter-check" style="cursor:pointer" title="Baris dengan stok 0 tidak ditampilkan"><input id="stKosong" type="checkbox" checked style="margin-right:5px">' +
-          'Sembunyikan stok kosong</label>' +
-        '<label class="chip st-filter-check" style="cursor:pointer" title="Tampilkan hanya baris yang margin salah satu tipenya di bawah ambang tipe itu; baris bermodal kosong tetap tampil"><input id="stTinjau" type="checkbox" style="margin-right:5px">' +
-          'Perlu ditinjau</label>' +
-        '<span class="chip st-filter-check st-filter-ambang-wrap" title="Ambang margin (%) tiap tipe pelanggan untuk penyaring Perlu ditinjau">' +
-          'Ambang perlu ditinjau' +
+        '</select></div>' +
+      '<div class="st-filter-bar">' +
+        '<label class="st-filter-check"><input id="stKritis" type="checkbox">Segera kedaluwarsa</label>' +
+        '<label class="st-filter-check" title="Baris dengan stok 0 tidak ditampilkan"><input id="stKosong" type="checkbox" checked>Sembunyikan stok kosong</label>' +
+        '<label class="st-filter-check" title="Tampilkan baris dengan margin di bawah ambang"><input id="stTinjau" type="checkbox">Perlu ditinjau</label>' +
+        '<div class="st-filter-ambang-wrap" title="Ambang margin tiap tipe pelanggan"><span class="st-ambang-title">Ambang margin</span>' +
           STOK_TINJAU_TIPE.map(function (tipe) {
             return '<label class="st-filter-ambang-item">' + tipe.label +
-              ' <input id="stTinjauAmbang' + tipe.kunci + '" class="st-filter-ambang" type="number" min="0" step="1" inputmode="decimal" value="' + ambangBawaan[tipe.kunci] + '" aria-label="Ambang margin ' + tipe.label + '">%</label>';
+              '<input id="stTinjauAmbang' + tipe.kunci + '" class="st-filter-ambang" type="number" min="0" step="1" inputmode="decimal" value="' + ambangBawaan[tipe.kunci] + '" aria-label="Ambang margin ' + tipe.label + '">%</label>';
           }).join('') +
-        '</span>' +
-        '<button id="stTambah" class="btn btn-primary">Tambah batch</button></div>' +
-      '<p id="stHint" class="kpi-sub st-filter-hint" style="margin-top:0">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</p>' +
-      '<div class="st-legend" aria-label="Keterangan margin"><span><i class="st-dot st-dot-ok"></i>Margin tersedia</span><span><i class="st-dot st-dot-bad"></i>Margin negatif</span><span><i class="st-dot st-dot-muted"></i>Belum tersedia</span></div>' +
-      '<div class="table-wrap"><table data-tk="1" data-stok-table="1"><thead><tr>' +
+        '</div></div>' +
+      '<div id="stHint" class="st-hint">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</div>' +
+      '<div class="st-table-head"><div><strong>Daftar batch</strong><span>Margin dihitung berdasarkan harga jual SKU dan modal batch.</span></div>' +
+      '<div class="st-legend" aria-label="Keterangan margin"><span><i class="st-dot st-dot-ok"></i>Tersedia</span><span><i class="st-dot st-dot-bad"></i>Negatif</span><span><i class="st-dot st-dot-muted"></i>Belum tersedia</span></div></div>' +
+      '<div class="table-wrap st-table-wrap"><table data-tk="1" data-stok-table="1"><thead><tr>' +
         '<th>Obat</th><th>Kode batch / status</th><th>Kedaluwarsa</th><th>Sisa waktu</th>' +
-        '<th class="c">Stok</th><th class="r" title="Biaya modal efektif untuk batch ini setelah PPN dan diskon">Modal efektif batch</th><th class="r" title="(Harga jual SKU − modal batch) ÷ harga jual SKU">Margin batch</th><th></th>' +
+        '<th class="c">Stok</th><th class="r">Modal efektif</th><th>Margin per segmen</th><th></th>' +
       '</tr></thead><tbody id="stBody"></tbody></table></div><div id="stPager" class="pager"></div></div>';
 
     document.getElementById('stTambah').onclick = function () { formBatch(null); };
@@ -724,7 +722,8 @@ function marginStokChip(v) {
   return '<span class="chip ' + (Number(v) < 0 ? 'chip-bad' : 'chip-ok') + '">' + marginStok(v) + '</span>';
 }
 function marginStokCell(s) {
-  return '<div class="st-margin-list" aria-label="Margin batch"><div><span>Umum</span>' + marginStokChip(s.Margin_Umum) + '</div>' +
+  return '<div class="st-margin-grid" aria-label="Margin batch">' +
+    '<div><span>Umum</span>' + marginStokChip(s.Margin_Umum) + '</div>' +
     '<div><span>Nakes</span>' + marginStokChip(s.Margin_Nakes) + '</div>' +
     '<div><span>Apotek lain</span>' + marginStokChip(s.Margin_Mutasi) + '</div></div>';
 }
