@@ -1977,3 +1977,205 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
   #modal:has(#fbKode) .modal-box{width:100%;max-width:none}
   #modal:has(#fbKode) .modal-body .grid.g3{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+
+/* ================================================= Master Barang visual refresh
+   Scoped visual polish: surface hierarchy, typography, table, controls and modal.
+   No data, API, pricing or workflow logic changes.
+*/
+.view:has(.bg-table-wrap) { color:var(--text); }
+.view:has(.bg-table-wrap) > .card,
+.view:has(.bg-table-wrap) .card:has(> .bg-table-wrap) {
+  border:1px solid #E6E9EF;
+  border-radius:18px;
+  padding:20px;
+  background:linear-gradient(180deg,#FFFFFF 0%,#FCFCFD 100%);
+  box-shadow:0 8px 26px rgba(25,32,44,.045);
+}
+.view:has(.bg-table-wrap) .card-head {
+  align-items:center;
+  gap:12px;
+  margin-bottom:18px;
+  padding-bottom:16px;
+  border-bottom:1px solid #EEF0F4;
+}
+.view:has(.bg-table-wrap) .card-head h3 {
+  color:#171A22;
+  font-size:17px;
+  letter-spacing:-.035em;
+}
+.view:has(.bg-table-wrap) #bgCari {
+  min-height:44px;
+  border-radius:11px;
+  border:1px solid #DCE1E8;
+  background:#F9FAFB;
+  padding:10px 13px;
+  font-size:13px;
+  transition:background .16s,border-color .16s,box-shadow .16s;
+}
+.view:has(.bg-table-wrap) #bgCari:focus {
+  background:#FFFFFF;
+  border-color:#9AA4B2;
+  box-shadow:0 0 0 3px rgba(46,46,46,.08);
+}
+.view:has(.bg-table-wrap) #bgTambah {
+  min-height:44px;
+  border-radius:11px;
+  padding:10px 16px;
+  box-shadow:0 2px 4px rgba(20,23,28,.08);
+  letter-spacing:-.01em;
+}
+.bg-table-wrap { border:1px solid #E9ECF1; border-radius:13px; background:#fff; }
+.bg-table { border-collapse:separate; border-spacing:0; }
+.bg-table thead { background:#F7F8FA; }
+.bg-table th {
+  color:#737B89;
+  background:#F7F8FA;
+  border-bottom:1px solid #E5E8EE;
+  font-size:10px;
+  font-weight:750;
+  letter-spacing:.035em;
+  text-transform:uppercase;
+  padding-top:12px;
+  padding-bottom:12px;
+}
+.bg-table th:first-child { border-top-left-radius:12px; }
+.bg-table th:last-child { border-top-right-radius:12px; }
+.bg-table td {
+  color:#343945;
+  border-bottom:1px solid #F0F2F5;
+  line-height:1.45;
+  transition:background .12s;
+}
+.bg-table tbody tr:hover td { background:#FAFBFC; }
+.bg-table tbody tr:last-child td { border-bottom:0; }
+.bg-table td strong { color:#222630; font-weight:700; line-height:1.45; }
+.bg-table td .cart-line-meta { color:#89909D; font-size:10px; margin-top:3px; }
+.bg-table td .chip {
+  border:1px solid transparent;
+  font-weight:750;
+  letter-spacing:-.01em;
+}
+.bg-table td .chip-ok { background:#EAF7F0; color:#147A51; border-color:#D2EFDF; }
+.bg-table td .chip-bad { background:#FFF0EF; color:#B42318; border-color:#F9D8D5; }
+.bg-table td .btn {
+  border-radius:8px;
+  box-shadow:none;
+  border-color:#DCE1E8;
+  background:#fff;
+  font-weight:650;
+  transition:background .14s,border-color .14s,transform .14s;
+}
+.bg-table td .btn:hover { background:#F6F7F9; border-color:#BFC6D1; }
+.bg-table td .btn-danger {
+  color:#B42318;
+  background:#FFF5F4;
+  border-color:#F4D0CD;
+}
+.bg-table td .btn-danger:hover { background:#FDE9E7; border-color:#EAB7B2; }
+.bg-table-wrap + .pager { padding:12px 2px 0; color:#737B89; font-size:12px; }
+.bg-table-wrap + .pager .btn { border-radius:8px; }
+.view:has(.bg-table-wrap) .m-kartu {
+  border:1px solid #E7EAF0;
+  border-radius:14px;
+  padding:13px;
+  box-shadow:0 2px 8px rgba(25,32,44,.025);
+}
+.view:has(.bg-table-wrap) .m-kartu:active { box-shadow:0 4px 14px rgba(25,32,44,.07); }
+.view:has(.bg-table-wrap) .m-nm b { color:#242833; font-weight:750; line-height:1.4; }
+.view:has(.bg-table-wrap) .m-nm small { color:#7D8491; line-height:1.5; }
+.view:has(.bg-table-wrap) .m-rt > b { font-size:12px; color:#222630; }
+#modal:has(#fbKode) .modal-box {
+  border:1px solid rgba(255,255,255,.8);
+  border-radius:20px;
+  box-shadow:0 24px 80px rgba(18,24,35,.24);
+  overflow:hidden;
+}
+#modal:has(#fbKode) .modal-head {
+  padding:18px 22px;
+  background:#fff;
+  border-bottom:1px solid #EEF0F4;
+}
+#modal:has(#fbKode) .modal-head h3 {
+  color:#191C24;
+  font-size:18px;
+  letter-spacing:-.035em;
+}
+#modal:has(#fbKode) .modal-body { padding:20px 22px; background:#fff; }
+#modal:has(#fbKode) .modal-body .field > span {
+  color:#687181;
+  font-size:11.5px;
+  font-weight:750;
+  letter-spacing:.005em;
+  margin-bottom:6px;
+}
+#modal:has(#fbKode) .modal-body .field input,
+#modal:has(#fbKode) .modal-body .field select {
+  min-height:42px;
+  border-radius:10px;
+  border:1px solid #D9DEE7;
+  background:#FBFCFD;
+  color:#262A33;
+  font-size:13px;
+  transition:border-color .14s,box-shadow .14s,background .14s;
+}
+#modal:has(#fbKode) .modal-body .field input:focus,
+#modal:has(#fbKode) .modal-body .field select:focus {
+  border-color:#8C96A5;
+  background:#fff;
+  box-shadow:0 0 0 3px rgba(46,46,46,.075);
+  outline:none;
+}
+#modal:has(#fbKode) .modal-body .sub,
+#modal:has(#fbKode) .modal-body .kpi-sub {
+  color:#858C98;
+  font-size:10.5px;
+  line-height:1.6;
+}
+#modal:has(#fbKode) .modal-body .chip {
+  padding:4px 9px;
+  font-size:10.5px;
+}
+#modal:has(#fbKode) .modal-foot {
+  padding:13px 22px;
+  background:#FBFCFD;
+  border-top:1px solid #EEF0F4;
+}
+#modal:has(#fbKode) .modal-foot .btn {
+  min-height:42px;
+  border-radius:10px;
+  padding:9px 16px;
+}
+#modal:has(#fbKode) .modal-foot .btn-primary {
+  background:#25272C;
+  border-color:#25272C;
+  box-shadow:0 2px 5px rgba(25,28,34,.12);
+}
+#modal:has(#fbKode) .modal-foot .btn-primary:hover { background:#111318; }
+#modal:has(#fbKode) #fbCatatan {
+  margin:4px 0 12px;
+  padding:10px 12px;
+  border:1px solid #E8EBF0;
+  border-radius:10px;
+  background:#F7F8FA;
+}
+#modal:has(#fbKode) #fbHapus,
+#modal:has(#fbKode) #fbNonaktif { margin-top:4px; }
+@media(max-width:880px) {
+  .view:has(.bg-table-wrap) > .card,
+  .view:has(.bg-table-wrap) .card:has(> .bg-table-wrap) { padding:15px; border-radius:15px; }
+  .view:has(.bg-table-wrap) .card-head { padding-bottom:13px; margin-bottom:13px; }
+  #modal:has(#fbKode) .modal-head { padding:16px 18px; }
+  #modal:has(#fbKode) .modal-body { padding:16px 18px; }
+  #modal:has(#fbKode) .modal-foot { padding:12px 18px; }
+}
+@media(max-width:560px) {
+  .view:has(.bg-table-wrap) > .card,
+  .view:has(.bg-table-wrap) .card:has(> .bg-table-wrap) { padding:12px; border-radius:14px; }
+  .view:has(.bg-table-wrap) .card-head { gap:9px; }
+  .view:has(.bg-table-wrap) .card-head h3 { font-size:16px; }
+  .view:has(.bg-table-wrap) #bgTambah { min-height:43px; }
+  #modal:has(#fbKode) .modal-box { border-radius:20px 20px 0 0; }
+  #modal:has(#fbKode) .modal-body .field input,
+  #modal:has(#fbKode) .modal-body .field select { min-height:44px; }
+}
