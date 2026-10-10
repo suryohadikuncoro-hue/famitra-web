@@ -2657,3 +2657,29 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
   .view:has(.st-card) table[data-stok-table] td:nth-child(4) .chip,
   .view:has(.st-card) table[data-stok-table] td:nth-child(4) .badge { font-size:10px; padding:3px 6px; }
 }
+
+
+/* Master Barang: compact icon actions and clearer table alignment */
+.bg-table th,.bg-table td { vertical-align:middle; }
+.bg-table th { font-size:11px; letter-spacing:.045em; }
+.bg-table td { font-size:13px; line-height:1.45; }
+.bg-table td:nth-child(1) { overflow-wrap:anywhere; }
+.bg-table td:nth-child(2) strong { font-size:13.5px; }
+.bg-table td:last-child { text-align:center; }
+.bg-table .bg-icon-action {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:32px; height:32px; min-width:32px; padding:0; margin:0 3px;
+  border:1px solid #DDE2E9; border-radius:9px; background:#fff; color:#4B5563;
+  vertical-align:middle; transition:background .14s,border-color .14s,color .14s;
+}
+.bg-table .bg-icon-action svg {
+  display:block; width:15px; height:15px; fill:none; stroke:currentColor;
+  stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;
+}
+.bg-table .bg-icon-action:hover { background:#F4F6F8; border-color:#BFC7D2; color:#20242D; }
+.bg-table .bg-icon-action.btn-danger { color:#B42318; border-color:#F1D0CD; background:#FFF8F7; }
+.bg-table .bg-icon-action.btn-danger:hover { color:#912018; border-color:#E9B8B3; background:#FDECEB; }
+@media(max-width:1180px) and (min-width:561px) {
+ .bg-table td { font-size:13px; }
+ .bg-table .bg-icon-action { width:30px; height:30px; min-width:30px; }
+}
