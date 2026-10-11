@@ -80,8 +80,8 @@ assert.match(js, /Harga jual.*Terisi otomatis dari Master Barang/s, 'form explai
 const saveFnStart = js.indexOf('function simpanPembelian(');
 const saveFnEnd = js.indexOf('function konfirmasiTimpaHargaJual(', saveFnStart);
 const saveFn = js.slice(saveFnStart, saveFnEnd);
-assert.equal((saveFn.match(/konfirmasiTimpaHargaJual\\(isi\\)/g) || []).length, 2, 'normal save and negative-margin override both confirm changed selling prices');
-assert.match(js, /it\\._hargaJualAwal = \\{/, 'editing an invoice snapshots its original three sale prices');
+assert.equal((saveFn.match(/konfirmasiTimpaHargaJual\(isi\)/g) || []).length, 2, 'normal save and negative-margin override both confirm changed selling prices');
+assert.match(js, /it\._hargaJualAwal = \{/, 'editing an invoice snapshots its original three sale prices');
 assert.match(js, /Konfirmasi perubahan harga jual/, 'changed sale prices show an explicit overwrite confirmation');
 
 
