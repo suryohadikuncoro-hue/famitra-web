@@ -2184,13 +2184,13 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
 /* Pembelian UI/UX refresh — scoped styles, no business logic changes */
 .view:has(.beli-meta-card){--bi:#20242c;--bm:#77808d;--bl:#e6eaf0;color:var(--bi)}
 .view:has(.beli-meta-card)>.card{border:1px solid var(--bl);border-radius:16px;padding:20px;background:#fff;box-shadow:0 5px 22px rgba(26,34,48,.035);margin-bottom:16px}
-.view:has(.beli-meta-card) .beli-page-head,.view:has(.beli-meta-card) .beli-section-head,.view:has(.beli-meta-card) .beli-markup-head{display:flex;justify-content:space-between;align-items:center;gap:16px}
+.view:has(.beli-meta-card) .beli-page-head,.view:has(.beli-meta-card) .beli-section-head{display:flex;justify-content:space-between;align-items:center;gap:16px}
 .view:has(.beli-meta-card) .beli-page-head{align-items:flex-start;margin-bottom:20px}
 .view:has(.beli-meta-card) .beli-eyebrow{color:#7c8492;font-size:10px;font-weight:800;letter-spacing:.12em;margin-bottom:5px}
 .view:has(.beli-meta-card) #blJudul{font-size:21px;font-weight:800;letter-spacing:-.04em;color:#191d25;margin:0}
 .view:has(.beli-meta-card) .beli-page-head p,.view:has(.beli-meta-card) .beli-section-head p{color:#858c98;font-size:12px;line-height:1.5;margin:5px 0 0}
 .view:has(.beli-meta-card) .beli-head-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.view:has(.beli-meta-card) .beli-head-actions .btn,.view:has(.beli-meta-card) #blMarkupToggle{min-height:36px;border-radius:9px}
+.view:has(.beli-meta-card) .beli-head-actions .btn{min-height:36px;border-radius:9px}
 .view:has(.beli-meta-card) .beli-meta-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:13px}
 .view:has(.beli-meta-card) .beli-meta-grid>.field:nth-child(1),.view:has(.beli-meta-card) .beli-meta-grid>.field:nth-child(2),.view:has(.beli-meta-card) .beli-meta-grid>.field:nth-child(3),.view:has(.beli-meta-card) .beli-meta-grid>.field:nth-child(4),.view:has(.beli-meta-card) .beli-meta-grid>.field:nth-child(5){grid-column:span 2}
 .view:has(.beli-meta-card) .field{min-width:0;margin-bottom:0}
@@ -2198,15 +2198,6 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
 .view:has(.beli-meta-card) .field input,.view:has(.beli-meta-card) .field select{width:100%;min-width:0;min-height:42px;border-radius:10px;border:1px solid #dce1e8;background:#fbfcfd;color:#242833;font-size:13px;padding:9px 11px}
 .view:has(.beli-meta-card) .field input:focus,.view:has(.beli-meta-card) .field select:focus{background:#fff;border-color:#929ba9;box-shadow:0 0 0 3px rgba(45,53,66,.07);outline:none}
 .view:has(.beli-meta-card) .beli-edit-note{margin:-5px 0 16px;padding:11px 13px;border-radius:10px;border:1px solid #e8d8b8;background:#fffaef;color:#77541a;font-size:12px;line-height:1.6}
-.view:has(.beli-meta-card) .beli-markup-card{padding:0;overflow:hidden}
-.view:has(.beli-meta-card) .beli-markup-head{padding:16px 20px}
-.view:has(.beli-meta-card) .beli-markup-head h3{font-size:14px;margin:0;font-weight:800}
-.view:has(.beli-meta-card) .beli-markup-status{display:block;font-size:11px;color:#818997;margin-top:4px;line-height:1.5}
-.view:has(.beli-meta-card) .beli-markup-panel{border-top:1px solid #eef0f4;padding:18px 20px;background:#fbfcfd}
-.view:has(.beli-meta-card) .beli-markup-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
-.view:has(.beli-meta-card) .beli-markup-grid small{display:block;min-height:16px;margin-top:4px;font-size:10px;color:#858c98}
-.view:has(.beli-meta-card) .beli-markup-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid #e9ecf1}
-.view:has(.beli-meta-card) .beli-markup-foot p{margin:0;color:#818997;font-size:11px;line-height:1.6}
 .view:has(.beli-meta-card) .beli-section-head{align-items:flex-start;margin-bottom:17px}
 .view:has(.beli-meta-card) .beli-section-head h3{color:#20242c;font-size:17px;font-weight:800;letter-spacing:-.03em;margin:0}
 .view:has(.beli-meta-card) .beli-section-head>.btn{flex:0 0 auto;min-height:40px;border-radius:10px}
@@ -2280,7 +2271,6 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
 @media(max-width:1180px){
 .view:has(.beli-meta-card)>.card{padding:16px}
 .view:has(.beli-meta-card) .beli-item-ident{grid-template-columns:36px minmax(130px,1fr) minmax(150px,1.3fr) minmax(105px,.9fr) minmax(130px,.9fr) minmax(70px,.5fr) 32px;gap:8px;padding:12px}
-.view:has(.beli-meta-card) .beli-markup-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 .view:has(.beli-meta-card) .beli-total-bar{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:760px){
@@ -2291,10 +2281,6 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
 .view:has(.beli-meta-card) .beli-meta-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .view:has(.beli-meta-card) .beli-meta-grid>.field:nth-child(n){grid-column:span 1}
 .view:has(.beli-meta-card) .beli-meta-grid>.field:nth-child(1),.view:has(.beli-meta-card) .beli-meta-grid>.field:nth-child(2){grid-column:span 2}
-.view:has(.beli-meta-card) .beli-markup-head{align-items:flex-start;padding:14px}
-.view:has(.beli-meta-card) .beli-markup-panel{padding:14px}
-.view:has(.beli-meta-card) .beli-markup-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-.view:has(.beli-meta-card) .beli-markup-foot{align-items:flex-start;flex-direction:column}
 .view:has(.beli-meta-card) .beli-section-head{align-items:flex-start}
 .view:has(.beli-meta-card) .beli-section-head>.btn{white-space:nowrap}
 .view:has(.beli-meta-card) .beli-item-ident{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 34px;gap:10px;padding:12px}
@@ -2320,7 +2306,7 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
 @media(max-width:420px){
 .view:has(.beli-meta-card)>.card{padding:11px}
 .view:has(.beli-meta-card) #blJudul{font-size:19px}
-.view:has(.beli-meta-card) .beli-markup-grid,.view:has(.beli-meta-card) .beli-purchase-grid,.view:has(.beli-meta-card) .beli-selling-grid{grid-template-columns:minmax(0,1fr)}
+.view:has(.beli-meta-card) .beli-purchase-grid,.view:has(.beli-meta-card) .beli-selling-grid{grid-template-columns:minmax(0,1fr)}
 .view:has(.beli-meta-card) .beli-total-bar{grid-template-columns:minmax(0,1fr)}
 .view:has(.beli-meta-card) .beli-save-btn{grid-column:auto}
 .view:has(.beli-meta-card) .beli-history-finance{grid-template-columns:minmax(0,1fr)}
