@@ -71,7 +71,7 @@ masterPrices.Harga_Jual_Mutasi_Baru = 1800;
 assert.equal(masterPrices.Harga_Jual_Umum_Baru, 1600, 'Umum can be edited manually');
 assert.equal(masterPrices.Harga_Khusus_Baru, 1300, 'Nakes can be edited manually');
 assert.equal(masterPrices.Harga_Jual_Mutasi_Baru, 1800, 'Mutasi can be edited manually');
-assert.equal((js.match(/isiHargaJualDariMaster\(it, b\)/g) || []).length, 2, 'autocomplete and exact-code lookup both load all three prices from master');
+assert.equal((js.match(/^\s+isiHargaJualDariMaster\(it, b\);/gm) || []).length, 2, 'autocomplete and exact-code lookup both load all three prices from master');
 assert.match(js, /Harga_Jual_Umum_Baru: it\.Harga_Jual_Umum_Baru/, 'edited Umum price is sent with purchase save');
 assert.match(js, /Harga_Khusus_Baru: it\.Harga_Khusus_Baru/, 'edited Nakes price is sent with purchase save');
 assert.match(js, /Harga_Jual_Mutasi_Baru: it\.Harga_Jual_Mutasi_Baru/, 'edited Mutasi price is sent with purchase save');
