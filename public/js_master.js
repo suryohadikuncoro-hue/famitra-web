@@ -722,7 +722,7 @@ function muatStok(offset) {
         var belumAdaBatch = s.Belum_Ada_Batch;
         return '<tr>' +
           '<td><strong>' + esc(s.Nama_Obat) + '</strong>' +
-            '<div class="cart-line-meta">' + esc(s.Kode_Obat) + (s.Aktif === 'TIDAK' ? ' · Nonaktif' : '') + '</div></td>' +
+            '<div class="cart-line-meta st-item-code">' + esc(s.Kode_Obat) + (s.Aktif === 'TIDAK' ? ' · Nonaktif' : '') + '</div></td>' +
           '<td data-label="Batch / supplier">' + (belumAdaBatch
             ? '<span class="chip chip-warn">Belum ada batch</span>'
             : '<strong>' + esc(s.Kode_Batch) + '</strong><div class="cart-line-meta">Supplier: ' + esc(s.Supplier || 'Supplier belum tercatat') + '</div>') + '</td>' +
