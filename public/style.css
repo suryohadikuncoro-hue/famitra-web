@@ -2707,6 +2707,72 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
   }
 }
 
+/* Perapian lanjutan filter ambang margin pada Stok & Batch mobile. */
+@media (max-width:880px) {
+  .view:has(#stCari) .st-filter-ambang-wrap {
+    grid-column:1 / -1;
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    align-items:stretch;
+    gap:10px;
+    padding:12px;
+    border-radius:12px;
+    background:#fff;
+    white-space:normal;
+  }
+  .view:has(#stCari) .st-filter-ambang-title {
+    grid-column:1 / -1;
+    color:var(--muted);
+    font-size:13px;
+    line-height:1.4;
+    font-weight:700;
+  }
+  .view:has(#stCari) .st-filter-ambang-item {
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:center;
+    gap:4px;
+    min-width:0;
+    white-space:normal;
+    font-size:12px;
+    color:var(--muted);
+  }
+  .view:has(#stCari) .st-filter-ambang {
+    grid-column:1;
+    grid-row:2;
+    width:100%;
+    min-height:42px;
+    padding:7px 9px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    background:#fff;
+    text-align:right;
+    font-size:15px;
+    font-weight:700;
+  }
+  .view:has(#stCari) .st-filter-ambang-item { position:relative; }
+  .view:has(#stCari) .st-filter-ambang-item > input + * { grid-column:2; }
+}
+@media (max-width:420px) {
+  .view:has(#stCari) .st-filter-ambang-wrap {
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px;
+    padding:10px;
+  }
+  .view:has(#stCari) .st-filter-ambang-item {
+    grid-template-columns:minmax(0,1fr);
+    gap:5px;
+    font-size:11px;
+  }
+  .view:has(#stCari) .st-filter-ambang {
+    grid-column:1;
+    grid-row:2;
+    width:100%;
+    min-height:40px;
+    text-align:center;
+  }
+}
+
 @media (max-width:420px) {
   .view:has(#stCari) > .card,
   .view:has(#bgKartu) > .card { padding:11px; }
