@@ -299,10 +299,20 @@ function bacaMarkupBeli(tingkat) {
   padananMarkupBeli(); terapkanMarkupSemuaBaris(); gambarBeli();
 }
 function ubahModeMarkupBeli() {
-  var m = BELI.markup, mode = val('blMarkupMode') === 'rasio' ? 'rasio' : 'persen';
-  if (!m.valid) { bacaMarkupBeli(); return; }
+  var m = BELI.markup, select = document.getElementById('blMarkupMode');
+  var mode = val('blMarkupMode') === 'rasio' ? 'rasio' : 'persen';
+  // Hindari menafsirkan angka dari mode lama dengan unit mode baru jika ada
+  // field yang invalid (contoh rasio 0,96). Minta perbaiki nilainya dulu.
+  if (!m.valid) {
+    if (select) select.value = m.mode;
+    toast('Perbaiki nilai markup yang tidak valid sebelum mengganti mode.', true);
+    return;
+  }
   m.mode = mode;
-  [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) { var el = document.getElementById(x[0]); if (el) el.value = markupPersenBeliKeInput(m[x[1]], mode); });
+  [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) {
+    var el = document.getElementById(x[0]);
+    if (el) el.value = m[x[1]] === null ? '' : markupPersenBeliKeInput(m[x[1]], mode);
+  });
   padananMarkupBeli(); terapkanMarkupSemuaBaris(); gambarBeli();
 }
 function simpanBawaanMarkupBeli() {
