@@ -33,14 +33,8 @@ vm.runInContext([
   extractFunction('diskonRupiahBaris'),
   extractFunction('hargaModalEfektifBeli'),
   extractFunction('marginPersenBeli'),
-  extractFunction('markupInputBeliKePersen'),
-  extractFunction('markupPersenBeliKeInput'),
-  extractFunction('hargaDariMarkupJS'),
-  extractFunction('terapkanMarkupBaris'),
-  extractFunction('terapkanMarkupSemuaBaris'),
-  extractFunction('kunciHargaFakturBeli'),
-  extractFunction('lepasKunciMarkupBeli')
-].join('\n'), context);
+  extractFunction('isiHargaJualDariMaster')
+].join('\\n'), context);
 
 const item = {
   Harga_Netto: 1000,
@@ -56,65 +50,33 @@ assert.equal(Math.round(context.marginPersenBeli(item.Harga_Jual_Umum_Baru, cont
 assert.equal(context.hargaModalEfektifBeli({ ...item, Diskon: 0 }), 1110, 'zero discount keeps PPN in the effective modal');
 assert.equal(context.hargaModalEfektifBeli({ ...item, Diskon: 100 }), 0, 'full discount cannot produce a negative modal');
 assert.equal(context.marginPersenBeli(item.Harga_Jual_Umum_Baru, context.hargaModalEfektifBeli({ ...item, PPN: -100 })), null, 'invalid tax rate does not produce a misleading margin');
-const ratio = context.markupInputBeliKePersen('2.5', 'rasio');
-assert.equal(ratio.valid, true, 'ratio 2.5 is accepted');
-assert.equal(ratio.persen, 150, 'ratio 2.5 maps to the canonical 150 percent');
-assert.equal(context.markupPersenBeliKeInput(150, 'rasio'), 2.5, 'saved 150 percent reloads as ratio 2.5');
-assert.equal(context.markupInputBeliKePersen('11', 'rasio').persen, 1000, 'ratio 11 is the upper limit');
-assert.equal(context.markupInputBeliKePersen('12', 'rasio').valid, false, 'ratio above 11 is rejected');
-assert.equal(context.markupInputBeliKePersen('1001', 'persen').valid, false, 'percent above 1000 is rejected');
-assert.equal(context.hargaDariMarkupJS(999, ratio.persen, 100), 2500, 'ratio markup uses canonical percent and required rounding');
-assert.equal(context.hargaDariMarkupJS(999, 1001, 0), null, 'markup formula rejects a percent above the allowed range');
-context.BELI = { editNoFaktur: null, markup: { tersedia: true, valid: true, umum: null, nakes: null, mutasi: null, pembulatan: 0 } };
-const pricedItem = { Harga_Netto: 1000, Qty: 1, PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 1500, _manual: {}, _markupOtomatis: {} };
-context.terapkanMarkupBaris(pricedItem);
-assert.equal(pricedItem.Harga_Jual_Umum_Baru, 1500, 'inactive markup does not clear the current master price');
-context.BELI.markup.umum = 150;
-context.terapkanMarkupBaris(pricedItem);
-assert.equal(pricedItem.Harga_Jual_Umum_Baru, 2500, 'active markup populates an automatic price');
-const existingRows = [
-  { Harga_Netto: 1000, Qty: 1, PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 0, _manual: {}, _markupOtomatis: {} },
-  { Harga_Netto: 2000, Qty: 1, PPN: 0, Diskon: 0, Harga_Jual_Umum_Baru: 4321, _manual: { Harga_Jual_Umum_Baru: true }, _markupOtomatis: {} }
-];
-context.BELI.items = existingRows;
-context.BELI.markup.umum = 100;
-context.terapkanMarkupSemuaBaris();
-assert.equal(existingRows[0].Harga_Jual_Umum_Baru, 2000, 'markup changes recalculate existing automatic rows');
-assert.equal(existingRows[1].Harga_Jual_Umum_Baru, 4321, 'bulk recalculation preserves manual prices');
-context.BELI.markup.umum = null;
-context.terapkanMarkupBaris(pricedItem);
-assert.equal(pricedItem.Harga_Jual_Umum_Baru, 0, 'disabling markup clears only its previously automatic price');
-const manualItem = { ...pricedItem, Harga_Jual_Umum_Baru: 1234, _manual: { Harga_Jual_Umum_Baru: true }, _markupOtomatis: {} };
-context.BELI.markup.umum = 150;
-context.terapkanMarkupBaris(manualItem);
-assert.equal(manualItem.Harga_Jual_Umum_Baru, 1234, 'manual sale price is never overwritten');
-
-// Mode ubah faktur: pengaman lama tidak boleh lagi mematikan perhitungan markup,
-// dan harga yang tercatat di faktur lama tidak boleh dihitung ulang saat dimuat.
-const pengamanMarkup = extractFunction('terapkanMarkupBaris');
-assert.match(pengamanMarkup, /if \(!BELI\.markup\.tersedia\) return;/, 'markup only stops when the settings are unavailable');
-assert.doesNotMatch(pengamanMarkup, /editNoFaktur/, 'edit mode no longer disables markup recalculation');
-assert.match(js, /kunciHargaFakturBeli\(BELI\.items\)[\s\S]*gambarBeli\(\)/, 'loading an old invoice locks the recorded prices before rendering');
-const fakturLama = {
-  Harga_Netto: 1000, Qty: 10, PPN: 10, Diskon: 0,
-  Harga_Jual_Umum_Baru: 2000, Harga_Khusus_Baru: 1800, Harga_Jual_Mutasi_Baru: 1600,
-  _manual: {}, _markupOtomatis: {}, _tercatat: {}
-};
-context.BELI = { editNoFaktur: 'PB-1', items: [fakturLama], markup: { tersedia: true, valid: true, umum: 100, nakes: 30, mutasi: 20, pembulatan: 100 } };
-context.kunciHargaFakturBeli(context.BELI.items);
-context.terapkanMarkupSemuaBaris();
-assert.equal(fakturLama.Harga_Jual_Umum_Baru, 2000, 'opening an old invoice keeps the recorded umum price');
-assert.equal(fakturLama.Harga_Khusus_Baru, 1800, 'opening an old invoice keeps the recorded nakes price');
-assert.equal(fakturLama.Harga_Jual_Mutasi_Baru, 1600, 'opening an old invoice keeps the recorded mutation price');
-context.lepasKunciMarkupBeli('umum');
-context.terapkanMarkupSemuaBaris();
-assert.equal(fakturLama.Harga_Jual_Umum_Baru, 2200, 'changing the umum markup recalculates umum in edit mode');
-assert.equal(fakturLama.Harga_Khusus_Baru, 1800, 'changing umum markup leaves nakes untouched');
-assert.equal(fakturLama.Harga_Jual_Mutasi_Baru, 1600, 'changing umum markup leaves mutation untouched');
-assert.equal(Math.round(context.marginPersenBeli(fakturLama.Harga_Jual_Umum_Baru, context.hargaModalEfektifBeli(fakturLama)) * 10) / 10, 50, 'margin follows the recalculated price realtime');
-context.lepasKunciMarkupBeli('nakes');
-context.terapkanMarkupSemuaBaris();
-assert.equal(fakturLama.Harga_Jual_Umum_Baru, 2200, 'nakes change does not reset the already recalculated umum price');
+// Harga jual di form Pembelian mengikuti nilai Master Barang, bukan markup.
+assert.doesNotMatch(js, /blMarkup|MarkupBeli|terapkanMarkup|hargaDariMarkupJS|harga\\.pengaturan/i, 'purchase form does not use a markup panel or markup calculation');
+const masterPrices = {};
+context.isiHargaJualDariMaster(masterPrices, {
+  Harga_Jual_Umum: 1500,
+  Harga_Khusus: 1200,
+  Harga_Jual_Mutasi: 1750
+});
+assert.equal(masterPrices.Harga_Jual_Umum_Baru, 1500, 'Umum copies Master Barang price');
+assert.equal(masterPrices.Harga_Khusus_Baru, 1200, 'Nakes copies Master Barang special price');
+assert.equal(masterPrices.Harga_Jual_Mutasi_Baru, 1750, 'Apotek lain copies Master Barang mutation price');
+assert.equal(masterPrices.Jual_Umum_Kini, 1500, 'current Umum price is kept for margin display');
+assert.equal(masterPrices.Jual_Khusus_Kini, 1200, 'current Nakes price is kept for margin display');
+assert.equal(masterPrices.Jual_Mutasi_Kini, 1750, 'current Mutasi price is kept for margin display');
+// Manual changes remain possible after the initial copy from Master Barang.
+masterPrices.Harga_Jual_Umum_Baru = 1600;
+masterPrices.Harga_Khusus_Baru = 1300;
+masterPrices.Harga_Jual_Mutasi_Baru = 1800;
+assert.equal(masterPrices.Harga_Jual_Umum_Baru, 1600, 'Umum can be edited manually');
+assert.equal(masterPrices.Harga_Khusus_Baru, 1300, 'Nakes can be edited manually');
+assert.equal(masterPrices.Harga_Jual_Mutasi_Baru, 1800, 'Mutasi can be edited manually');
+assert.equal((js.match(/isiHargaJualDariMaster\\(it, b\\)/g) || []).length, 2, 'autocomplete and exact-code lookup both load all three prices from master');
+assert.match(js, /Harga_Jual_Umum_Baru: it\\.Harga_Jual_Umum_Baru/, 'edited Umum price is sent with purchase save');
+assert.match(js, /Harga_Khusus_Baru: it\\.Harga_Khusus_Baru/, 'edited Nakes price is sent with purchase save');
+assert.match(js, /Harga_Jual_Mutasi_Baru: it\\.Harga_Jual_Mutasi_Baru/, 'edited Mutasi price is sent with purchase save');
+assert.match(js, /BELI\\.items = \\(d\\.items && d\\.items\\.length\\) \\? d\\.items/, 'editing an existing invoice loads the original recorded prices');
+assert.match(js, /Harga jual.*Terisi otomatis dari Master Barang/s, 'form explains that prices are prefilled and editable');
 
 assert.match(migration, /CREATE OR REPLACE FUNCTION public\.purchase_effective_unit_cost/i, 'SQL shares a single effective-cost function');
 assert.match(migration, /purchase_validate_items\(p_items\)/i, 'purchase RPC wrappers validate incoming line values');
@@ -153,4 +115,4 @@ assert.match(js, /request !== BELI\.riwayatRequest/, 'late history responses can
 assert.match(js, /api\('retur\.beliList', \{ q: q, faktur_only: true \}\)/, 'Retur Beli sends typed search to the backend');
 assert.match(js, /request !== RETUR\.beli\.searchRequest/, 'late Retur Beli responses cannot replace newer search results');
 
-console.log('PASS: local checks for discounted modal/margin math, safe partial search, Retur, pagination, and hutang safeguards.');
+console.log('PASS: effective modal/margin math, master-derived editable prices, safe search, Retur, pagination, and hutang safeguards.');
