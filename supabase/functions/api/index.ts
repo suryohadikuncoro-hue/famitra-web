@@ -603,14 +603,24 @@ async function action(name, data, s) {
       const sembunyikanKosong = data.sembunyikan_kosong === true;
       const perluDitinjau = data.perlu_ditinjau === true;
       if (status === "habis" && (sembunyikanKosong || kritis)) return pageInfo([], 0, 0, "hasil");
-      const statusFilter = status === "habis" ? "&stok_real=eq.0" :
-        (status === "tersedia" || sembunyikanKosong ? "&stok_real=gt.0" : "");
-      const searchFilter = !q ? "" : data.jenis === "batch"
-        ? `&kode_batch=ilike.${pattern}`
-        : `&master_barang.or=(kode_obat.ilike.${pattern},nama_obat.ilike.${pattern})`;
-      const query = `?cabang_id=eq.${cab}${statusFilter}${criticalBatchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi)&master_barang.cabang_id=eq.${cab}${searchFilter}&order=kode_obat.asc,expired_date.asc,id_batch.asc`;
-      const batches = await semua("stok_batch", query);
-      let rows = batches.map((b) => rowBatch(b.master_barang || {}, b));
+
+      const hasilBatchSaja = kritis || status !== "semua" || (q && data.jenis === "batch");
+      let rows = [];
+      if (!hasilBatchSaja) {
+        // Pertahankan barang tanpa batch (stok 0, margin tak tersedia) dan letakkan di akhir.
+        const searchFilter = q ? `&or=(kode_obat.ilike.${pattern},nama_obat.ilike.${pattern})` : "";
+        const masters = await semua("master_barang",
+          `?cabang_id=eq.${cab}${searchFilter}&select=kode_obat,nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi,stok_batch(${batchFields})&stok_batch.cabang_id=eq.${cab}&order=nama_obat.asc,kode_obat.asc`);
+        rows = masters.flatMap(fromMaster);
+      } else {
+        const statusFilter = status === "tersedia" ? "&stok_real=gt.0" : status === "habis" ? "&stok_real=eq.0" : "";
+        const searchFilter = !q ? "" : data.jenis === "batch"
+          ? `&kode_batch=ilike.${pattern}`
+          : `&master_barang.or=(kode_obat.ilike.${pattern},nama_obat.ilike.${pattern})`;
+        const query = `?cabang_id=eq.${cab}${statusFilter}${criticalBatchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi)&master_barang.cabang_id=eq.${cab}${searchFilter}&order=kode_obat.asc,expired_date.asc,id_batch.asc`;
+        const batches = await semua("stok_batch", query);
+        rows = batches.map((b) => rowBatch(b.master_barang || {}, b));
+      }
       if (sembunyikanKosong) rows = rows.filter((r) => Number(r.Stok_Real || 0) > 0);
       if (perluDitinjau) {
         const sumberAmbang = data.ambang_tinjau && typeof data.ambang_tinjau === "object" ? data.ambang_tinjau : {};
