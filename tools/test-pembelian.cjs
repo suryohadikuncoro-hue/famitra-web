@@ -34,7 +34,7 @@ vm.runInContext([
   extractFunction('hargaModalEfektifBeli'),
   extractFunction('marginPersenBeli'),
   extractFunction('isiHargaJualDariMaster')
-].join('\\n'), context);
+].join('\n'), context);
 
 const item = {
   Harga_Netto: 1000,
@@ -51,7 +51,7 @@ assert.equal(context.hargaModalEfektifBeli({ ...item, Diskon: 0 }), 1110, 'zero 
 assert.equal(context.hargaModalEfektifBeli({ ...item, Diskon: 100 }), 0, 'full discount cannot produce a negative modal');
 assert.equal(context.marginPersenBeli(item.Harga_Jual_Umum_Baru, context.hargaModalEfektifBeli({ ...item, PPN: -100 })), null, 'invalid tax rate does not produce a misleading margin');
 // Harga jual di form Pembelian mengikuti nilai Master Barang, bukan markup.
-assert.doesNotMatch(js, /blMarkup|MarkupBeli|terapkanMarkup|hargaDariMarkupJS|harga\\.pengaturan/i, 'purchase form does not use a markup panel or markup calculation');
+assert.doesNotMatch(js, /blMarkup|MarkupBeli|terapkanMarkup|hargaDariMarkupJS|harga\.pengaturan/i, 'purchase form does not use a markup panel or markup calculation');
 const masterPrices = {};
 context.isiHargaJualDariMaster(masterPrices, {
   Harga_Jual_Umum: 1500,
@@ -71,11 +71,11 @@ masterPrices.Harga_Jual_Mutasi_Baru = 1800;
 assert.equal(masterPrices.Harga_Jual_Umum_Baru, 1600, 'Umum can be edited manually');
 assert.equal(masterPrices.Harga_Khusus_Baru, 1300, 'Nakes can be edited manually');
 assert.equal(masterPrices.Harga_Jual_Mutasi_Baru, 1800, 'Mutasi can be edited manually');
-assert.equal((js.match(/isiHargaJualDariMaster\\(it, b\\)/g) || []).length, 2, 'autocomplete and exact-code lookup both load all three prices from master');
-assert.match(js, /Harga_Jual_Umum_Baru: it\\.Harga_Jual_Umum_Baru/, 'edited Umum price is sent with purchase save');
-assert.match(js, /Harga_Khusus_Baru: it\\.Harga_Khusus_Baru/, 'edited Nakes price is sent with purchase save');
-assert.match(js, /Harga_Jual_Mutasi_Baru: it\\.Harga_Jual_Mutasi_Baru/, 'edited Mutasi price is sent with purchase save');
-assert.match(js, /BELI\\.items = \\(d\\.items && d\\.items\\.length\\) \\? d\\.items/, 'editing an existing invoice loads the original recorded prices');
+assert.equal((js.match(/isiHargaJualDariMaster\(it, b\)/g) || []).length, 2, 'autocomplete and exact-code lookup both load all three prices from master');
+assert.match(js, /Harga_Jual_Umum_Baru: it\.Harga_Jual_Umum_Baru/, 'edited Umum price is sent with purchase save');
+assert.match(js, /Harga_Khusus_Baru: it\.Harga_Khusus_Baru/, 'edited Nakes price is sent with purchase save');
+assert.match(js, /Harga_Jual_Mutasi_Baru: it\.Harga_Jual_Mutasi_Baru/, 'edited Mutasi price is sent with purchase save');
+assert.match(js, /BELI\.items = \(d\.items && d\.items\.length\) \? d\.items : \[barisKosong\(\)\]/, 'editing an existing invoice loads the original recorded prices');
 assert.match(js, /Harga jual.*Terisi otomatis dari Master Barang/s, 'form explains that prices are prefilled and editable');
 
 assert.match(migration, /CREATE OR REPLACE FUNCTION public\.purchase_effective_unit_cost/i, 'SQL shares a single effective-cost function');
