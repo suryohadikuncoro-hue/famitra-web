@@ -503,7 +503,7 @@ function bukaUbahFaktur(no) {
       it.Diskon = Math.min(100, Math.max(0, Number(it.Diskon) || 0));
     });
     // Faktur dibuka apa adanya: harga jual yang tampil adalah nilai tercatat di
-    // faktur, bukan hitungan markup saat ini.
+    // nilai harga jual mengikuti rincian yang tersimpan pada faktur.
     var f = document.getElementById('blFaktur'); if (f) f.value = h.No_Faktur_Supplier || '';
     var k = document.getElementById('blKategori'); if (k) k.value = h.Kategori || 'Tidak Berpajak';
     var g = document.getElementById('blTanggal'); if (g) g.value = h.Tanggal_Faktur || '';
