@@ -2474,32 +2474,3 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
   #modal:has(.beli-detail-header) .beli-detail-batch { max-width:100%; }
   #modal:has(.beli-detail-header) .beli-detail-line-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
-
-
-/* Purchase markup validation and margin estimate clarity */
-.view:has(.beli-meta-card) .beli-markup-grid .inp.is-invalid,
-.view:has(.beli-meta-card) .beli-markup-grid .inp[aria-invalid="true"] {
-  border-color:#D92D20!important;
-  background:#FFF6F5!important;
-  box-shadow:0 0 0 2px rgba(217,45,32,.07);
-}
-.view:has(.beli-meta-card) .beli-markup-grid small {
-  line-height:1.35;
-}
-.view:has(.beli-meta-card) .beli-markup-grid .inp.is-invalid + small {
-  color:#B42318!important;
-  font-weight:700;
-}
-.view:has(.beli-meta-card) .beli-margin-hint {
-  display:block;
-  color:#858C98;
-  font-size:9.5px;
-  line-height:1.4;
-  margin:-1px 0 7px;
-}
-.view:has(.beli-meta-card) .beli-margin-list {
-  gap:8px 13px;
-}
-.view:has(.beli-meta-card) .beli-margin-list .chip {
-  white-space:nowrap;
-}
