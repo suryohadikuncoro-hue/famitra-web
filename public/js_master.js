@@ -52,8 +52,7 @@ function muatBarang(hal) {
         var tint = b.Aktif === 'TIDAK' ? 'mati' : (habis ? 'bad' : (menipis ? 'warn' : 'ok'));
         return '<div class="m-kartu' + (b.Aktif === 'TIDAK' ? ' nonaktif' : '') + '" role="button" tabindex="0" data-edit=\'' + esc(JSON.stringify(b)) + '\'>' +
           '<span class="m-av ' + tint + '">' + esc(String(b.Nama_Obat || '?').charAt(0).toUpperCase()) + '</span>' +
-          '<span class="m-kode-badge">' + esc(b.Kode_Obat) + '</span>' +
-          '<div class="m-nm"><b>' + esc(b.Nama_Obat) + '</b><small>' + (b.Kategori ? esc(b.Kategori) : '') + '</small></div>' +
+          '<div class="m-nm"><b>' + esc(b.Nama_Obat) + '</b><small>' + esc(b.Kode_Obat) + (b.Kategori ? ' · ' + esc(b.Kategori) : '') + '</small></div>' +
           '<div class="m-rt"><b>' + rupiah(b.Harga_Jual_Umum) + '</b>' +
             '<button type="button" class="chip ' + (habis ? 'chip-bad' : (menipis ? 'chip-warn' : 'chip-ok')) + '" data-stok=\'' + esc(JSON.stringify({ k: b.Kode_Obat, n: b.Nama_Obat })) + '\' aria-label="Ubah stok ' + esc(b.Nama_Obat) + '">' +
             (habis ? 'Habis' : angka(b.stok) + ' ' + esc(b.Satuan || 'pcs')) + ' ✎</button></div></div>';
@@ -722,10 +721,10 @@ function muatStok(offset) {
         var belumAdaBatch = s.Belum_Ada_Batch;
         return '<tr>' +
           '<td><strong>' + esc(s.Nama_Obat) + '</strong>' +
-            '<div class="cart-line-meta st-item-code">' + esc(s.Kode_Obat) + (s.Aktif === 'TIDAK' ? ' · Nonaktif' : '') + '</div></td>' +
+            '<div class="cart-line-meta">' + esc(s.Kode_Obat) + (s.Aktif === 'TIDAK' ? ' · Nonaktif' : '') + '</div></td>' +
           '<td data-label="Batch / supplier">' + (belumAdaBatch
             ? '<span class="chip chip-warn">Belum ada batch</span>'
-            : '<strong>' + esc(s.Kode_Batch) + '</strong><div class="cart-line-meta">Supplier: ' + esc(s.Supplier || 'Supplier belum tercatat') + '</div>') + '</td>' +
+            : '<strong class="st-batch-code">' + esc(s.Kode_Batch) + '</strong><div class="cart-line-meta">Supplier: ' + esc(s.Supplier || 'Supplier belum tercatat') + '</div>') + '</td>' +
           '<td data-label="Kedaluwarsa">' + (belumAdaBatch ? '—' : tglIndo(s.Expired_Date)) + '</td>' +
           '<td data-label="Sisa waktu">' + (belumAdaBatch ? '—' : chipExpired(s.sisa_hari, s.Expired_Date)) + '</td>' +
           '<td data-label="Stok" class="c num">' + angka(s.Stok_Real || 0) + '</td>' +
