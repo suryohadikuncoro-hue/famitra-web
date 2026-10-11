@@ -634,10 +634,10 @@ VIEWS.stok = {
         '<label class="chip st-filter-check" style="cursor:pointer" title="Tampilkan hanya baris yang margin salah satu tipenya di bawah ambang tipe itu; baris bermodal kosong tetap tampil"><input id="stTinjau" type="checkbox" style="margin-right:5px">' +
           'Perlu ditinjau</label>' +
         '<span class="chip st-filter-check st-filter-ambang-wrap" title="Ambang margin (%) tiap tipe pelanggan untuk penyaring Perlu ditinjau">' +
-          'Ambang perlu ditinjau' +
+          '<strong class="st-filter-ambang-title">Ambang perlu ditinjau</strong>' +
           STOK_TINJAU_TIPE.map(function (tipe) {
-            return '<label class="st-filter-ambang-item">' + tipe.label +
-              ' <input id="stTinjauAmbang' + tipe.kunci + '" class="st-filter-ambang" type="number" min="0" step="1" inputmode="decimal" value="' + ambangBawaan[tipe.kunci] + '" aria-label="Ambang margin ' + tipe.label + '">%</label>';
+            return '<label class="st-filter-ambang-item"><span>' + tipe.label + '</span>' +
+              '<span class="st-filter-ambang-control"><input id="stTinjauAmbang' + tipe.kunci + '" class="st-filter-ambang" type="number" min="0" step="1" inputmode="decimal" value="' + ambangBawaan[tipe.kunci] + '" aria-label="Ambang margin ' + tipe.label + '"><span>%</span></span></label>';
           }).join('') +
         '</span>' +
         '<button id="stTambah" class="btn btn-primary">Tambah batch</button></div>' +
@@ -724,7 +724,7 @@ function muatStok(offset) {
             '<div class="cart-line-meta">' + esc(s.Kode_Obat) + (s.Aktif === 'TIDAK' ? ' · Nonaktif' : '') + '</div></td>' +
           '<td data-label="Batch / supplier">' + (belumAdaBatch
             ? '<span class="chip chip-warn">Belum ada batch</span>'
-            : '<strong>' + esc(s.Kode_Batch) + '</strong><div class="cart-line-meta">Supplier: ' + esc(s.Supplier || 'Supplier belum tercatat') + '</div>') + '</td>' +
+            : '<strong class="st-batch-code">' + esc(s.Kode_Batch) + '</strong><div class="cart-line-meta">Supplier: ' + esc(s.Supplier || 'Supplier belum tercatat') + '</div>') + '</td>' +
           '<td data-label="Kedaluwarsa">' + (belumAdaBatch ? '—' : tglIndo(s.Expired_Date)) + '</td>' +
           '<td data-label="Sisa waktu">' + (belumAdaBatch ? '—' : chipExpired(s.sisa_hari, s.Expired_Date)) + '</td>' +
           '<td data-label="Stok" class="c num">' + angka(s.Stok_Real || 0) + '</td>' +
