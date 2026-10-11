@@ -111,7 +111,7 @@ function muatMaster(opts) {
   };
   vm.createContext(context);
   vm.runInContext(['esc', 'angka', 'rupiah', 'val', 'numVal'].map((n) => extractFunction(n, CORE)).join('\n'), context);
-  vm.runInContext(['hargaDariMarkupJS', 'markupInputBeliKePersen', 'markupPersenBeliKeInput', 'marginPersenBeli'].map((n) => extractFunction(n, TRX)).join('\n'), context);
+  vm.runInContext(['hargaDariMarkupJS', 'markupInputBeliKePersen', 'markupPersenBeliKeInput'].map((n) => extractFunction(n, MASTER)).concat([extractFunction('marginPersenBeli', TRX)]).join('\n'), context);
   vm.runInContext(MASTER, context);
   return { ctx: context, catatan, dok };
 }
@@ -578,6 +578,20 @@ test('form Tambah barang baru: modal diisi, markup langsung mengisi harga jual',
   assert.match(dok.elemen.fbMarginUmum.innerHTML, /20,0%/);
   assert.match(dok.elemen.fbMarginUmum.innerHTML, /chip-ok/);
   assert.match(dok.elemen.fbCatatan.textContent, /Markup dihitung dari Modal terakhir/);
+});
+
+test('helper markup Master Barang tersedia mandiri dan input markup menghitung harga secara realtime', async () => {
+  assert.match(MASTER, /function hargaDariMarkupJS\(/);
+  assert.match(MASTER, /function markupInputBeliKePersen\(/);
+  assert.match(MASTER, /function markupPersenBeliKeInput\(/);
+  const m = bukaForm({ barang: barangContoh({ Harga_Modal: 1000, Harga_Jual_Umum: 0, Harga_Khusus: 0, Harga_Jual_Mutasi: 0 }) });
+  await tunggu();
+  ketik(m.dok, 'fbMarkupUmum', '25');
+  assert.equal(m.dok.elemen.fbUmum.value, '1300');
+  assert.match(m.dok.elemen.fbMarginUmum.innerHTML, /23,1%/);
+  ketik(m.dok, 'fbMarkupUmum', '40');
+  assert.equal(m.dok.elemen.fbUmum.value, '1400');
+  assert.match(m.dok.elemen.fbMarginUmum.innerHTML, /28,6%/);
 });
 
 test('form Ubah barang meng-escape teks dari data dan tidak merusak struktur modal', () => {
