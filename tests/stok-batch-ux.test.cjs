@@ -108,7 +108,7 @@ function jalankanMuatStokLengkap(rows, opsi) {
     document: { getElementById: function (id) { return dom[id] || null; } },
     val: function (id) {
       if (id === 'stStatus') return 'semua';
-      if (id === 'stUrut') return 'nama';
+      if (id === 'stUrut') return opsi.urut || 'nama';
       if (dom[id] && dom[id].value != null) return String(dom[id].value);
       return '';
     },
@@ -162,9 +162,34 @@ function inputTakTertutup(html) {
   return rusak;
 }
 
+test('Stok & Batch menampilkan kode batch beserta supplier pada setiap baris', () => {
+  assert.match(js, /<th>Obat<\/th><th>Kode batch \/ supplier<\/th>/);
+  const html = jalankanMuatStok([{
+    Nama_Obat: 'Obat supplier', Kode_Obat: 'OB-SUP', Kode_Batch: 'BATCH-1',
+    Supplier: 'PT Sehat Sentosa · CV Medika', Expired_Date: '2027-01-01',
+    Stok_Real: 5, Harga_Modal_Batch: 1000, Margin_Umum: 20, Margin_Nakes: 15, Margin_Mutasi: 10
+  }]);
+  assert.match(html, /data-label="Batch \/ supplier"/);
+  assert.match(html, /BATCH-1/);
+  assert.match(html, /Supplier: PT Sehat Sentosa · CV Medika/);
+  const kosong = jalankanMuatStok([{
+    Nama_Obat: 'Batch tanpa supplier', Kode_Obat: 'OB-TANPA', Kode_Batch: 'BATCH-X',
+    Expired_Date: '2027-01-01', Stok_Real: 5, Harga_Modal_Batch: 1000,
+    Margin_Umum: 20, Margin_Nakes: 15, Margin_Mutasi: 10
+  }]);
+  assert.match(kosong, /Supplier belum tercatat/);
+});
+
+test('dropdown Urutkan stok menyediakan pilihan Margin terendah', () => {
+  assert.match(js, /<option value="margin_asc">Margin terendah<\/option>/);
+  assert.match(js, /permintaanStok\.sembunyikan_kosong/);
+  assert.match(js, /permintaanStok\.perlu_ditinjau/);
+  assert.match(js, /permintaanStok\.ambang_tinjau/);
+});
+
 test('Stok & Batch memakai kontrak tabel yang cocok untuk tampilan kartu responsif', () => {
   assert.match(js, /<table data-tk="1" data-stok-table="1">/);
-  for (const label of ['Batch / status', 'Kedaluwarsa', 'Sisa waktu', 'Stok', 'Modal efektif', 'Margin batch']) {
+  for (const label of ['Batch / supplier', 'Kedaluwarsa', 'Sisa waktu', 'Stok', 'Modal efektif', 'Margin batch']) {
     assert.match(js, new RegExp('data-label="' + label + '"'));
   }
   assert.match(js, /class="c tk-aksi"/);
