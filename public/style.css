@@ -2660,16 +2660,40 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
     padding-bottom:calc(76px + var(--tabbar-h));
   }
   .view:has(#bgKartu) .m-kartu {
+    position:relative;
     display:grid;
     grid-template-columns:44px minmax(0,1fr) minmax(88px,auto);
+    grid-template-rows:auto auto;
     align-items:center;
-    gap:10px;
+    gap:8px 10px;
     width:100%;
     min-width:0;
     max-width:100%;
-    padding:12px;
+    padding:34px 12px 12px;
   }
-  .view:has(#bgKartu) .m-nm { min-width:0; overflow:hidden; }
+  .view:has(#bgKartu) .m-av {
+    grid-column:1;
+    grid-row:1 / span 2;
+  }
+  .view:has(#bgKartu) .m-kode-badge {
+    position:absolute;
+    top:8px;
+    right:10px;
+    max-width:calc(100% - 20px);
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    padding:3px 8px;
+    border:1px solid #E5E7EB;
+    border-radius:7px;
+    background:#F8F9FB;
+    color:#687181;
+    font-size:10px;
+    font-weight:750;
+    line-height:1.35;
+    letter-spacing:.025em;
+  }
+  .view:has(#bgKartu) .m-nm { min-width:0; overflow:hidden; grid-column:2; grid-row:1 / span 2; }
   .view:has(#bgKartu) .m-nm b {
     white-space:normal;
     overflow-wrap:anywhere;
@@ -2788,7 +2812,8 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
   .view:has(#bgKartu) .m-kartu {
     grid-template-columns:36px minmax(0,1fr) minmax(78px,auto);
     gap:8px;
-    padding:10px;
+    padding:34px 10px 10px;
   }
   .view:has(#bgKartu) .m-av { width:36px; height:36px; flex-basis:36px; border-radius:11px; }
+  .view:has(#bgKartu) .m-kode-badge { top:7px; right:8px; font-size:9.5px; }
 }
