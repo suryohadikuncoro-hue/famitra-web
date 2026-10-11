@@ -167,18 +167,9 @@ function barisKosong() {
 // Harga modal efektif termasuk PPN dan setelah diskon persentase pada baris.
 function hargaModalEfektifBeli(it) {
   var qty = Number(it.Qty) || 0, ppn = Number(it.PPN) || 0;
-  var netto = Number(it.Harga_Netto) || 0;
-  var diskon = Math.min(100, Math.max(0, Number(it.Diskon) || 0));
-  if (netto <= 0 || ppn < 0 || ppn > 100) return null;
-  // Estimasi modal per unit bisa dihitung meski Qty belum diisi.
-  // Jika Qty ada, gunakan subtotal baris agar pembulatan diskon tetap sama
-  // dengan nilai transaksi aktual.
-  if (qty <= 0) {
-    var modalUnit = netto * (1 + ppn / 100) * (1 - diskon / 100);
-    return modalUnit > 0 ? Math.round(modalUnit * 100) / 100 : null;
-  }
-  var modal = netto * qty * (1 + ppn / 100) - diskonRupiahBaris(it);
-  return modal > 0 ? Math.round(modal / qty * 100) / 100 : null;
+  if (qty <= 0 || ppn < 0) return null;
+  var modal = (Number(it.Harga_Netto) || 0) * qty * (1 + ppn / 100) - diskonRupiahBaris(it);
+  return Math.round(modal / qty * 100) / 100;
 }
 function marginPersenBeli(harga, modal) {
   harga = Number(harga) || 0;
@@ -217,9 +208,7 @@ function terapkanMarkupBaris(it) {
   [['umum','Harga_Jual_Umum_Baru'], ['nakes','Harga_Khusus_Baru'], ['mutasi','Harga_Jual_Mutasi_Baru']].forEach(function (x) {
     if (it._manual && it._manual[x[1]]) return;
     if (it._tercatat && it._tercatat[x[1]]) return;
-    // Validasi per tingkat: satu nilai salah tidak mematikan markup tingkat lain.
-    var tingkatValid = !m.invalidLevels || !m.invalidLevels[x[0]];
-    var harga = tingkatValid ? hargaDariMarkupJS(modal, m[x[0]], m.pembulatan) : null;
+    var harga = m.valid ? hargaDariMarkupJS(modal, m[x[0]], m.pembulatan) : null;
     if (harga !== null && harga > 0) {
       it[x[1]] = harga; it._markupOtomatis[x[1]] = true;
     } else if (it._markupOtomatis[x[1]]) {
@@ -258,13 +247,7 @@ function padananMarkupBeli() {
     var v = val(x[1]), el = document.getElementById(x[2]); if (!el) return;
     var n = Number(v), ratioMode = BELI.markup.mode === 'rasio';
     var valid = v !== '' && isFinite(n) && (ratioMode ? n >= 1 && n <= 11 : n >= 0 && n <= 1000);
-    var input = document.getElementById(x[1]);
-    if (input) {
-      input.classList.toggle('is-invalid', !valid && v !== '');
-      input.setAttribute('aria-invalid', String(!valid && v !== ''));
-      input.title = !valid && v !== '' ? (ratioMode ? 'Rasio harus 1 sampai 11.' : 'Markup harus 0 sampai 1000%.') : '';
-    }
-    el.textContent = !valid ? (v === '' ? '' : (ratioMode ? 'Rasio harus 1–11' : 'Markup harus 0–1000%')) : ratioMode
+    el.textContent = !valid ? '' : ratioMode
       ? '= ' + ((n - 1) * 100).toFixed(2).replace(/\.00$/, '') + '%'
       : '= ' + (n / 100 + 1).toFixed(2).replace(/\.00$/, '') + '× rasio';
   });
@@ -286,33 +269,20 @@ function bacaMarkupBeli(tingkat) {
   var mode = val('blMarkupMode') === 'rasio' ? 'rasio' : 'persen';
   var values = [markupInputBeliKePersen(val('blMarkupUmum'), mode), markupInputBeliKePersen(val('blMarkupNakes'), mode), markupInputBeliKePersen(val('blMarkupMutasi'), mode)];
   BELI.markup.mode = mode; BELI.markup.valid = values.every(function (x) { return x.valid; });
-  BELI.markup.invalidLevels = { umum: !values[0].valid, nakes: !values[1].valid, mutasi: !values[2].valid };
-  BELI.markup.umum = values[0].valid ? values[0].persen : null;
-  BELI.markup.nakes = values[1].valid ? values[1].persen : null;
-  BELI.markup.mutasi = values[2].valid ? values[2].persen : null;
+  BELI.markup.umum = BELI.markup.valid ? values[0].persen : null;
+  BELI.markup.nakes = BELI.markup.valid ? values[1].persen : null;
+  BELI.markup.mutasi = BELI.markup.valid ? values[2].persen : null;
   BELI.markup.pembulatan = Number(val('blMarkupPembulatan')) || 0;
   var status = document.getElementById('blMarkupStatus');
-  if (status) status.textContent = BELI.markup.valid
-    ? 'Draf untuk faktur ini'
-    : 'Ada markup tidak valid. Periksa field bertanda merah; tingkat lain tetap dihitung.';
+  if (status) status.textContent = BELI.markup.valid ? 'Draf untuk faktur ini' : 'Nilai tidak valid: persen 0–1000 atau rasio 1–11';
   if (tingkat) lepasKunciMarkupBeli(tingkat);
   padananMarkupBeli(); terapkanMarkupSemuaBaris(); gambarBeli();
 }
 function ubahModeMarkupBeli() {
-  var m = BELI.markup, select = document.getElementById('blMarkupMode');
-  var mode = val('blMarkupMode') === 'rasio' ? 'rasio' : 'persen';
-  // Hindari menafsirkan angka dari mode lama dengan unit mode baru jika ada
-  // field yang invalid (contoh rasio 0,96). Minta perbaiki nilainya dulu.
-  if (!m.valid) {
-    if (select) select.value = m.mode;
-    toast('Perbaiki nilai markup yang tidak valid sebelum mengganti mode.', true);
-    return;
-  }
+  var m = BELI.markup, mode = val('blMarkupMode') === 'rasio' ? 'rasio' : 'persen';
+  if (!m.valid) { bacaMarkupBeli(); return; }
   m.mode = mode;
-  [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) {
-    var el = document.getElementById(x[0]);
-    if (el) el.value = m[x[1]] === null ? '' : markupPersenBeliKeInput(m[x[1]], mode);
-  });
+  [['blMarkupUmum','umum'],['blMarkupNakes','nakes'],['blMarkupMutasi','mutasi']].forEach(function (x) { var el = document.getElementById(x[0]); if (el) el.value = markupPersenBeliKeInput(m[x[1]], mode); });
   padananMarkupBeli(); terapkanMarkupSemuaBaris(); gambarBeli();
 }
 function simpanBawaanMarkupBeli() {
@@ -386,8 +356,7 @@ function pilihSaranBeli(index) {
   it.Jual_Mutasi_Kini = Number(b.Harga_Jual_Mutasi) || 0;
   if (!Number(it.Harga_Netto)) it.Harga_Netto = Number(b.Harga_Modal) || 0;
   if (!Number(it.PPN)) it.PPN = Number(b.PPN) || 0;
-  // Harga jual saat ini hanya untuk pembanding margin, bukan disalin ke
-  // field "Harga jual baru". Harga baru mengikuti markup atau input manual.
+  if (!Number(it.Harga_Jual_Umum_Baru)) it.Harga_Jual_Umum_Baru = Number(b.Harga_Jual_Umum) || 0;
   terapkanMarkupBaris(it);
   tutupSaranBeli(); gambarBeli();
   var next = document.querySelector('#blBody input[data-i="' + i + '"][data-f="Kode_Obat"]');
@@ -412,11 +381,8 @@ function gambarBeli() {
       var ac = field === 'Kode_Obat' ? ' autocomplete="off"' : '';
       var range = (field === 'PPN' || field === 'Diskon') ? ' min="0" max="100" step="0.01"' : '';
       var ph = placeholder ? ' placeholder="' + esc(placeholder) + '"' : '';
-      var nilaiInput = it[field];
-      var fieldHargaJual = ['Harga_Jual_Umum_Baru','Harga_Khusus_Baru','Harga_Jual_Mutasi_Baru'].indexOf(field) >= 0;
-      if (fieldHargaJual && Number(nilaiInput) === 0 && !(it._manual && it._manual[field]) && !(it._tercatat && it._tercatat[field])) nilaiInput = '';
       return '<input class="inp beli-field-input' + extra + '" type="' + tipe +
-        '" data-i="' + i + '" data-f="' + field + '" value="' + esc(nilaiInput == null ? '' : nilaiInput) + '"' + ac + range + ph + '>';
+        '" data-i="' + i + '" data-f="' + field + '" value="' + esc(it[field] == null ? '' : it[field]) + '"' + ac + range + ph + '>';
     }
     function field(label, key, type, placeholder, cls) {
       return '<label class="field beli-input-field' + (cls ? ' ' + cls : '') + '"><span>' + label + '</span>' +
@@ -449,7 +415,7 @@ function gambarBeli() {
         '</div>' +
       '</div>' +
       '<div class="beli-item-summary">' +
-        '<div class="beli-summary-box beli-margin-box"><span class="beli-summary-label">Margin estimasi</span><small class="beli-margin-hint">Harga baru; jika kosong, memakai harga saat ini</small><div class="beli-margin-list" data-laba>' + htmlLabaBeli(it) + '</div></div>' +
+        '<div class="beli-summary-box beli-margin-box"><span class="beli-summary-label">Laba per segmen</span><div class="beli-margin-list" data-laba>' + htmlLabaBeli(it) + '</div></div>' +
         '<div class="beli-summary-box"><span class="beli-summary-label">Stok saat ini</span><strong class="beli-stock-value" data-stok>' +
           (it.Stok_Tersedia === null || it.Stok_Tersedia === undefined ? '—' : angka(it.Stok_Tersedia)) + '</strong></div>' +
         '<div class="beli-summary-box beli-subtotal-box"><span class="beli-summary-label">Subtotal item</span><strong data-subtotal>' + rupiah(subtotalBaris(it)) + '</strong></div>' +
@@ -462,16 +428,11 @@ function gambarBeli() {
     if (!f) return;
     var it = BELI.items[Number(f.dataset.i)];
     if (!it) return;
-    var fieldJual = ['Harga_Jual_Umum_Baru','Harga_Khusus_Baru','Harga_Jual_Mutasi_Baru'].indexOf(f.dataset.f) >= 0;
-    if (fieldJual) {
+    it[f.dataset.f] = (f.type === 'number') ? Number(f.value) || 0 : f.value;
+    if (['Harga_Jual_Umum_Baru','Harga_Khusus_Baru','Harga_Jual_Mutasi_Baru'].indexOf(f.dataset.f) >= 0) {
       it._manual = it._manual || {};
-      it[f.dataset.f] = f.value.trim() === '' ? 0 : (Number(f.value) || 0);
-      // Field harga jual adalah override manual ketika disentuh; dikosongkan
-      // berarti pengguna sengaja tidak ingin mengubah harga SKU dari baris ini.
       it._manual[f.dataset.f] = true;
-      delete it._markupOtomatis[f.dataset.f];
     } else {
-      it[f.dataset.f] = (f.type === 'number') ? Number(f.value) || 0 : f.value;
       terapkanMarkupBaris(it);
     }
     ringkasBeli();
@@ -496,7 +457,7 @@ function gambarBeli() {
       it.Jual_Mutasi_Kini = Number(b.Harga_Jual_Mutasi) || 0;
       if (!Number(it.Harga_Netto)) it.Harga_Netto = Number(b.Harga_Modal) || 0;
       if (!Number(it.PPN)) it.PPN = Number(b.PPN) || 0;
-      // Jangan menyalin harga saat ini ke field harga jual baru.
+      if (!Number(it.Harga_Jual_Umum_Baru)) it.Harga_Jual_Umum_Baru = Number(b.Harga_Jual_Umum) || 0;
       terapkanMarkupBaris(it);
       gambarBeli();
     }).catch(function () { /* nama barang opsional; abaikan bila gagal */ });
