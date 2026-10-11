@@ -109,6 +109,30 @@ function muatBarang(hal) {
    dipakai apa adanya dari js_trx.js supaya angkanya sama. Harga jual tetap
    bisa diketik manual di form ini. */
 
+/* Helper markup khusus Master Barang. Sengaja lokal agar form harga tidak
+ * bergantung pada helper di modul Pembelian yang boleh berubah secara terpisah. */
+function hargaDariMarkupJS(modal, persen, pembulatan) {
+  if (modal === null || !isFinite(Number(modal)) || Number(modal) <= 0 || persen === null || persen === undefined || !isFinite(Number(persen)) || Number(persen) < 0 || Number(persen) > 1000) return null;
+  var mentah = Math.round(Number(modal) * (1 + Number(persen) / 100) * 100) / 100;
+  if (Number(persen) === 0) return mentah;
+  return Number(pembulatan) > 0 ? Math.ceil(mentah / Number(pembulatan)) * Number(pembulatan) : mentah;
+}
+function markupInputBeliKePersen(v, mode) {
+  if (v === null || v === undefined || v === '') return { valid: true, persen: null };
+  var n = Number(v);
+  if (!isFinite(n)) return { valid: false, persen: null };
+  if (mode === 'rasio') {
+    if (n < 1 || n > 11) return { valid: false, persen: null };
+    return { valid: true, persen: (n - 1) * 100 };
+  }
+  if (n < 0 || n > 1000) return { valid: false, persen: null };
+  return { valid: true, persen: n };
+}
+function markupPersenBeliKeInput(persen, mode) {
+  if (persen === null || persen === undefined) return '';
+  return mode === 'rasio' ? 1 + Number(persen) / 100 : Number(persen);
+}
+
 /** Bawaan cabang dari pengaturan_harga; diisi muatPengaturanMarkupBarang(). */
 var MARKUP_BARANG = { mode: 'persen', pembulatan: 100 };
 /** Nama kolom pengaturan_harga untuk tiap tingkat markup. */
@@ -601,7 +625,7 @@ VIEWS.stok = {
         '<select id="stUrut" class="inp st-filter-select" aria-label="Urutkan stok">' +
           '<option value="nama">Nama A–Z</option><option value="stok_asc">Stok paling sedikit</option>' +
           '<option value="stok_desc">Stok paling banyak</option><option value="expired_asc">Kedaluwarsa terdekat</option>' +
-          '<option value="terbaru">Batch terbaru</option>' +
+          '<option value="terbaru">Batch terbaru</option><option value="margin_asc">Margin terendah</option>' +
         '</select>' +
         '<label class="chip st-filter-check" style="cursor:pointer"><input id="stKritis" type="checkbox" style="margin-right:5px">' +
           'Segera kedaluwarsa</label>' +
@@ -620,7 +644,7 @@ VIEWS.stok = {
       '<p id="stHint" class="kpi-sub st-filter-hint" style="margin-top:0">Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.</p>' +
       '<div class="st-legend" aria-label="Keterangan margin"><span><i class="st-dot st-dot-ok"></i>Margin tersedia</span><span><i class="st-dot st-dot-bad"></i>Margin negatif</span><span><i class="st-dot st-dot-muted"></i>Belum tersedia</span></div>' +
       '<div class="table-wrap"><table data-tk="1" data-stok-table="1"><thead><tr>' +
-        '<th>Obat</th><th>Kode batch / status</th><th>Kedaluwarsa</th><th>Sisa waktu</th>' +
+        '<th>Obat</th><th>Kode batch / supplier</th><th>Kedaluwarsa</th><th>Sisa waktu</th>' +
         '<th class="c">Stok</th><th class="r" title="Biaya modal efektif untuk batch ini setelah PPN dan diskon">Modal efektif batch</th><th class="r" title="(Harga jual SKU − modal batch) ÷ harga jual SKU">Margin batch</th><th></th>' +
       '</tr></thead><tbody id="stBody"></tbody></table></div><div id="stPager" class="pager"></div></div>';
 
@@ -660,7 +684,13 @@ function muatStok(offset) {
       ? 'Semua barang master cabang ini ditampilkan; barang tanpa batch memiliki stok 0.'
       : 'Filter dan urutan diterapkan pada seluruh hasil batch, bukan hanya halaman yang terlihat.';
   tb.innerHTML = '<tr><td colspan="9" class="empty">Memuat…</td></tr>';
-  api('stok.list', { q: val('stCari'), jenis: val('stCariJenis') || 'barang', kritis: document.getElementById('stKritis').checked, status: status, sort: sort, limit: STOK_LIMIT, offset: STOK_OFFSET })
+  var permintaanStok = { q: val('stCari'), jenis: val('stCariJenis') || 'barang', kritis: document.getElementById('stKritis').checked, status: status, sort: sort, limit: STOK_LIMIT, offset: STOK_OFFSET };
+  if (sort === 'margin_asc') {
+    permintaanStok.sembunyikan_kosong = document.getElementById('stKosong').checked;
+    permintaanStok.perlu_ditinjau = document.getElementById('stTinjau').checked;
+    permintaanStok.ambang_tinjau = ambangTinjauStok();
+  }
+  api('stok.list', permintaanStok)
     .then(function (res) {
       var rows = res.rows || [];
       if (!rows.length && res.total > 0 && STOK_OFFSET >= res.total) {
@@ -692,7 +722,9 @@ function muatStok(offset) {
         return '<tr>' +
           '<td><strong>' + esc(s.Nama_Obat) + '</strong>' +
             '<div class="cart-line-meta">' + esc(s.Kode_Obat) + (s.Aktif === 'TIDAK' ? ' · Nonaktif' : '') + '</div></td>' +
-          '<td data-label="Batch / status">' + (belumAdaBatch ? '<span class="chip chip-warn">Belum ada batch</span>' : esc(s.Kode_Batch)) + '</td>' +
+          '<td data-label="Batch / supplier">' + (belumAdaBatch
+            ? '<span class="chip chip-warn">Belum ada batch</span>'
+            : '<strong>' + esc(s.Kode_Batch) + '</strong><div class="cart-line-meta">Supplier: ' + esc(s.Supplier || 'Supplier belum tercatat') + '</div>') + '</td>' +
           '<td data-label="Kedaluwarsa">' + (belumAdaBatch ? '—' : tglIndo(s.Expired_Date)) + '</td>' +
           '<td data-label="Sisa waktu">' + (belumAdaBatch ? '—' : chipExpired(s.sisa_hari, s.Expired_Date)) + '</td>' +
           '<td data-label="Stok" class="c num">' + angka(s.Stok_Real || 0) + '</td>' +
