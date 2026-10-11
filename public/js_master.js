@@ -52,7 +52,8 @@ function muatBarang(hal) {
         var tint = b.Aktif === 'TIDAK' ? 'mati' : (habis ? 'bad' : (menipis ? 'warn' : 'ok'));
         return '<div class="m-kartu' + (b.Aktif === 'TIDAK' ? ' nonaktif' : '') + '" role="button" tabindex="0" data-edit=\'' + esc(JSON.stringify(b)) + '\'>' +
           '<span class="m-av ' + tint + '">' + esc(String(b.Nama_Obat || '?').charAt(0).toUpperCase()) + '</span>' +
-          '<div class="m-nm"><b>' + esc(b.Nama_Obat) + '</b><small>' + esc(b.Kode_Obat) + (b.Kategori ? ' · ' + esc(b.Kategori) : '') + '</small></div>' +
+          '<span class="m-kode-badge">' + esc(b.Kode_Obat) + '</span>' +
+          '<div class="m-nm"><b>' + esc(b.Nama_Obat) + '</b><small>' + (b.Kategori ? esc(b.Kategori) : '') + '</small></div>' +
           '<div class="m-rt"><b>' + rupiah(b.Harga_Jual_Umum) + '</b>' +
             '<button type="button" class="chip ' + (habis ? 'chip-bad' : (menipis ? 'chip-warn' : 'chip-ok')) + '" data-stok=\'' + esc(JSON.stringify({ k: b.Kode_Obat, n: b.Nama_Obat })) + '\' aria-label="Ubah stok ' + esc(b.Nama_Obat) + '">' +
             (habis ? 'Habis' : angka(b.stok) + ' ' + esc(b.Satuan || 'pcs')) + ' ✎</button></div></div>';
