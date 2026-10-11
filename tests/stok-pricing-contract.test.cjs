@@ -85,6 +85,13 @@ test('stok.list keeps pagination metadata and session-cabang filtering', () => {
   assert.match(api, /limit=\$\{limit\}&offset=\$\{offset\}/);
 });
 
+test('supplier hanya dibaca dari detail batch dan header faktur aktif di cabang sesi', () => {
+  assert.match(stokList, /await semua\("trx_pembelian_detail",\s*`\?cabang_id=eq\.\$\{cab\}&kode_obat=in\.\(/);
+  assert.match(stokList, /await semua\("trx_pembelian",\s*`\?cabang_id=eq\.\$\{cab\}&status=eq\.AKTIF&no_faktur=in\.\(/);
+  assert.match(stokList, /const detailCocok = detailRows\.filter\(\(d\) => keys\.has\(stokKunciBatchSupplier\(d\.kode_obat, d\.kode_batch\)\)\)/);
+  assert.match(api, /function stokSupplierDariRiwayat\(rows, detailRows, invoiceRows\)/);
+});
+
 test('supplier batch berasal dari faktur aktif dan nama duplikat hanya ditampilkan sekali', () => {
   const { stokSupplierDariRiwayat: mapSuppliers } = loadFunctions(['stokKunciBatchSupplier', 'stokSupplierDariRiwayat']);
   const rows = [
