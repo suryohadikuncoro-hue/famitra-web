@@ -636,8 +636,8 @@ VIEWS.stok = {
         '<span class="chip st-filter-check st-filter-ambang-wrap" title="Ambang margin (%) tiap tipe pelanggan untuk penyaring Perlu ditinjau">' +
           '<strong class="st-filter-ambang-title">Ambang perlu ditinjau</strong>' +
           STOK_TINJAU_TIPE.map(function (tipe) {
-            return '<label class="st-filter-ambang-item">' + tipe.label +
-              ' <input id="stTinjauAmbang' + tipe.kunci + '" class="st-filter-ambang" type="number" min="0" step="1" inputmode="decimal" value="' + ambangBawaan[tipe.kunci] + '" aria-label="Ambang margin ' + tipe.label + '">%</label>';
+            return '<label class="st-filter-ambang-item"><span>' + tipe.label + '</span>' +
+              '<span class="st-filter-ambang-control"><input id="stTinjauAmbang' + tipe.kunci + '" class="st-filter-ambang" type="number" min="0" step="1" inputmode="decimal" value="' + ambangBawaan[tipe.kunci] + '" aria-label="Ambang margin ' + tipe.label + '"><span>%</span></span></label>';
           }).join('') +
         '</span>' +
         '<button id="stTambah" class="btn btn-primary">Tambah batch</button></div>' +
