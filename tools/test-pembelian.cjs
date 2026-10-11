@@ -77,6 +77,13 @@ assert.match(js, /Harga_Khusus_Baru: it\.Harga_Khusus_Baru/, 'edited Nakes price
 assert.match(js, /Harga_Jual_Mutasi_Baru: it\.Harga_Jual_Mutasi_Baru/, 'edited Mutasi price is sent with purchase save');
 assert.match(js, /BELI\.items = \(d\.items && d\.items\.length\) \? d\.items : \[barisKosong\(\)\]/, 'editing an existing invoice loads the original recorded prices');
 assert.match(js, /Harga jual.*Terisi otomatis dari Master Barang/s, 'form explains that prices are prefilled and editable');
+const saveFnStart = js.indexOf('function simpanPembelian(');
+const saveFnEnd = js.indexOf('function konfirmasiTimpaHargaJual(', saveFnStart);
+const saveFn = js.slice(saveFnStart, saveFnEnd);
+assert.equal((saveFn.match(/konfirmasiTimpaHargaJual\\(isi\\)/g) || []).length, 2, 'normal save and negative-margin override both confirm changed selling prices');
+assert.match(js, /it\\._hargaJualAwal = \\{/, 'editing an invoice snapshots its original three sale prices');
+assert.match(js, /Konfirmasi perubahan harga jual/, 'changed sale prices show an explicit overwrite confirmation');
+
 
 assert.match(migration, /CREATE OR REPLACE FUNCTION public\.purchase_effective_unit_cost/i, 'SQL shares a single effective-cost function');
 assert.match(migration, /purchase_validate_items\(p_items\)/i, 'purchase RPC wrappers validate incoming line values');
