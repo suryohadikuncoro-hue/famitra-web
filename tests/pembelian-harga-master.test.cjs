@@ -11,10 +11,10 @@ const TRX = fs.readFileSync(path.join(root, 'public/js_trx.js'), 'utf8');
 const CSS = fs.readFileSync(path.join(root, 'public/style.css'), 'utf8');
 
 function extractFunction(name) {
-  const start = TRX.indexOf(\`function \${name}(\`);
-  assert.notEqual(start, -1, \`function \${name} exists\`);
+  const start = TRX.indexOf('function ' + name + '(');
+  assert.notEqual(start, -1, 'function ' + name + ' exists');
   const end = TRX.indexOf('\n}', start);
-  assert.notEqual(end, -1, \`function \${name} closes\`);
+  assert.notEqual(end, -1, 'function ' + name + ' closes');
   return TRX.slice(start, end + 2);
 }
 
