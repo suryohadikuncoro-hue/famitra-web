@@ -44,7 +44,7 @@ test('pemilihan barang menyalin ketiga harga jual dari Master Barang', () => {
 });
 
 test('autocomplete dan input kode barang langsung memakai harga dari master', () => {
-  assert.equal((TRX.match(/isiHargaJualDariMaster\(it, b\)/g) || []).length, 2);
+  assert.equal((TRX.match(/^\s+isiHargaJualDariMaster\(it, b\);/gm) || []).length, 2);
   assert.match(TRX, /function pilihSaranBeli\(index\)/);
   assert.match(TRX, /api\('barang\.list', \{ q: it\.Kode_Obat \}\)/);
 });
