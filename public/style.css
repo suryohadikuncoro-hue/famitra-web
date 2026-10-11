@@ -2728,19 +2728,29 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
     font-weight:700;
   }
   .view:has(#stCari) .st-filter-ambang-item {
-    display:grid;
-    grid-template-columns:minmax(0,1fr) auto;
-    align-items:center;
-    gap:4px;
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:6px;
     min-width:0;
     white-space:normal;
     font-size:12px;
     color:var(--muted);
   }
+  .view:has(#stCari) .st-filter-ambang-control {
+    display:flex;
+    align-items:center;
+    gap:5px;
+    min-width:0;
+  }
+  .view:has(#stCari) .st-filter-ambang-control > span {
+    flex:0 0 auto;
+    color:var(--muted);
+    font-size:13px;
+  }
   .view:has(#stCari) .st-filter-ambang {
-    grid-column:1;
-    grid-row:2;
     width:100%;
+    min-width:0;
     min-height:42px;
     padding:7px 9px;
     border:1px solid var(--line);
@@ -2750,8 +2760,6 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
     font-size:15px;
     font-weight:700;
   }
-  .view:has(#stCari) .st-filter-ambang-item { position:relative; }
-  .view:has(#stCari) .st-filter-ambang-item > input + * { grid-column:2; }
 }
 @media (max-width:420px) {
   .view:has(#stCari) .st-filter-ambang-wrap {
@@ -2760,15 +2768,13 @@ body[data-hal="marketing"] #mpCard .empty { padding:24px 16px; text-align:center
     padding:10px;
   }
   .view:has(#stCari) .st-filter-ambang-item {
-    grid-template-columns:minmax(0,1fr);
     gap:5px;
     font-size:11px;
   }
+  .view:has(#stCari) .st-filter-ambang-control { gap:3px; }
   .view:has(#stCari) .st-filter-ambang {
-    grid-column:1;
-    grid-row:2;
-    width:100%;
     min-height:40px;
+    padding:6px 5px;
     text-align:center;
   }
 }
