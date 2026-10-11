@@ -129,6 +129,7 @@ test('stok.list mengurutkan Margin terendah global sebelum pagination dan mengho
   assert.match(stokList, /if \(sort === "margin_asc"\)/);
   assert.match(stokList, /const batches = await semua\("stok_batch", query\)/);
   assert.match(stokList, /rows = urutkanStokMarginTerendah\(rows\)/);
+  assert.match(stokList, /rows = masters\.flatMap\(fromMaster\)/, 'items without batches remain visible at the end when their margins are unavailable');
   assert.match(stokList, /const page = rows\.slice\(offset, offset \+ limit\)/);
   assert.match(stokList, /data\.sembunyikan_kosong/);
   assert.match(stokList, /data\.perlu_ditinjau/);
