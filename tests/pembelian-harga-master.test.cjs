@@ -65,3 +65,93 @@ test('mengedit faktur lama memuat rincian harga historis, bukan harga baru maste
   const editFlow = TRX.slice(editFlowStart, editFlowEnd);
   assert.doesNotMatch(editFlow, /isiHargaJualDariMaster/);
 });
+
+test('edit faktur lama meminta konfirmasi jika salah satu harga jual berubah', () => {
+  const save = extractFunction('simpanPembelian');
+  assert.equal((save.match(/konfirmasiTimpaHargaJual\(isi\)/g) || []).length, 2,
+    'normal save and negative-margin override both continue through price confirmation');
+  const confirmStart = TRX.indexOf('function konfirmasiTimpaHargaJual(');
+  assert.ok(confirmStart >= 0, 'confirmation helper exists');
+  const confirmEnd = TRX.indexOf('\nfunction kirimPembelian(', confirmStart);
+  assert.ok(confirmEnd > confirmStart, 'confirmation helper ends before submit handler');
+  const confirm = TRX.slice(confirmStart, confirmEnd);
+  assert.match(confirm, /it\._hargaJualAwal/);
+  assert.match(confirm, /modalBuka\('Konfirmasi perubahan harga jual'/);
+  assert.match(confirm, /Kembali periksa/);
+  assert.match(confirm, /Ya, timpa harga & simpan/);
+  assert.match(confirm, /harga umum/);
+  assert.match(confirm, /harga nakes/);
+  assert.match(confirm, /harga mutasi/);
+  const editFlowStart = TRX.indexOf('function bukaUbahFaktur(');
+  const editFlowEnd = TRX.indexOf('function bukaDetailFaktur(', editFlowStart);
+  const editFlow = TRX.slice(editFlowStart, editFlowEnd);
+  assert.match(editFlow, /it\._hargaJualAwal = \{/,
+    'the three original sale prices are snapshotted as the invoice opens');
+});
+
+test('harga jual yang berubah menunggu persetujuan sebelum disimpan', () => {
+  const confirmStart = TRX.indexOf('function konfirmasiTimpaHargaJual(');
+  const confirmEnd = TRX.indexOf('\nfunction kirimPembelian(', confirmStart);
+  const confirmSource = TRX.slice(confirmStart, confirmEnd);
+  const calls = [];
+  const ctx = vm.createContext({
+    BELI: { editNoFaktur: 'FK-001' },
+    Number, Math,
+    rupiah: n => 'Rp' + n,
+    esc: s => String(s),
+    modalBuka: (...args) => calls.push({ type: 'modal', args }),
+    modalTutup: () => calls.push({ type: 'close' }),
+    kirimPembelian: items => calls.push({ type: 'save', items })
+  });
+  vm.runInContext(confirmSource, ctx);
+  const changed = [{
+    Kode_Obat: 'OB-1', Nama_Obat: 'Contoh obat',
+    Harga_Jual_Umum_Baru: 15500,
+    Harga_Khusus_Baru: 12000,
+    Harga_Jual_Mutasi_Baru: 16000,
+    _hargaJualAwal: {
+      Harga_Jual_Umum_Baru: 15000,
+      Harga_Khusus_Baru: 12000,
+      Harga_Jual_Mutasi_Baru: 16000
+    }
+  }];
+  ctx.konfirmasiTimpaHargaJual(changed);
+  const modal = calls.find(x => x.type === 'modal');
+  assert.ok(modal, 'price-change confirmation is shown');
+  assert.equal(modal.args[0], 'Konfirmasi perubahan harga jual');
+  assert.match(modal.args[1], /harga umum: Rp15000 → Rp15500/);
+  assert.equal(calls.filter(x => x.type === 'save').length, 0, 'save waits for explicit confirmation');
+  modal.args[2].find(x => x.label === 'Ya, timpa harga & simpan').aksi();
+  assert.equal(calls.filter(x => x.type === 'save').length, 1, 'accepting the popup allows save');
+});
+
+test('harga jual yang tidak berubah tidak menampilkan konfirmasi tambahan', () => {
+  const confirmStart = TRX.indexOf('function konfirmasiTimpaHargaJual(');
+  const confirmEnd = TRX.indexOf('\nfunction kirimPembelian(', confirmStart);
+  const confirmSource = TRX.slice(confirmStart, confirmEnd);
+  const calls = [];
+  const ctx = vm.createContext({
+    BELI: { editNoFaktur: 'FK-001' },
+    Number, Math,
+    rupiah: n => 'Rp' + n,
+    esc: s => String(s),
+    modalBuka: (...args) => calls.push({ type: 'modal', args }),
+    modalTutup: () => calls.push({ type: 'close' }),
+    kirimPembelian: items => calls.push({ type: 'save', items })
+  });
+  vm.runInContext(confirmSource, ctx);
+  const same = [{
+    Kode_Obat: 'OB-1',
+    Harga_Jual_Umum_Baru: 15000,
+    Harga_Khusus_Baru: 12000,
+    Harga_Jual_Mutasi_Baru: 16000,
+    _hargaJualAwal: {
+      Harga_Jual_Umum_Baru: 15000,
+      Harga_Khusus_Baru: 12000,
+      Harga_Jual_Mutasi_Baru: 16000
+    }
+  }];
+  ctx.konfirmasiTimpaHargaJual(same);
+  assert.equal(calls.filter(x => x.type === 'modal').length, 0);
+  assert.equal(calls.filter(x => x.type === 'save').length, 1);
+});
