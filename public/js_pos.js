@@ -483,12 +483,37 @@ function kosongkanKeranjang() {
   gambarKeranjang();
 }
 
+/** Reset identitas pelanggan setelah checkout sukses agar pembeli berikutnya
+ * tidak mewarisi nama/WA transaksi sebelumnya. Dipanggil hanya setelah server
+ * mengonfirmasi nota tersimpan; transaksi gagal tetap mempertahankan input.
+ */
+function resetPelangganPOS_() {
+  var wa = document.getElementById('posWA');
+  var nama = document.getElementById('posNama');
+  var tipe = document.getElementById('posTipe');
+  if (wa) wa.value = '';
+  if (nama) nama.value = '';
+  if (tipe) tipe.value = 'Umum';
+  POS.customer = { wa: '', nama: '', tipe: 'Umum', terdaftar: false };
+  ['posInfoCust', 'posSegmen'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+  ['posWASuggest', 'posNamaSuggest'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) { el.hidden = true; el.innerHTML = ''; }
+  });
+  muatPromoPOS();
+}
+
 /* -------------------------------------------------------------- Pelanggan */
 
 function cariPelanggan() {
   var wa = document.getElementById('posWA').value.trim();
   if (!wa) return;
   api('pos.cariCustomer', { wa: wa }).then(function (c) {
+    // Abaikan respons terlambat bila kasir sudah mengganti/mengosongkan WA.
+    if (document.getElementById('posWA').value.trim() !== wa) return;
     var info = document.getElementById('posInfoCust');
     var seg = document.getElementById('posSegmen');
     if (c.found) {
@@ -1082,6 +1107,7 @@ function kirimTransaksi_(totalLayar, btn) {
     }
     cetakStruk(nota);
     kosongkanKeranjang();
+    resetPelangganPOS_();
     if (!layarSentuh()) document.getElementById('posCari').focus();
     if (window.haptik) window.haptik([20, 40, 20]);
   }).catch(function (e) {
