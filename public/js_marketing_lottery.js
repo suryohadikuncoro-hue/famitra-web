@@ -164,21 +164,12 @@
   // ---------------- List ----------------
   function renderList() {
     var SESS = currentSession();
-    var cabangOpts = (_branches)
-      .map(function (c) {
-        return '<option value="' + esc(c.kode_cabang) + '">' + esc(c.nama_cabang) + "</option>";
-      })
-      .join("");
     var onlyAktif =
       '<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="lot-only-aktif"/> Hanya aktif</label>';
 
     var html =
       '<div class="filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">' +
-      '<select id="lot-cabang" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;">' +
-      (SESS.user.role === "Owner"
-        ? '<option value="">Semua cabang</option>' + cabangOpts
-        : '<option value="' + esc(SESS.user.cabang_id) + '" selected>Cabang saya</option>') +
-      "</select>" +
+      '<span style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;">Cabang: ' + esc(SESS.user.cabang_id || "Tidak diketahui") + '</span>' +
       onlyAktif +
       '<button id="lot-reload" style="padding:6px 12px;background:#0ea5e9;color:#fff;border:0;border-radius:8px;cursor:pointer;">Muat Ulang</button>' +
       '<button id="lot-new" style="padding:6px 12px;background:#16a34a;color:#fff;border:0;border-radius:8px;cursor:pointer;">+ Buat Campaign</button>' +
@@ -213,10 +204,7 @@
     var SESS = currentSession();
     var fd = {
       only_aktif: document.getElementById("lot-only-aktif")?.checked || false,
-      kode_cabang:
-        SESS.user.role === "Owner"
-          ? document.getElementById("lot-cabang")?.value || null
-          : SESS.user.cabang_id || null,
+      kode_cabang: SESS.user.cabang_id || null,
     };
     lotteryApi("lotteryList", fd)
       .then(function (rows) {
@@ -317,19 +305,8 @@
     var c = isEdit ? state.detailCampaign || {} : {};
 
     var cabangSel =
-      '<select id="lot-f-cabang" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;">' +
-      (SESS.user.role === "Owner"
-        ? (_branches)
-            .map(function (x) {
-              return (
-                '<option value="' + esc(x.kode_cabang) + '"' +
-                (x.kode_cabang === c.kode_cabang ? " selected" : "") +
-                ">" + esc(x.nama_cabang) + "</option>"
-              );
-            })
-            .join("")
-        : '<option value="' + esc(SESS.user.cabang_id) + '" selected>' + esc(SESS.user.cabang_id) + "</option>") +
-      "</select>";
+      '<input id="lot-f-cabang" value="' + esc(SESS.user.cabang_id || "") +
+      '" readonly aria-readonly="true" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;"/>';
 
     var prizes = (state.prizes || []).filter(function (p) { return !p.retired; });
     var prizesHtml =
@@ -429,9 +406,6 @@
         rebindPrizeRows();
       };
     rebindPrizeRows();
-    var branch = document.getElementById("lot-f-cabang");
-    if (branch && state.editId) branch.disabled = true;
-
     var sv = document.getElementById("lot-save");
     if (sv) sv.onclick = saveForm;
     var cn = document.getElementById("lot-cancel");
@@ -471,7 +445,7 @@
     });
     return {
       id: state.editId || undefined,
-      kode_cabang: document.getElementById("lot-f-cabang").value,
+      kode_cabang: (currentSession().user || {}).cabang_id || "",
       nama: document.getElementById("lot-f-nama").value.trim(),
       periode_mulai: document.getElementById("lot-f-mulai").value,
       periode_selesai: document.getElementById("lot-f-selesai").value,
@@ -878,16 +852,8 @@
       _branches = [];
       var sess = currentSession(), role = sess.user && sess.user.role;
       if (role !== "Owner" && role !== "Apoteker") { rootEl.textContent = "Akses lottery ditolak"; return; }
-      if (role === "Apoteker" && !sess.user.cabang_id) { rootEl.textContent = "Sesi ini tidak punya cabang"; return; }
-      if (role === "Owner") {
-        var generation = _generation;
-        rootEl.textContent = "Memuat cabang...";
-        api("cabang.list", {}).then(function (rows) {
-          if (generation !== _generation || document.getElementById("lottery-root") !== rootEl) return;
-          _branches = rows || [];
-          render();
-        }).catch(function (e) { if (generation === _generation) rootEl.textContent = "Gagal memuat cabang: " + e.message; });
-      } else render();
+      if (!sess.user.cabang_id) { rootEl.textContent = "Sesi ini tidak punya cabang. Silakan login ulang atau hubungi Owner."; return; }
+      render();
     },
   };
 })();
