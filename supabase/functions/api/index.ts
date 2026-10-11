@@ -220,6 +220,57 @@ async function semua(table, query) {
     if (rows.length > 200000) throw new Error("Data terlalu besar. Gunakan rentang lebih pendek.");
   }
 }
+/* Kunci gabungan barang + batch untuk mencocokkan detail faktur dengan stok_batch. */
+function stokKunciBatchSupplier(kodeObat, kodeBatch) {
+  return String(kodeObat || "").trim().toUpperCase() + "\u001f" + String(kodeBatch || "").trim();
+}
+/* Daftar nilai aman untuk operator PostgREST in.(...). */
+function stokSupplierIn(values) {
+  return [...new Set((values || []).map((v) => String(v == null ? "" : v).trim()).filter(Boolean))]
+    .map((v) => encodeURIComponent(`"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`)).join(",");
+}
+/* Murni memetakan supplier dari detail faktur aktif. Header faktur dibatasi
+ * per cabang oleh pemanggil; hanya status AKTIF yang boleh ditampilkan. */
+function stokSupplierDariRiwayat(rows, detailRows, invoiceRows) {
+  const invoiceByNo = new Map((invoiceRows || [])
+    .filter((h) => String(h.status || "").toUpperCase() === "AKTIF")
+    .map((h) => [String(h.no_faktur || ""), h]));
+  const rowKeys = new Set((rows || [])
+    .filter((r) => r && !r.Belum_Ada_Batch && r.Kode_Batch)
+    .map((r) => stokKunciBatchSupplier(r.Kode_Obat, r.Kode_Batch)));
+  const suppliersByKey = new Map();
+  (detailRows || []).forEach((d) => {
+    const key = stokKunciBatchSupplier(d.kode_obat, d.kode_batch);
+    if (!rowKeys.has(key)) return;
+    const header = invoiceByNo.get(String(d.no_faktur || ""));
+    const supplier = String(header && header.supplier || "").trim();
+    if (!header || !supplier) return;
+    if (!suppliersByKey.has(key)) suppliersByKey.set(key, new Set());
+    suppliersByKey.get(key).add(supplier);
+  });
+  return (rows || []).map((row) => {
+    const names = suppliersByKey.get(stokKunciBatchSupplier(row.Kode_Obat, row.Kode_Batch)) || new Set();
+    return { ...row, Supplier: [...names].sort((a, b) => a.localeCompare(b, "id")).join(" · ") };
+  });
+}
+/* Margin terendah hanya pasti diketahui bila ketiga tingkat harga punya margin. */
+function marginTerendahStok(row) {
+  const values = [row.Margin_Umum, row.Margin_Nakes, row.Margin_Mutasi];
+  if (values.some((v) => v === null || v === undefined || v === "" || !Number.isFinite(Number(v)))) return null;
+  return Math.min(...values.map(Number));
+}
+/* Mengurutkan seluruh hasil yang sudah difilter; nilai tidak tersedia diletakkan terakhir. */
+function urutkanStokMarginTerendah(rows) {
+  return (rows || []).slice().sort((a, b) => {
+    const am = marginTerendahStok(a), bm = marginTerendahStok(b);
+    if (am === null && bm !== null) return 1;
+    if (bm === null && am !== null) return -1;
+    if (am !== null && bm !== null && am !== bm) return am - bm;
+    return String(a.Nama_Obat || "").localeCompare(String(b.Nama_Obat || "")) ||
+      String(a.Kode_Batch || "").localeCompare(String(b.Kode_Batch || ""));
+  });
+}
+
 // Retur penjualan dalam rentang (dihitung pada TANGGAL RETUR) beserta HPP barang
 // yang kembali (qty retur x harga_modal batch asal di trx_penjualan_detail).
 async function returDalamRentang(cabangId, r0) {
@@ -485,7 +536,7 @@ async function action(name, data, s) {
     const nLimit = Math.floor(Number(data.limit)), limit = Number.isFinite(nLimit) ? Math.max(1, Math.min(200, nLimit)) : 50;
     const nOffset = Math.floor(Number(data.offset)), offset = Number.isFinite(nOffset) ? Math.max(0, Math.min(1000000, nOffset)) : 0;
     const kritis = !!data.kritis;
-    const sort = ["nama", "stok_asc", "stok_desc", "expired_asc", "terbaru"].includes(data.sort) ? data.sort : "nama";
+    const sort = ["nama", "stok_asc", "stok_desc", "expired_asc", "terbaru", "margin_asc"].includes(data.sort) ? data.sort : "nama";
     const status = ["semua", "tersedia", "habis"].includes(data.status) ? data.status : "semua";
     const cutoffDate = (() => {
       const d = new Date(`${today()}T00:00:00Z`);
@@ -502,7 +553,28 @@ async function action(name, data, s) {
       return batches.length ? batches.map((b) => rowBatch(m, b)) : kritis ? [] : [rowTanpaBatch(m)];
     };
     const totalFrom = (r) => Number(String(r.headers.get("content-range") || "").split("/")[1]) || 0;
-    const pageInfo = (rows, total, pageCount, unit) => ({ rows, total, limit, offset, page_count: pageCount, pagination_unit: unit, has_more: offset + pageCount < total, next_offset: offset + pageCount });
+    const rowsDenganSupplier = async (rows) => {
+      const punyaBatch = (rows || []).filter((r) => r && !r.Belum_Ada_Batch && r.Kode_Obat && r.Kode_Batch);
+      if (!punyaBatch.length) return stokSupplierDariRiwayat(rows || [], [], []);
+      const keys = new Set(punyaBatch.map((r) => stokKunciBatchSupplier(r.Kode_Obat, r.Kode_Batch)));
+      const kodeObat = [...new Set(punyaBatch.map((r) => String(r.Kode_Obat).trim()))];
+      const kodeBatch = [...new Set(punyaBatch.map((r) => String(r.Kode_Batch).trim()))];
+      const detailRows = await semua("trx_pembelian_detail",
+        `?cabang_id=eq.${cab}&kode_obat=in.(${stokSupplierIn(kodeObat)})&kode_batch=in.(${stokSupplierIn(kodeBatch)})&select=no_faktur,kode_obat,kode_batch&order=no_faktur.asc`);
+      const detailCocok = detailRows.filter((d) => keys.has(stokKunciBatchSupplier(d.kode_obat, d.kode_batch)));
+      const invoiceIds = [...new Set(detailCocok.map((d) => String(d.no_faktur || "")).filter(Boolean))];
+      const invoiceRows = [];
+      for (let i = 0; i < invoiceIds.length; i += 80) {
+        const bagian = invoiceIds.slice(i, i + 80);
+        invoiceRows.push(...await semua("trx_pembelian",
+          `?cabang_id=eq.${cab}&status=eq.AKTIF&no_faktur=in.(${stokSupplierIn(bagian)})&select=no_faktur,supplier,status&order=no_faktur.asc`));
+      }
+      return stokSupplierDariRiwayat(rows || [], detailCocok, invoiceRows);
+    };
+    const pageInfo = async (rows, total, pageCount, unit) => ({
+      rows: await rowsDenganSupplier(rows), total, limit, offset, page_count: pageCount,
+      pagination_unit: unit, has_more: offset + pageCount < total, next_offset: offset + pageCount
+    });
     const criticalMasterFilter = kritis ? `&stok_batch.stok_real=gt.0&stok_batch.expired_date=lte.${cutoffDate}` : "";
     const criticalBatchFilter = kritis ? `&stok_real=gt.0&expired_date=lte.${cutoffDate}` : "";
     // Escape ILIKE metacharacters in user text, then quote the whole operand.
@@ -523,6 +595,42 @@ async function action(name, data, s) {
       if (q) rows = rows.filter((x) => String(x.Kode_Batch || "").toLocaleLowerCase().includes(q));
       if (kritis) rows = rows.filter((x) => !x.Belum_Ada_Batch && Number(x.Stok_Real) > 0 && x.sisa_hari <= 90);
       return pageInfo(rows, rows.length, rows.length, "hasil");
+    }
+
+    // Margin terendah dihitung dan diurutkan sebelum pagination supaya hasilnya global,
+    // bukan hanya mengurutkan batch di halaman yang sedang terlihat.
+    if (sort === "margin_asc") {
+      const sembunyikanKosong = data.sembunyikan_kosong === true;
+      const perluDitinjau = data.perlu_ditinjau === true;
+      if (status === "habis" && (sembunyikanKosong || kritis)) return pageInfo([], 0, 0, "hasil");
+      const statusFilter = status === "habis" ? "&stok_real=eq.0" :
+        (status === "tersedia" || sembunyikanKosong ? "&stok_real=gt.0" : "");
+      const searchFilter = !q ? "" : data.jenis === "batch"
+        ? `&kode_batch=ilike.${pattern}`
+        : `&master_barang.or=(kode_obat.ilike.${pattern},nama_obat.ilike.${pattern})`;
+      const query = `?cabang_id=eq.${cab}${statusFilter}${criticalBatchFilter}&select=${batchFields},master_barang!inner(nama_obat,aktif,harga_jual_umum,harga_khusus,harga_jual_mutasi)&master_barang.cabang_id=eq.${cab}${searchFilter}&order=kode_obat.asc,expired_date.asc,id_batch.asc`;
+      const batches = await semua("stok_batch", query);
+      let rows = batches.map((b) => rowBatch(b.master_barang || {}, b));
+      if (sembunyikanKosong) rows = rows.filter((r) => Number(r.Stok_Real || 0) > 0);
+      if (perluDitinjau) {
+        const sumberAmbang = data.ambang_tinjau && typeof data.ambang_tinjau === "object" ? data.ambang_tinjau : {};
+        const ambang = (k) => {
+          const v = sumberAmbang[k];
+          if (v === null || v === undefined || v === "") return 20;
+          const n = Number(v);
+          return Number.isFinite(n) ? n : 20;
+        };
+        rows = rows.filter((r) => [
+          ["Margin_Umum", "Umum"], ["Margin_Nakes", "Nakes"], ["Margin_Mutasi", "Mutasi"]
+        ].some(([field, tipe]) => {
+          const v = r[field];
+          return v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) || Number(v) < ambang(tipe);
+        }));
+      }
+      rows = urutkanStokMarginTerendah(rows);
+      const total = rows.length;
+      const page = rows.slice(offset, offset + limit);
+      return pageInfo(page, total, page.length, "hasil");
     }
 
     // Sort/filter inventaris langsung pada batch agar urutan tidak hanya berlaku
