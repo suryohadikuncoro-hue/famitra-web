@@ -634,7 +634,7 @@ VIEWS.stok = {
         '<label class="chip st-filter-check" style="cursor:pointer" title="Tampilkan hanya baris yang margin salah satu tipenya di bawah ambang tipe itu; baris bermodal kosong tetap tampil"><input id="stTinjau" type="checkbox" style="margin-right:5px">' +
           'Perlu ditinjau</label>' +
         '<span class="chip st-filter-check st-filter-ambang-wrap" title="Ambang margin (%) tiap tipe pelanggan untuk penyaring Perlu ditinjau">' +
-          'Ambang perlu ditinjau' +
+          '<strong class="st-filter-ambang-title">Ambang perlu ditinjau</strong>' +
           STOK_TINJAU_TIPE.map(function (tipe) {
             return '<label class="st-filter-ambang-item">' + tipe.label +
               ' <input id="stTinjauAmbang' + tipe.kunci + '" class="st-filter-ambang" type="number" min="0" step="1" inputmode="decimal" value="' + ambangBawaan[tipe.kunci] + '" aria-label="Ambang margin ' + tipe.label + '">%</label>';
