@@ -484,9 +484,21 @@ function muatPromoWidget() {
   var kiri = document.getElementById('dbPromo'), kanan = document.getElementById('dbPromoSum');
   if (!kiri) return;
   promoApi('dashboardAktif', {}).then(function (res) {
+    var expectedBranch = String((SESSION && SESSION.user && SESSION.user.cabang_id) || '').trim();
+    var responseBranch = String((res && res.cabang_id) || '').trim();
+    // Jangan tampilkan promo bila identitas cabang sesi frontend dan backend berbeda.
+    // Ini lapisan pertahanan tambahan; otoritas cabang tetap ditentukan backend.
+    if (!expectedBranch || !responseBranch || expectedBranch !== responseBranch) {
+      kiri.innerHTML = '<div class="dk-judul">Promo & kampanye aktif</div><div class="empty">Identitas cabang sesi tidak cocok dengan server. Muat ulang halaman atau login kembali; promo disembunyikan untuk mencegah salah cabang.</div>';
+      kanan.innerHTML = '';
+      kanan.hidden = true;
+      if (window.console && console.error) console.error('[Promo] branch mismatch; widget hidden', { expectedBranch: expectedBranch, responseBranch: responseBranch });
+      return;
+    }
     var d = normalisasiPromo(res || {});
     kiri.innerHTML = gambarDaftarPromo(d.items || []);
     kanan.innerHTML = gambarRingkasPromo(d.ringkasan || {}, d.items || []);
+    kanan.hidden = false;
     var kelola = kiri.querySelector('[data-kelola]');
     if (kelola) kelola.onclick = function () { gantiHalaman('marketing'); };
   }).catch(function (e) {
