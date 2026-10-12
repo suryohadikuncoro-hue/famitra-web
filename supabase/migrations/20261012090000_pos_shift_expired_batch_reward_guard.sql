@@ -73,6 +73,16 @@ BEGIN
       RAISE EXCEPTION 'Tidak bisa mengenali blok validasi reward pada pos_checkout; migrasi dibatalkan.';
     END IF;
 
+    -- Even a NULL return is not permission to fall back to legacy rules.
+    IF position('IF v_hasil_tukar IS NULL THEN RAISE EXCEPTION ''Validasi reward tidak menghasilkan hasil.' IN d) = 0 THEN
+      IF position('      IF v_hasil_tukar IS NULL THEN' IN d) > 0 THEN
+        d := replace(d, '      IF v_hasil_tukar IS NULL THEN',
+          '      IF v_hasil_tukar IS NULL THEN RAISE EXCEPTION ''Validasi reward tidak menghasilkan hasil. Transaksi dibatalkan.'';');
+      ELSE
+        RAISE EXCEPTION 'Tidak bisa mengenali fallback validasi reward pada pos_checkout; migrasi dibatalkan.';
+      END IF;
+    END IF;
+
     EXECUTE d;
   END LOOP;
 
