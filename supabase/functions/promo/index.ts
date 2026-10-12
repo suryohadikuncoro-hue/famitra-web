@@ -148,7 +148,9 @@ async function dashboardAktif(branch: string) {
     tx.forEach((t: any) => { transaksi[t.no_nota] = t; });
     bundle.push({ jenis: "bundle", id: b.id, nama: b.name, kode: b.code, harga: Number(b.bundle_price || 0), mulai: b.starts_at, selesai: b.ends_at,
       jumlah_produk: (b.promo_bundle_items || []).length, terjual: tx.length, _nota: tx.map((t: any) => t.no_nota),
-      _pelanggan: tx.map((t: any) => "w:" + (t.nomor_wa || t.nama_pelanggan || t.no_nota)),
+      // Hanya nomor WA yang dapat mengidentifikasi pelanggan. Transaksi anonim
+      // tetap dihitung sebagai nota/omzet, tetapi tidak digabung menjadi satu orang.
+      _pelanggan: tx.map((t: any) => t.nomor_wa ? "w:" + normWA(t.nomor_wa) : null),
       diskon: tx.reduce((n: number, t: any) => n + Number(t.bundle_discount || 0), 0) });
   }
   // Undian: hadiah aktif & pemenang tercatat.
@@ -180,7 +182,7 @@ async function dashboardAktif(branch: string) {
   let omzet = 0, hpp = 0, diskon = 0;
   [...kupon, ...bundle].forEach((x: any) => {
     diskon += x.diskon;
-    x._pelanggan.forEach((p: string) => pelanggan.add(p));
+    x._pelanggan.forEach((p: string | null) => { if (p) pelanggan.add(p); });
     x._nota.forEach((n: string) => { if (semuaNota.has(n) || !transaksi[n]) return; semuaNota.add(n); omzet += Number(transaksi[n].harga_akhir || 0); hpp += Number(transaksi[n].total_hpp || 0); });
     x.omzet = x._nota.reduce((t: number, n: string) => t + Number((transaksi[n] || {}).harga_akhir || 0), 0);
     delete x._nota; delete x._pelanggan;
