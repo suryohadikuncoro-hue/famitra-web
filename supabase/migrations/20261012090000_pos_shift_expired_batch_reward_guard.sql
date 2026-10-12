@@ -32,7 +32,7 @@ DECLARE
         v_hasil_tukar := NULL;
       END;$old$;
   new_reward text := $new$      -- A configuration/eligibility error must not fall back to weaker legacy rules.
-      v_hasil_tukar := public.loyalty_tukar_periksa(v_cabang_id, p_reward_id, norm_wa(p_nomor_wa), v_subtotal, greatest(0, coalesce(p_diskon,0));$new$;
+      v_hasil_tukar := public.loyalty_tukar_periksa(v_cabang_id, p_reward_id, norm_wa(p_nomor_wa), v_subtotal, greatest(0, coalesce(p_diskon,0)));$new$;
   found_function boolean := false;
 BEGIN
   FOR r IN
