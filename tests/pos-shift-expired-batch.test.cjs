@@ -44,6 +44,12 @@ test('dashboard promo widget hides results when backend and signed-in branches d
   assert.match(dashboard, /promo disembunyikan untuk mencegah salah cabang/);
 });
 
+test('anonymous sales remain in sales totals but are not merged as one identifiable customer', () => {
+  assert.match(api, /ss\.filter\(\(x\) => String\(x\.nomor_wa \|\| ""\)\.trim\(\)\)/);
+  assert.match(promo, /t\.nomor_wa \? "w:" \+ normWA\(t\.nomor_wa\) : null/);
+  assert.match(promo, /if \(p\) pelanggan\.add\(p\)/);
+});
+
 test('lottery API rejects requested branches that differ from the login session', () => {
   assert.match(lottery, /function cabangSesi\(s, requested\)/);
   assert.match(lottery, /if \(requested && String\(requested\)\.trim\(\) !== branch\) fail\("Akses cabang ditolak", 403\)/);
