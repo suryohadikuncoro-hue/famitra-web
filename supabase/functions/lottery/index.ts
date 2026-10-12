@@ -41,10 +41,11 @@ async function session(token) {
 }
 function allowed(role) { return role === "Owner" || role === "Apoteker"; }
 function cabangSesi(s, requested) {
-  if (s.role === "Owner") return requested ? String(requested).trim() : null;
+  // Isolasi cabang berlaku juga untuk Owner: Owner mengelola cabang dengan
+  // masuk ke akun cabang tersebut, bukan dengan memilih cabang lain di UI.
   const branch = String(s.cabang_id || "").trim();
   if (!branch) fail("Sesi ini tidak punya cabang. Hubungi Owner.", 403);
-  if (requested && requested !== branch) fail("Akses cabang ditolak", 403);
+  if (requested && String(requested).trim() !== branch) fail("Akses cabang ditolak", 403);
   return branch;
 }
 function authorizeCampaign(s, c) {
