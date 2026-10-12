@@ -29,6 +29,7 @@ test('expired batch requires an explicit physical-verification confirmation', ()
   assert.match(pos, /confirm_expired: konfirmasiBatchKedaluwarsa/);
   assert.match(pos, /Saya sudah verifikasi fisik/);
   assert.match(pos, /Batal transaksi/);
+  assert.match(pos, /if \(menungguKonfirmasiBatch\) return/);
 });
 
 test('reward rule errors are not swallowed into weaker fallback rules', () => {
