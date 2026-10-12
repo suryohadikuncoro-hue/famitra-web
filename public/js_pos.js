@@ -1080,6 +1080,7 @@ function konfirmasiCekGagal_(e, total, btn) {
 }
 
 function kirimTransaksi_(totalLayar, btn, konfirmasiBatchKedaluwarsa) {
+  var menungguKonfirmasiBatch = false;
   btn.disabled = true; btn.textContent = 'Menyimpan…';
   konfirmasiBatchKedaluwarsa = konfirmasiBatchKedaluwarsa === true;
   var payload = {
@@ -1114,18 +1115,21 @@ function kirimTransaksi_(totalLayar, btn, konfirmasiBatchKedaluwarsa) {
   }).catch(function (e) {
     var pesan = String((e && e.message) || '');
     if (pesan.indexOf('EXPIRED_BATCH_CONFIRM_REQUIRED') !== -1 && !konfirmasiBatchKedaluwarsa) {
+      menungguKonfirmasiBatch = true;
       modalBuka('Verifikasi batch kedaluwarsa',
         '<p class="pos-diff-lead">Batch yang akan digunakan tercatat sudah melewati tanggal kedaluwarsa.</p>' +
         '<p>Periksa kemasan dan tanggal ED fisik sebelum melanjutkan. Jangan lanjutkan jika kondisi batch tidak layak atau tanggal fisik tidak sesuai.</p>' +
         '<p class="sub">Jika fisik sudah diperiksa dan Anda memastikan barang layak dijual sesuai prosedur apotek, transaksi dapat dicoba kembali. Sistem tidak otomatis menganggap batch aman.</p>',
         [
-          { label: 'Batal transaksi', aksi: function () { modalTutup(); btn.disabled = false; btn.textContent = 'Simpan & cetak struk'; gambarRingkasan(); } },
-          { label: 'Saya sudah verifikasi fisik', kelas: 'btn-primary', aksi: function () { modalTutup(); kirimTransaksi_(totalLayar, btn, true); } }
+          { label: 'Batal transaksi', aksi: function () { menungguKonfirmasiBatch = false; modalTutup(); btn.disabled = false; btn.textContent = 'Simpan & cetak struk'; gambarRingkasan(); } },
+          { label: 'Saya sudah verifikasi fisik', kelas: 'btn-primary', aksi: function () { menungguKonfirmasiBatch = false; modalTutup(); kirimTransaksi_(totalLayar, btn, true); } }
         ]);
       return;
     }
     toast(e.message, true);
   }).then(function () {
+    // Keep the checkout button locked while the asynchronous confirmation modal is open.
+    if (menungguKonfirmasiBatch) return;
     btn.disabled = false;
     btn.textContent = 'Simpan & cetak struk';
     gambarRingkasan();
