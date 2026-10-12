@@ -34,6 +34,7 @@ test('expired batch requires an explicit physical-verification confirmation', ()
 test('reward rule errors are not swallowed into weaker fallback rules', () => {
   assert.match(migration, /A configuration\/eligibility error must not fall back/);
   assert.match(migration, /v_hasil_tukar := public\.loyalty_tukar_periksa/);
+  assert.match(migration, /Validasi reward tidak menghasilkan hasil/);
 });
 
 test('dashboard promo widget hides results when backend and signed-in branches differ', () => {
