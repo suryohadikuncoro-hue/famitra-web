@@ -10,6 +10,7 @@ const read = f => fs.readFileSync(path.join(root, f), 'utf8');
 const migration = read('supabase/migrations/20261012090000_pos_shift_expired_batch_reward_guard.sql');
 const pos = read('public/js_pos.js');
 const promo = read('supabase/functions/promo/index.ts');
+const api = read('supabase/functions/api/index.ts');
 const dashboard = read('public/js_dashboard.js');
 const lottery = read('supabase/functions/lottery/index.ts');
 const lotteryUi = read('public/js_marketing_lottery.js');
