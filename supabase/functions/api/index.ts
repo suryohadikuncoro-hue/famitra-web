@@ -1181,10 +1181,13 @@ async function action(name, data, s) {
       prod[k].Omzet += Number(x.subtotal || 0);
     });
     const topProduk = Object.values(prod).sort((a, b) => b.Qty - a.Qty || b.Omzet - a.Omzet).slice(0, 5).map((x) => ({ kode: x.Kode_Obat, nama: x.Nama_Obat, qty: x.Qty, omzet: x.Omzet }));
+    // Hanya pelanggan teridentifikasi (nomor WA) yang digabung sebagai pelanggan.
+    // Nota anonim/Umum tidak boleh dianggap satu pelanggan berulang hanya karena
+    // nama defaultnya sama; transaksi tetap masuk KPI nota dan omzet.
     const cust = {};
-    ss.forEach((x) => {
-      const k = x.nomor_wa || x.nama_pelanggan || "Umum";
-      cust[k] ||= { Nomor_WA: x.nomor_wa || "", Nama: x.nama_pelanggan || "Umum", Tipe_Customer: x.tipe_customer || "Umum", Total_Belanja: 0, Jumlah_Transaksi: 0 };
+    ss.filter((x) => String(x.nomor_wa || "").trim()).forEach((x) => {
+      const k = String(x.nomor_wa).trim();
+      cust[k] ||= { Nomor_WA: k, Nama: x.nama_pelanggan || "Pelanggan", Tipe_Customer: x.tipe_customer || "Umum", Total_Belanja: 0, Jumlah_Transaksi: 0 };
       cust[k].Total_Belanja += Number(x.harga_akhir || 0);
       cust[k].Jumlah_Transaksi++;
     });
