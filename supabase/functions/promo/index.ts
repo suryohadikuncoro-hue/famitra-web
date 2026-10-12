@@ -196,7 +196,7 @@ async function dashboardAktif(branch: string) {
   // jadi hanya nilaiNonDiskon yang menjadi biaya tambahan.
   const laba = omzet - hpp - nilaiNonDiskon;
   const itemReward = { jenis: "reward", nama: "Penukaran poin", jumlah: penukaran.length, diskon: nilaiReward, biaya_non_diskon: nilaiNonDiskon };
-  return { item: [...kupon, ...bundle, ...lot, itemReward], jumlah_aktif: kupon.length + bundle.length + lot.length,
+  return { cabang_id: branch, item: [...kupon, ...bundle, ...lot, itemReward], jumlah_aktif: kupon.length + bundle.length + lot.length,
     ringkasan: { transaksi: semuaNota.size, omzet, diskon, hpp, laba_setelah_promo: laba,
       margin: omzet ? laba / omzet * 100 : null, roas: diskon ? omzet / diskon : null,
       biaya_reward: nilaiReward, biaya_reward_non_diskon: nilaiNonDiskon, pelanggan_unik: pelanggan.size } };
