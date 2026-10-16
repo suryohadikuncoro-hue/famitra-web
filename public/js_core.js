@@ -13,8 +13,8 @@ var SESSION = null;             // { token, user:{ username, nama, role, shift }
 var MENU = [];
 
 /** Ganti sesuai project Supabase Anda, atau isi lewat build-time env jika ada. */
-var SUPABASE_FN_URL = 'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/api';
-var SUPABASE_PROMO_URL = 'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/promo';
+var SUPABASE_FN_URL = 'https://almoxfygtopmfktiabdp.supabase.co/functions/v1/api';
+var SUPABASE_PROMO_URL = 'https://almoxfygtopmfktiabdp.supabase.co/functions/v1/promo';
 
 /* ------------------------------------------------------------ Pemanggil API */
 
