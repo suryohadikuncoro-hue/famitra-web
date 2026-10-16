@@ -7,7 +7,7 @@
 
 (function () {
   var SUPABASE_LOTTERY_URL =
-    "https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/lottery";
+    "https://almoxfygtopmfktiabdp.supabase.co/functions/v1/lottery";
 
   function lotteryApi(action, data) {
     var token = (typeof SESSION !== "undefined" && SESSION && SESSION.token) || null;
