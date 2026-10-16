@@ -7,7 +7,7 @@
 //   - Kasir       : baca dashboard progress (cabang sendiri, target tidak bisa dibuat)
 //
 // Backend: Edge Function `marketing` di
-//   https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/marketing
+//   https://almoxfygtopmfktiabdp.supabase.co/functions/v1/marketing
 //
 // Aturan visibilitas (sesuai permintaan Owner):
 //   - Dashboard "Progress Cabang" (semua role, hanya cabang sesi): sebelum target tercapai, laba
@@ -20,7 +20,7 @@
 
 (function () {
   var SUPABASE_MARKETING_URL =
-    "https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/marketing";
+    "https://almoxfygtopmfktiabdp.supabase.co/functions/v1/marketing";
 
   function marketingApi(action, data) {
     var token = (window.SESSION && window.SESSION.token) || null;
