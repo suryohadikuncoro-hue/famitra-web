@@ -2,7 +2,7 @@
 
 var BELI = { items: [], riwayatQuery: '', riwayatOffset: 0, riwayatHasMore: false, riwayatOpen: false, riwayatRequest: 0, riwayatTimer: null, editNoFaktur: null };
 var BELI_SUGGEST = { timer: null, request: 0, rows: [], index: -1, input: null };
-var HUTANG_FN_URL = 'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/hutang';
+var HUTANG_FN_URL = 'https://almoxfygtopmfktiabdp.supabase.co/functions/v1/hutang';
 function apiHutang(action, data) {
   return fetch(HUTANG_FN_URL, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
