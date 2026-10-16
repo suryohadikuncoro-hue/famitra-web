@@ -158,7 +158,7 @@ function muatDashboard() {
    Aturan visibilitas laba sudah diterapkan di backend (withVisibility di
    marketing-function-paste.txt); frontend cukup render apa adanya. */
 var SUPABASE_MARKETING_URL =
-  'https://xixhazawndmgqzstfjnq.supabase.co/functions/v1/marketing';
+  'https://almoxfygtopmfktiabdp.supabase.co/functions/v1/marketing';
 
 function widgetMarketingApi(action, data) {
   var token = (window.SESSION && window.SESSION.token) || null;
