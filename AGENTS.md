@@ -3,6 +3,35 @@
 Panduan untuk AI agent (Hermes) yang bekerja di repository ini.
 Baca seluruh file ini sebelum mengubah kode apa pun.
 
+---
+
+> ## ⛔ PERINGATAN KERAS — DATA PRODUCTION
+>
+> Repositori ini terhubung ke **database production yang sedang dipakai apotek setiap hari**, dan
+> **preview Cloudflare Pages memakai database yang SAMA** (tidak ada lingkungan uji terpisah).
+>
+> **DILARANG tanpa izin eksplisit pemilik:**
+> - mengubah data apa pun (`INSERT`/`UPDATE`/`DELETE`, `TRUNCATE`, `DROP`) — termasuk lewat skrip,
+>   `curl`/fetch ke endpoint tulis, atau endpoint aplikasi (`beli.simpan`, `beli.batal`,
+>   `stok.simpanBatch`, `pos.checkout`, `opname.simpan`, dll.);
+> - `npx supabase db push`, menjalankan migrasi, atau SQL DDL manual di dashboard;
+> - `npx supabase functions deploy ...`;
+> - `npx wrangler pages deploy`, atau **merge PR ke `main`** (merge = deploy production);
+> - membaca/menyalin/menempelkan kredensial (`supabase/.temp/**`, token, `service_role key`).
+>
+> **Bila menemukan data yang salah: LAPORKAN, jangan perbaiki sendiri.** Data production hanya boleh
+> diubah lewat aplikasi oleh Apoteker/Owner berdasarkan bukti fisik (faktur asli, hasil hitung stok).
+>
+> **Awas:** modal barang dapat **dihitung ulang otomatis oleh sistem** saat faktur disimpan, diubah,
+> atau dibatalkan — nilai yang diisi manual di Stok & Batch **tidak dilindungi**. Karena itu,
+> "sekalian membetulkan" lewat skrip atau SQL bukan hanya berbahaya, tetapi hasilnya juga bisa
+> hilang sendiri. Lihat `docs/perhitungan-ulang-modal-batch.md`.
+>
+> Ketentuan lengkap: **[`PERINGATAN-DATA-PRODUCTION.md`](PERINGATAN-DATA-PRODUCTION.md)** —
+> wajib dibaca sebelum menjalankan perintah apa pun.
+
+---
+
 ## Tentang Project
 
 - Nama: SI-FaMitra (Sistem Informasi Apotek Fa-Mitra)
