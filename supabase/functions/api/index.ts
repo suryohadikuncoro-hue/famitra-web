@@ -35,9 +35,11 @@ var rangeOf = (f) => {
   if (mode === "bulanan") {
     const y = f?.tahun || d.slice(0, 4), m = f?.bulan || d.slice(5, 7);
     const start = `${y}-${m}-01`;
-    const next = /* @__PURE__ */ new Date(`${start}T00:00:00+07:00`);
-    next.setMonth(next.getMonth() + 1);
-    return { from: start, to: new Date(next.getTime() - 864e5).toISOString().slice(0, 10), label: `Bulan ${m}/${y}` };
+    // Hitung hari terakhir secara UTC agar tanggal tidak mundur satu hari
+    // ketika ISO string dikonversi dari zona waktu Asia/Jakarta.
+    const lastDay = new Date(Date.UTC(Number(y), Number(m), 0)).getUTCDate();
+    const end = `${y}-${m}-${String(lastDay).padStart(2, "0")}`;
+    return { from: start, to: end, label: `Bulan ${m}/${y}` };
   }
   if (mode === "tahunan") return { from: `${f?.tahun || d.slice(0, 4)}-01-01`, to: `${f?.tahun || d.slice(0, 4)}-12-31`, label: `Tahun ${f?.tahun || d.slice(0, 4)}` };
   return { from: d, to: d, label: "Hari ini" };
